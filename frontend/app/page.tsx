@@ -190,6 +190,39 @@ type AgentReview = {
   final_verdict: string;
 };
 
+type DeliveryLeadArtifactDetails = {
+  name: string;
+  table: string;
+  trigger: string;
+  condition: string;
+  recipients: string[];
+  subject: string;
+  body: string;
+  steps: string[];
+  roles: string[];
+  fields: string[];
+  expected_result: string;
+  notes: string[];
+};
+
+type DeliveryLeadChatResponse = {
+  answer: string;
+  delivery_lead_recommendation: string;
+  artifact_type: string;
+  artifact_details: DeliveryLeadArtifactDetails;
+  suggested_requirement_update: string;
+  should_update_requirement: boolean;
+  impacted_sections: string[];
+  follow_up_questions: string[];
+  recommended_next_action: string;
+};
+
+type DeliveryLeadChatMessage = {
+  role: "user" | "delivery_lead";
+  content: string;
+  response?: DeliveryLeadChatResponse;
+};
+
 type ActiveTab = "stories" | "technical" | "qa";
 type PackageTab =
   | "overview"
@@ -198,6 +231,7 @@ type PackageTab =
   | "technical"
   | "qa"
   | "review"
+  | "delivery_lead"
   | "export";
 
 const PACKAGE_TABS: { id: PackageTab; label: string }[] = [
@@ -207,6 +241,7 @@ const PACKAGE_TABS: { id: PackageTab; label: string }[] = [
   { id: "technical", label: "Technical" },
   { id: "qa", label: "QA" },
   { id: "review", label: "Review" },
+  { id: "delivery_lead", label: "Delivery Lead" },
   { id: "export", label: "Export" },
 ];
 
@@ -398,6 +433,10 @@ export default function Home() {
   const [regenerateInstruction, setRegenerateInstruction] = useState("");
   const [regeneratingSection, setRegeneratingSection] = useState("");
 
+  const [deliveryLeadMessage, setDeliveryLeadMessage] = useState("");
+  const [deliveryLeadChat, setDeliveryLeadChat] = useState<DeliveryLeadChatMessage[]>([]);
+  const [deliveryLeadThinking, setDeliveryLeadThinking] = useState(false);
+
   const [projectName, setProjectName] = useState("");
   const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -573,6 +612,10 @@ export default function Home() {
 
     setRegenerateInstruction("");
     setRegeneratingSection("");
+
+    setDeliveryLeadMessage("");
+    setDeliveryLeadChat([]);
+    setDeliveryLeadThinking(false);
   }
 
   function newProject() {
@@ -636,6 +679,9 @@ export default function Home() {
     setLoadingStage("");
     setRegenerateInstruction("");
     setRegeneratingSection("");
+    setDeliveryLeadMessage("");
+    setDeliveryLeadChat([]);
+    setDeliveryLeadThinking(false);
     setShowTemplates(false);
   }
 
@@ -852,6 +898,81 @@ export default function Home() {
       setLoading(false);
       setLoadingStage("");
     }
+  }
+
+  async function askDeliveryLead() {
+    if (!deliveryLeadMessage.trim()) {
+      alert("Ask the Delivery Lead a question first.");
+      return;
+    }
+
+    const userMessage = deliveryLeadMessage.trim();
+
+    const nextChat: DeliveryLeadChatMessage[] = [
+      ...deliveryLeadChat,
+      {
+        role: "user",
+        content: userMessage,
+      },
+    ];
+
+    setDeliveryLeadChat(nextChat);
+    setDeliveryLeadMessage("");
+    setDeliveryLeadThinking(true);
+    setLoadingStage("Delivery Lead is thinking...");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/delivery-lead-chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: userMessage,
+          requirement: buildRequirementWithClarifications(),
+          current_package: result,
+          chat_history: nextChat,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Delivery Lead chat failed:", response.status, errorText);
+        throw new Error(`Delivery Lead chat failed: ${response.status}`);
+      }
+
+      const data: DeliveryLeadChatResponse = await response.json();
+
+      setDeliveryLeadChat([
+        ...nextChat,
+        {
+          role: "delivery_lead",
+          content: data.answer,
+          response: data,
+        },
+      ]);
+    } catch (error) {
+      console.error(error);
+      alert("Delivery Lead chat failed. Check backend logs.");
+    } finally {
+      setDeliveryLeadThinking(false);
+      setLoadingStage("");
+    }
+  }
+
+  function applyDeliveryLeadRequirementUpdate(updateText: string) {
+    if (!updateText.trim()) return;
+
+    const confirmed = window.confirm(
+      "Apply this Delivery Lead update to the main requirement box?"
+    );
+
+    if (!confirmed) return;
+
+    setRequirement(updateText);
+    setClarificationAnswers("");
+    setIntakeAnalysis(null);
+    setPackageTab("design");
   }
 
   async function copyToClipboard(value: string) {
@@ -2798,6 +2919,259 @@ ${uat.expected_result}
               </Card>
             )}
             
+            {packageTab === "delivery_lead" && (
+              <Card title="Delivery Lead Copilot">
+                <div style={styles.stack}>
+                  <div style={styles.innerCard}>
+                    <p style={styles.label}>Ask the Delivery Lead</p>
+                    <p style={styles.bodyText}>
+                      Ask about scope, missing requirements, ServiceNow approach, MVP vs phase 2,
+                      stakeholder questions, risks, or request updates to the requirement.
+                    </p>
+                  </div>
+
+                  {deliveryLeadChat.length > 0 && (
+                    <div style={styles.stack}>
+                      {deliveryLeadChat.map((message, index) => (
+                        <div
+                          key={index}
+                          style={
+                            message.role === "user"
+                              ? styles.chatUserBubble
+                              : styles.chatLeadBubble
+                          }
+                        >
+                          <p style={styles.label}>
+                            {message.role === "user" ? "You" : "Delivery Lead"}
+                          </p>
+
+                          <p style={styles.bodyText}>{message.content}</p>
+                          
+                          {message.response?.artifact_type && (
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>Artifact Type</p>
+                            <p style={styles.accentText}>{message.response.artifact_type}</p>
+                          </div>
+                        )}
+
+                        {message.response?.artifact_details && (
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>Artifact Details</p>
+
+                            {message.response.artifact_details.name && (
+                              <p style={styles.bodyText}>
+                                <strong>Name:</strong> {message.response.artifact_details.name}
+                              </p>
+                            )}
+
+                            {message.response.artifact_details.table && (
+                              <p style={styles.bodyText}>
+                                <strong>Table:</strong> {message.response.artifact_details.table}
+                              </p>
+                            )}
+
+                            {message.response.artifact_details.trigger && (
+                              <p style={styles.bodyText}>
+                                <strong>Trigger:</strong> {message.response.artifact_details.trigger}
+                              </p>
+                            )}
+
+                            {message.response.artifact_details.condition && (
+                              <p style={styles.bodyText}>
+                                <strong>Condition:</strong> {message.response.artifact_details.condition}
+                              </p>
+                            )}
+
+                            {message.response.artifact_details.recipients?.length > 0 && (
+                              <>
+                                <p style={styles.label}>Recipients</p>
+                                <ul style={styles.list}>
+                                  {message.response.artifact_details.recipients.map((item, i) => (
+                                    <li key={i}>{item}</li>
+                                  ))}
+                                </ul>
+                              </>
+                            )}
+
+                            {message.response.artifact_details.subject && (
+                              <p style={styles.bodyText}>
+                                <strong>Subject:</strong> {message.response.artifact_details.subject}
+                              </p>
+                            )}
+
+                            {message.response.artifact_details.body && (
+                              <>
+                                <p style={styles.label}>Body / Content</p>
+                                <p style={styles.bodyText}>{message.response.artifact_details.body}</p>
+                              </>
+                            )}
+
+                            {message.response.artifact_details.steps?.length > 0 && (
+                              <>
+                                <p style={styles.label}>Steps</p>
+                                <ol style={styles.list}>
+                                  {message.response.artifact_details.steps.map((item, i) => (
+                                    <li key={i}>{item}</li>
+                                  ))}
+                                </ol>
+                              </>
+                            )}
+
+                            {message.response.artifact_details.roles?.length > 0 && (
+                              <>
+                                <p style={styles.label}>Roles</p>
+                                <ul style={styles.list}>
+                                  {message.response.artifact_details.roles.map((item, i) => (
+                                    <li key={i}>{item}</li>
+                                  ))}
+                                </ul>
+                              </>
+                            )}
+
+                            {message.response.artifact_details.fields?.length > 0 && (
+                              <>
+                                <p style={styles.label}>Fields</p>
+                                <ul style={styles.list}>
+                                  {message.response.artifact_details.fields.map((item, i) => (
+                                    <li key={i}>{item}</li>
+                                  ))}
+                                </ul>
+                              </>
+                            )}
+
+                            {message.response.artifact_details.expected_result && (
+                              <p style={styles.bodyText}>
+                                <strong>Expected Result:</strong>{" "}
+                                {message.response.artifact_details.expected_result}
+                              </p>
+                            )}
+
+                            {message.response.artifact_details.notes?.length > 0 && (
+                              <>
+                                <p style={styles.label}>Notes</p>
+                                <ul style={styles.list}>
+                                  {message.response.artifact_details.notes.map((item, i) => (
+                                    <li key={i}>{item}</li>
+                                  ))}
+                                </ul>
+                              </>
+                            )}
+
+                            <button
+                              onClick={() =>
+                                copyToClipboard(
+                                  JSON.stringify(message.response?.artifact_details, null, 2)
+                                )
+                              }
+                              style={{
+                                ...styles.secondaryButton,
+                                marginTop: "14px",
+                              }}
+                            >
+                              Copy Artifact Details
+                            </button>
+                          </div>
+                        )}
+
+                          {message.response && (
+                            <div style={{ marginTop: "14px" }}>
+                              {message.response.delivery_lead_recommendation && (
+                                <div style={styles.innerCard}>
+                                  <p style={styles.label}>Recommendation</p>
+                                  <p style={styles.bodyText}>
+                                    {message.response.delivery_lead_recommendation}
+                                  </p>
+                                </div>
+                              )}
+
+                              {message.response.impacted_sections?.length > 0 && (
+                                <div style={{ ...styles.innerCard, marginTop: "12px" }}>
+                                  <p style={styles.label}>Impacted Sections</p>
+                                  <ul style={styles.list}>
+                                    {message.response.impacted_sections.map((item, i) => (
+                                      <li key={i}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {message.response.follow_up_questions?.length > 0 && (
+                                <div style={{ ...styles.innerCard, marginTop: "12px" }}>
+                                  <p style={styles.label}>Follow-Up Questions</p>
+                                  <ul style={styles.list}>
+                                    {message.response.follow_up_questions.map((item, i) => (
+                                      <li key={i}>{item}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+
+                              {message.response.suggested_requirement_update && (
+                                <div style={{ ...styles.riskBox, marginTop: "12px" }}>
+                                  <p style={styles.riskTitle}>Suggested Requirement Update</p>
+                                  <p style={styles.bodyText}>
+                                    {message.response.suggested_requirement_update}
+                                  </p>
+
+                                  <button
+                                    onClick={() =>
+                                      applyDeliveryLeadRequirementUpdate(
+                                        message.response?.suggested_requirement_update || ""
+                                      )
+                                    }
+                                    style={{
+                                      ...styles.button,
+                                      marginTop: "14px",
+                                    }}
+                                  >
+                                    Apply to Requirement
+                                  </button>
+                                </div>
+                              )}
+
+                              {message.response.recommended_next_action && (
+                                <p style={{ ...styles.accentText, marginTop: "12px" }}>
+                                  Recommended Next Action: {message.response.recommended_next_action}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <textarea
+                    value={deliveryLeadMessage}
+                    onChange={(e) => setDeliveryLeadMessage(e.target.value)}
+                    placeholder="Ask the Delivery Lead: What is missing? Should this be a scoped app or catalog item? Update the requirement to include a rejection path..."
+                    style={styles.regenerateTextarea}
+                  />
+
+                  <div style={isMobile ? styles.mobileActionRow : styles.exportActions}>
+                    <button
+                      onClick={askDeliveryLead}
+                      disabled={deliveryLeadThinking || loading}
+                      style={{
+                        ...styles.button,
+                        opacity: deliveryLeadThinking || loading ? 0.65 : 1,
+                        cursor: deliveryLeadThinking || loading ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {deliveryLeadThinking ? "Thinking..." : "Ask Delivery Lead"}
+                    </button>
+
+                    <button
+                      onClick={() => setDeliveryLeadChat([])}
+                      style={styles.secondaryButton}
+                    >
+                      Clear Chat
+                    </button>
+                  </div>
+                </div>
+              </Card>
+            )}
+
             {packageTab === "export" && (
               <Card
                 title="Export Package"
@@ -3575,7 +3949,7 @@ projectMeta: {
   top: "0",
   zIndex: 30,
   display: "grid",
-  gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+  gridTemplateColumns: "repeat(8, minmax(0, 1fr))",
   gap: "10px",
   padding: "12px",
   background: "rgba(255, 255, 255, 0.92)",
@@ -3942,6 +4316,19 @@ mermaidCodeBlock: {
     fontSize: "14px",
     lineHeight: "1.7",
     marginBottom: "16px",
+  },
+  chatUserBubble: {
+    background: "#EFF6FF",
+    border: "1px solid #BFDBFE",
+    borderRadius: "18px",
+    padding: "18px",
+  },
+  chatLeadBubble: {
+    background: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    padding: "18px",
+    boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)",
   },
   mobileContainer: {
     padding: "18px",
