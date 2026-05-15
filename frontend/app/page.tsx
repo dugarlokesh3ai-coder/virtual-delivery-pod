@@ -128,8 +128,9 @@ type IntakeAnalysis = {
 };
 
 type DeliveryResult = {
+  generation_mode?: "quick" | "full";
   delivery_lead_review: DeliveryLeadReview;
-  process_diagram: ProcessDiagram;
+  process_diagram: ProcessDiagram | null;
   requirement_summary: string;
   solution_design: string;
   recommended_app_type: string;
@@ -141,9 +142,9 @@ type DeliveryResult = {
   stories: StoryItem[];
   story_assumptions: string[];
   story_dependencies: string[];
-  developer: DeveloperOutput;
-  qa: QAOutput;
-  quality_score: QualityScore;
+  developer: DeveloperOutput | null;
+  qa: QAOutput | null;
+  quality_score: QualityScore | null;
 };
 
 type QualityScore = {
@@ -606,43 +607,64 @@ export default function Home() {
     setShowTemplates(false);
   }
 
-  async function generatePackage() {
+  async function generatePackage(mode: "quick" | "full" = "full") {
     if (!requirement.trim() && files.length === 0) {
       alert("Paste a business process or upload a document first.");
       return;
     }
 
     setLoading(true);
-    setLoadingStage("Reading requirement and uploaded documents...");
+    setLoadingStage(
+      mode === "quick"
+        ? "Generating quick delivery package..."
+        : "Reading requirement and uploaded documents..."
+    );
 
-    const stageTimers = [
-      setTimeout(
-        () => setLoadingStage("Architect is creating solution design..."),
-        900
-      ),
-      setTimeout(
-        () =>
-          setLoadingStage("BSA is writing stories and acceptance criteria..."),
-        2600
-      ),
-      setTimeout(
-        () => setLoadingStage("Developer is preparing technical notes..."),
-        5200
-      ),
-      setTimeout(
-        () => setLoadingStage("QA is building test cases and UAT scenarios..."),
-        7800
-      ),
-      setTimeout(
-        () => setLoadingStage("Delivery Lead is assembling final package..."),
-        10400
-      ),
-    ];
+    const stageTimers =
+      mode === "quick"
+        ? [
+            setTimeout(
+              () => setLoadingStage("Architect is creating quick solution design..."),
+              900
+            ),
+            setTimeout(
+              () => setLoadingStage("BSA is creating core stories..."),
+              2400
+            ),
+            setTimeout(
+              () => setLoadingStage("Delivery Lead is assembling quick package..."),
+              4200
+            ),
+          ]
+        : [
+            setTimeout(
+              () => setLoadingStage("Architect is creating solution design..."),
+              900
+            ),
+            setTimeout(
+              () =>
+                setLoadingStage("BSA is writing stories and acceptance criteria..."),
+              2600
+            ),
+            setTimeout(
+              () => setLoadingStage("Developer is preparing technical notes..."),
+              5200
+            ),
+            setTimeout(
+              () => setLoadingStage("QA is building test cases and UAT scenarios..."),
+              7800
+            ),
+            setTimeout(
+              () => setLoadingStage("Delivery Lead is assembling final package..."),
+              10400
+            ),
+          ];
 
     try {
       const formData = new FormData();
 
       formData.append("requirement", buildRequirementWithClarifications());
+      formData.append("generation_mode", mode);
 
       files.forEach((file) => {
         formData.append("files", file);
@@ -660,7 +682,7 @@ export default function Home() {
       const data = await response.json();
       setResult(data);
       setActiveTab("stories");
-      setPackageTab("overview");
+      setPackageTab(mode === "quick" ? "design" : "overview");
     } catch (error) {
       console.error(error);
       alert("Something failed. Check your backend terminal.");
@@ -1619,7 +1641,19 @@ ${uat.expected_result}
             </button>
 
             <button
-              onClick={generatePackage}
+              onClick={() => generatePackage("quick")}
+              disabled={loading || analyzing}
+              style={{
+                ...styles.secondaryButton,
+                opacity: loading || analyzing ? 0.65 : 1,
+                cursor: loading || analyzing ? "not-allowed" : "pointer",
+              }}
+            >
+              {loading ? "Generating..." : "Quick Package"}
+            </button>
+
+            <button
+              onClick={() => generatePackage("full")}
               disabled={loading || analyzing}
               style={{
                 ...styles.button,
@@ -1627,7 +1661,7 @@ ${uat.expected_result}
                 cursor: loading || analyzing ? "not-allowed" : "pointer",
               }}
             >
-              {loading ? "Generating..." : "Generate Package"}
+              {loading ? "Generating..." : "Full Detailed Package"}
             </button>
           </div>
         </section>
@@ -1733,7 +1767,19 @@ ${uat.expected_result}
                   </button>
 
                   <button
-                    onClick={generatePackage}
+                    onClick={() => generatePackage("quick")}
+                    disabled={loading || analyzing}
+                    style={{
+                      ...styles.secondaryButton,
+                      opacity: loading || analyzing ? 0.65 : 1,
+                      cursor: loading || analyzing ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Quick Package with Answers
+                  </button>
+
+                  <button
+                    onClick={() => generatePackage("full")}
                     disabled={loading || analyzing}
                     style={{
                       ...styles.button,
@@ -1741,7 +1787,7 @@ ${uat.expected_result}
                       cursor: loading || analyzing ? "not-allowed" : "pointer",
                     }}
                   >
-                    Generate Package with Answers
+                    Full Detailed Package with Answers
                   </button>
 
                   <button
