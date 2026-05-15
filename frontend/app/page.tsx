@@ -726,131 +726,133 @@ export default function Home() {
   }
 
   async function upgradeQuickPackageToFull() {
-  if (!result) {
-    alert("Generate a quick package first.");
-    return;
-  }
+    if (!result) {
+      alert("Generate a quick package first.");
+      return;
+    }
 
-  if (result.generation_mode !== "quick") {
-    alert("This package is already a full package.");
-    return;
+    if (result.developer && result.qa && result.quality_score) {
+      alert("This package is already a full package.");
+      return;
+    }
+
+    setLoading(true);
+    setLoadingStage("Upgrading quick package to full detailed package...");
+
+    const stageTimers = [
+      setTimeout(
+        () => setLoadingStage("Developer is preparing technical notes..."),
+        900
+      ),
+      setTimeout(
+        () => setLoadingStage("Creating process/state flow diagram..."),
+        2200
+      ),
+      setTimeout(
+        () => setLoadingStage("QA is building test cases and UAT scenarios..."),
+        4200
+      ),
+      setTimeout(
+        () => setLoadingStage("Quality gate is scoring the full package..."),
+        6800
+      ),
+    ];
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/upgrade-package`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requirement: buildRequirementWithClarifications(),
+          current_package: result,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Upgrade failed response:", response.status, errorText);
+        throw new Error(`Upgrade package failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      setResult(data);
+      setPackageTab("overview");
+    } catch (error) {
+      console.error(error);
+      alert("Upgrade failed. Check your backend logs.");
+    } finally {
+      stageTimers.forEach((timer) => clearTimeout(timer));
+      setLoading(false);
+      setLoadingStage("");
+    }
   }
 
   async function runAgentReview() {
-  if (!result) {
-    alert("Generate a package first.");
-    return;
-  }
-
-  setLoading(true);
-  setLoadingStage("Agent review board is reviewing the package...");
-
-  const stageTimers = [
-    setTimeout(
-      () => setLoadingStage("Architect is reviewing solution design..."),
-      900
-    ),
-    setTimeout(
-      () => setLoadingStage("Developer is reviewing implementation detail..."),
-      2400
-    ),
-    setTimeout(
-      () => setLoadingStage("QA is reviewing test coverage..."),
-      4200
-    ),
-    setTimeout(
-      () => setLoadingStage("Delivery Lead is reviewing delivery readiness..."),
-      6200
-    ),
-  ];
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/agent-review`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        requirement: buildRequirementWithClarifications(),
-        current_package: result,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Agent review failed response:", response.status, errorText);
-      throw new Error(`Agent review failed: ${response.status}`);
+    if (!result) {
+      alert("Generate a package first.");
+      return;
     }
 
-    const review = await response.json();
+    setLoading(true);
+    setLoadingStage("Agent review board is reviewing the package...");
 
-    setResult({
-      ...result,
-      agent_review: review,
-    });
+    const stageTimers = [
+      setTimeout(
+        () => setLoadingStage("Architect is reviewing solution design..."),
+        900
+      ),
+      setTimeout(
+        () => setLoadingStage("Developer is reviewing implementation detail..."),
+        2400
+      ),
+      setTimeout(
+        () => setLoadingStage("QA is reviewing test coverage..."),
+        4200
+      ),
+      setTimeout(
+        () => setLoadingStage("Delivery Lead is reviewing delivery readiness..."),
+        6200
+      ),
+    ];
 
-    setPackageTab("review");
-  } catch (error) {
-    console.error(error);
-    alert("Agent review failed. Check backend logs.");
-  } finally {
-    stageTimers.forEach((timer) => clearTimeout(timer));
-    setLoading(false);
-    setLoadingStage("");
-  }
-}
+    try {
+      const response = await fetch(`${API_BASE_URL}/agent-review`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requirement: buildRequirementWithClarifications(),
+          current_package: result,
+        }),
+      });
 
-  setLoading(true);
-  setLoadingStage("Upgrading quick package to full detailed package...");
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Agent review failed response:", response.status, errorText);
+        throw new Error(`Agent review failed: ${response.status}`);
+      }
 
-  const stageTimers = [
-    setTimeout(
-      () => setLoadingStage("Developer is preparing technical notes..."),
-      900
-    ),
-    setTimeout(
-      () => setLoadingStage("Creating process/state flow diagram..."),
-      2200
-    ),
-    setTimeout(
-      () => setLoadingStage("QA is building test cases and UAT scenarios..."),
-      4200
-    ),
-    setTimeout(
-      () => setLoadingStage("Quality gate is scoring the full package..."),
-      6800
-    ),
-  ];
+      const review = await response.json();
 
-  try {
-    const response = await fetch(`${API_BASE_URL}/upgrade-package`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        requirement: buildRequirementWithClarifications(),
-        current_package: result,
-      }),
-    });
+      setResult({
+        ...result,
+        agent_review: review,
+      });
 
-    if (!response.ok) {
-      throw new Error("Upgrade package failed");
+      setPackageTab("review");
+    } catch (error) {
+      console.error(error);
+      alert("Agent review failed. Check backend logs.");
+    } finally {
+      stageTimers.forEach((timer) => clearTimeout(timer));
+      setLoading(false);
+      setLoadingStage("");
     }
-
-    const data = await response.json();
-
-    setResult(data);
-    setPackageTab("overview");
-  } catch (error) {
-    console.error(error);
-    alert("Upgrade failed. Check your backend logs.");
-  } finally {
-    stageTimers.forEach((timer) => clearTimeout(timer));
-    setLoading(false);
-    setLoadingStage("");
   }
-}
 
   async function copyToClipboard(value: string) {
     await navigator.clipboard.writeText(value);
@@ -1985,7 +1987,7 @@ ${uat.expected_result}
                 <p style={styles.muted}>
                   Use the section tabs to review, refine, and export the package without scrolling through the full output.
                 </p>
-                {result.generation_mode === "quick" && (
+                {(!result.developer || !result.qa || !result.quality_score) && (
                   <div style={{ marginTop: "14px" }}>
                     <button
                       onClick={upgradeQuickPackageToFull}
