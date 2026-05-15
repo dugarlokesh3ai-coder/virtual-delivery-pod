@@ -159,6 +159,16 @@ type QualityScore = {
 };
 
 type ActiveTab = "stories" | "technical" | "qa";
+type PackageTab = "overview" | "design" | "stories" | "technical" | "qa" | "export";
+
+const PACKAGE_TABS: { id: PackageTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "design", label: "Design" },
+  { id: "stories", label: "Stories" },
+  { id: "technical", label: "Technical" },
+  { id: "qa", label: "QA" },
+  { id: "export", label: "Export" },
+];
 
 type SavedProject = {
   id: string;
@@ -331,6 +341,7 @@ export default function Home() {
   const [result, setResult] = useState<DeliveryResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("stories");
+  const [packageTab, setPackageTab] = useState<PackageTab>("overview");
   const [files, setFiles] = useState<File[]>([]);
   const [loadingStage, setLoadingStage] = useState("");
 
@@ -350,6 +361,9 @@ export default function Home() {
   const [projectName, setProjectName] = useState("");
   const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+
+  const API_BASE_URL =
+    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
   const [showTemplates, setShowTemplates] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -408,7 +422,7 @@ export default function Home() {
         formData.append("files", file);
       });
 
-      const response = await fetch("http://127.0.0.1:8000/analyze-requirement", {
+      const response = await fetch(`${API_BASE_URL}/analyze-requirement`, {
         method: "POST",
         body: formData,
       });
@@ -493,6 +507,7 @@ export default function Home() {
     setIntakeAnalysis(null);
     setActiveProjectId(project.id);
     setActiveTab("stories");
+    setPackageTab("overview");
     setRegenerateInstruction("");
   }
 
@@ -508,6 +523,7 @@ export default function Home() {
     setResult(null);
 
     setActiveTab("stories");
+    setPackageTab("overview");
     setLoadingStage("");
 
     setCodeModalOpen(false);
@@ -576,6 +592,7 @@ export default function Home() {
     setResult(null);
     setActiveProjectId(null);
     setActiveTab("stories");
+    setPackageTab("overview");
     setLoadingStage("");
     setRegenerateInstruction("");
     setRegeneratingSection("");
@@ -624,7 +641,7 @@ export default function Home() {
         formData.append("files", file);
       });
 
-      const response = await fetch("http://127.0.0.1:8000/generate", {
+      const response = await fetch(`${API_BASE_URL}/generate`, {
         method: "POST",
         body: formData,
       });
@@ -636,6 +653,7 @@ export default function Home() {
       const data = await response.json();
       setResult(data);
       setActiveTab("stories");
+      setPackageTab("overview");
     } catch (error) {
       console.error(error);
       alert("Something failed. Check your backend terminal.");
@@ -857,7 +875,7 @@ ${uat.expected_result}
     setSelectedCode("");
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/generate-code", {
+      const response = await fetch(`${API_BASE_URL}/generate-code`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -912,7 +930,7 @@ ${uat.expected_result}
     setLoadingStage(`Regenerating ${section.replaceAll("_", " ")}...`);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/regenerate-section", {
+      const response = await fetch(`${API_BASE_URL}/regenerate-section`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1745,401 +1763,421 @@ ${uat.expected_result}
         )}
 
         {result && (
-          <section style={styles.results}>
-            <Card
-              title="Delivery Lead Review"
-              copyValue={JSON.stringify(result.delivery_lead_review, null, 2)}
-              onCopy={copyToClipboard}
-            >
-              {result.delivery_lead_review ? (
-                <div style={styles.stack}>
-                  <div style={styles.innerCard}>
-                    <p style={styles.label}>Understanding</p>
-                    <p style={styles.bodyText}>
-                      {result.delivery_lead_review.understanding}
-                    </p>
-                  </div>
-                  <div style={responsiveTwoGrid}>
-                    <div style={styles.innerCard}>
-                      <p style={styles.label}>MVP Scope</p>
-                      <ul style={styles.list}>
-                        {result.delivery_lead_review.mvp_scope?.map(
-                          (item, index) => (
-                            <li key={index}>{item}</li>
-                          )
-                        )}
-                      </ul>
-                    </div>
+          <section style={styles.packageWorkspace}>
+            <div style={styles.packageSummaryCard}>
+              <div>
+                <p style={styles.label}>Generated Package</p>
+                <h2 style={styles.packageTitle}>
+                  {projectName || "Current Delivery Package"}
+                </h2>
+                <p style={styles.muted}>
+                  Use the section tabs to review, refine, and export the package without scrolling through the full output.
+                </p>
+              </div>
 
-                    <div style={styles.innerCard}>
-                      <p style={styles.label}>Phase 2 Scope</p>
-                      <ul style={styles.list}>
-                        {result.delivery_lead_review.phase_2_scope?.map(
-                          (item, index) => (
-                            <li key={index}>{item}</li>
-                          )
-                        )}
-                      </ul>
-                    </div>
-                  </div>
-
-                  <div style={responsiveTwoGrid}>
-                    <div style={styles.innerCard}>
-                      <p style={styles.label}>Clarifying Questions</p>
-                      <ul style={styles.list}>
-                        {result.delivery_lead_review.clarifying_questions?.map(
-                          (question, index) => (
-                            <li key={index}>{question}</li>
-                          )
-                        )}
-                      </ul>
-                    </div>
-
-                    <div style={styles.innerCard}>
-                      <p style={styles.label}>Recommended Next Steps</p>
-                      <ul style={styles.list}>
-                        {result.delivery_lead_review.recommended_next_steps?.map(
-                          (step, index) => (
-                            <li key={index}>{step}</li>
-                          )
-                        )}
-                      </ul>
-                    </div>
-                  </div>
-
-                  {result.delivery_lead_review.missing_requirements?.length >
-                    0 && (
-                    <div style={styles.innerCard}>
-                      <p style={styles.label}>Missing / Weak Requirements</p>
-                      <div style={styles.stack}>
-                        {result.delivery_lead_review.missing_requirements.map(
-                          (item, index) => (
-                            <div key={index} style={styles.riskBox}>
-                              <p style={styles.riskTitle}>{item.gap}</p>
-                              <p style={styles.bodyText}>
-                                <strong>Why it matters:</strong>{" "}
-                                {item.why_it_matters}
-                              </p>
-                            </div>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {result.delivery_lead_review.assumptions?.length > 0 && (
-                    <div style={styles.innerCard}>
-                      <p style={styles.label}>Assumptions</p>
-                      <ul style={styles.list}>
-                        {result.delivery_lead_review.assumptions.map(
-                          (item, index) => (
-                            <li key={index}>{item}</li>
-                          )
-                        )}
-                      </ul>
-                    </div>
-                  )}
-
-                  <RegeneratePanel
-                    section="delivery_lead_review"
-                    instruction={regenerateInstruction}
-                    setInstruction={setRegenerateInstruction}
-                    regeneratingSection={regeneratingSection}
-                    onRegenerate={regenerateSection}
-                  />
+              <div style={isMobile ? styles.mobileSnapshotGrid : styles.snapshotGrid}>
+                <div style={styles.snapshotMetric}>
+                  <p style={styles.label}>Quality</p>
+                  <p style={styles.snapshotNumber}>
+                    {result.quality_score?.overall_score || 0}
+                  </p>
+                  <p style={styles.snapshotText}>/ 100</p>
                 </div>
-              ) : (
-                <p style={styles.muted}>No Delivery Lead review generated.</p>
-              )}
-            </Card>
-
-              <Card
-  title="Delivery Quality Score"
-  copyValue={JSON.stringify(result.quality_score, null, 2)}
-  onCopy={copyToClipboard}
->
-  {result.quality_score ? (
-    <div style={styles.stack}>
-      <div style={responsiveScoreGrid}>
-        <ScoreBox
-          label="Overall"
-          score={result.quality_score.overall_score}
-          color={getScoreColor(result.quality_score.overall_score)}
-          background={getScoreBackground(result.quality_score.overall_score)}
-        />
-
-        <ScoreBox
-          label="Completeness"
-          score={result.quality_score.completeness_score}
-          color={getScoreColor(result.quality_score.completeness_score)}
-          background={getScoreBackground(result.quality_score.completeness_score)}
-        />
-
-        <ScoreBox
-          label="Risk"
-          score={result.quality_score.risk_score}
-          color={getScoreColor(result.quality_score.risk_score)}
-          background={getScoreBackground(result.quality_score.risk_score)}
-        />
-
-        <ScoreBox
-          label="Readiness"
-          score={result.quality_score.readiness_score}
-          color={getScoreColor(result.quality_score.readiness_score)}
-          background={getScoreBackground(result.quality_score.readiness_score)}
-        />
-      </div>
-
-      <div style={styles.innerCard}>
-        <p style={styles.label}>Rating</p>
-        <p style={styles.accentText}>{result.quality_score.rating}</p>
-        <p style={styles.bodyText}>{result.quality_score.summary}</p>
-      </div>
-
-      <div style={responsiveTwoGrid}>
-        <div style={styles.innerCard}>
-          <p style={styles.label}>Strengths</p>
-          <ul style={styles.list}>
-            {result.quality_score.strengths?.map((item, index) => (
-              <li key={index}>{item}</li>
-            ))}
-          </ul>
-        </div>
-
-        <div style={styles.innerCard}>
-          <p style={styles.label}>Weaknesses</p>
-          <ul style={styles.list}>
-            {result.quality_score.weaknesses?.map((item, index) => (
-              <li key={index}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      <div style={styles.innerCard}>
-        <p style={styles.label}>Recommended Fixes</p>
-        <ul style={styles.list}>
-          {result.quality_score.recommended_fixes?.map((item, index) => (
-            <li key={index}>{item}</li>
-          ))}
-        </ul>
-      </div>
-
-      <RegeneratePanel
-        section="quality_score"
-        instruction={regenerateInstruction}
-        setInstruction={setRegenerateInstruction}
-        regeneratingSection={regeneratingSection}
-        onRegenerate={regenerateSection}
-      />
-    </div>
-  ) : (
-    <p style={styles.muted}>No quality score generated.</p>
-  )}
-</Card>
-
-            <Card
-                    title="Process / State Flow Diagram"
-                    copyValue={result.process_diagram?.mermaid_code || ""}
-                    onCopy={copyToClipboard}
-                  >
-                    {result.process_diagram ? (
-                      <div style={styles.stack}>
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>{result.process_diagram.title}</p>
-                          <p style={styles.bodyText}>{result.process_diagram.summary}</p>
-                        </div>
-
-                        <div style={styles.diagramShell}>
-                          <MermaidDiagram chart={result.process_diagram.mermaid_code} />
-                        </div>
-
-                        <details style={styles.detailsBox}>
-                          <summary style={styles.detailsSummary}>View Mermaid Code</summary>
-                          <pre style={styles.mermaidCodeBlock}>
-                            {result.process_diagram.mermaid_code}
-                          </pre>
-                        </details>
-
-                        {result.process_diagram.diagram_notes?.length > 0 && (
-                          <div style={styles.innerCard}>
-                            <p style={styles.label}>Diagram Notes</p>
-                            <ul style={styles.list}>
-                              {result.process_diagram.diagram_notes.map((note, index) => (
-                                <li key={index}>{note}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        <RegeneratePanel
-                          section="process_diagram"
-                          instruction={regenerateInstruction}
-                          setInstruction={setRegenerateInstruction}
-                          regeneratingSection={regeneratingSection}
-                          onRegenerate={regenerateSection}
-                        />
-                      </div>
-                    ) : (
-                      <p style={styles.muted}>No diagram generated.</p>
-                    )}
-                  </Card>  
-
-            <div style={responsiveTopGrid}>
-              <Card
-                title="Requirement Summary"
-                span={2}
-                copyValue={result.requirement_summary}
-                onCopy={copyToClipboard}
-              >
-                <p style={styles.bodyText}>{result.requirement_summary}</p>
-              </Card>
-
-              <Card
-                title="Recommended App Type"
-                copyValue={result.recommended_app_type}
-                onCopy={copyToClipboard}
-              >
-                <p style={styles.accentText}>{result.recommended_app_type}</p>
-              </Card>
-
-              <Card
-                title="Open Questions"
-                copyValue={result.open_questions?.join("\n")}
-                onCopy={copyToClipboard}
-              >
-                {result.open_questions?.length ? (
-                  <ul style={styles.list}>
-                    {result.open_questions.map((question, index) => (
-                      <li key={index}>{question}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p style={styles.muted}>No open questions identified.</p>
-                )}
-              </Card>
+                <div style={styles.snapshotMetric}>
+                  <p style={styles.label}>Stories</p>
+                  <p style={styles.snapshotNumber}>{result.stories?.length || 0}</p>
+                  <p style={styles.snapshotText}>generated</p>
+                </div>
+                <div style={styles.snapshotMetric}>
+                  <p style={styles.label}>Test Cases</p>
+                  <p style={styles.snapshotNumber}>{result.qa?.test_cases?.length || 0}</p>
+                  <p style={styles.snapshotText}>QA cases</p>
+                </div>
+                <div style={styles.snapshotMetric}>
+                  <p style={styles.label}>Tech Objects</p>
+                  <p style={styles.snapshotNumber}>
+                    {result.developer?.service_now_objects?.length || 0}
+                  </p>
+                  <p style={styles.snapshotText}>objects</p>
+                </div>
+                <div style={styles.snapshotMetric}>
+                  <p style={styles.label}>Open Questions</p>
+                  <p style={styles.snapshotNumber}>{result.open_questions?.length || 0}</p>
+                  <p style={styles.snapshotText}>items</p>
+                </div>
+              </div>
             </div>
 
-            <Card
-              title="Solution Design"
-              copyValue={result.solution_design}
-              onCopy={copyToClipboard}
-            >
-              <p style={styles.bodyText}>{result.solution_design}</p>
-              <div style={{ marginTop: "18px" }}>
-                <RegeneratePanel
-                  section="solution_design"
-                  instruction={regenerateInstruction}
-                  setInstruction={setRegenerateInstruction}
-                  regeneratingSection={regeneratingSection}
-                  onRegenerate={regenerateSection}
-                />
-              </div>
-            </Card>
+            <div style={isMobile ? styles.mobilePackageNav : styles.packageNav}>
+              {PACKAGE_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setPackageTab(tab.id)}
+                  style={
+                    packageTab === tab.id
+                      ? styles.activePackageTab
+                      : styles.inactivePackageTab
+                  }
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-            <Card
-              title="Proposed Tables"
-              copyValue={JSON.stringify(result.tables, null, 2)}
-              onCopy={copyToClipboard}
-            >
-              {result.tables?.length ? (
-                <table style={styles.table}>
-                  <thead>
-                    <tr>
-                      <th style={styles.th}>Table</th>
-                      <th style={styles.th}>Type</th>
-                      <th style={styles.th}>Purpose</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.tables.map((table, index) => (
-                      <tr key={index}>
-                        <td style={styles.tableName}>{table.table_name}</td>
-                        <td style={styles.td}>{table.type}</td>
-                        <td style={styles.td}>{table.purpose}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p style={styles.muted}>No tables returned.</p>
-              )}
-            </Card>
-
-            <div style={responsiveTwoGrid}>
-              <Card
-                title="Workflow Steps"
-                copyValue={result.workflow_steps?.join("\n")}
-                onCopy={copyToClipboard}
-              >
-                {result.workflow_steps?.length ? (
-                  <ol style={styles.list}>
-                    {result.workflow_steps.map((step, index) => (
-                      <li key={index}>{step}</li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p style={styles.muted}>No workflow steps returned.</p>
-                )}
-              </Card>
-
-              <Card
-                title="Risks"
-                copyValue={JSON.stringify(result.risks, null, 2)}
-                onCopy={copyToClipboard}
-              >
-                {result.risks?.length ? (
-                  <div style={styles.stack}>
-                    {result.risks.map((risk, index) => (
-                      <div key={index} style={styles.riskBox}>
-                        <p style={styles.riskTitle}>{risk.risk}</p>
+            {packageTab === "overview" && (
+              <div style={styles.results}>
+                <Card
+                  title="Delivery Lead Review"
+                  copyValue={JSON.stringify(result.delivery_lead_review, null, 2)}
+                  onCopy={copyToClipboard}
+                >
+                  {result.delivery_lead_review ? (
+                    <div style={styles.stack}>
+                      <div style={styles.innerCard}>
+                        <p style={styles.label}>Understanding</p>
                         <p style={styles.bodyText}>
-                          <strong>Mitigation:</strong> {risk.mitigation}
+                          {result.delivery_lead_review.understanding}
                         </p>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p style={styles.muted}>No risks returned.</p>
-                )}
-              </Card>
-            </div>
 
-            <Card
-              title="Delivery Artifacts"
-              copyValue={
-                activeTab === "stories"
-                  ? JSON.stringify(result.stories, null, 2)
-                  : activeTab === "technical"
-                  ? JSON.stringify(result.developer, null, 2)
-                  : JSON.stringify(result.qa, null, 2)
-              }
-              onCopy={copyToClipboard}
-            >
-              <div style={styles.tabs}>
-                <TabButton
-                  active={activeTab === "stories"}
-                  onClick={() => setActiveTab("stories")}
-                >
-                  Stories
-                </TabButton>
+                      <div style={responsiveTwoGrid}>
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>MVP Scope</p>
+                          <ul style={styles.list}>
+                            {result.delivery_lead_review.mvp_scope?.map((item, index) => (
+                              <li key={index}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
 
-                <TabButton
-                  active={activeTab === "technical"}
-                  onClick={() => setActiveTab("technical")}
-                >
-                  Technical Notes
-                </TabButton>
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Phase 2 Scope</p>
+                          <ul style={styles.list}>
+                            {result.delivery_lead_review.phase_2_scope?.map((item, index) => (
+                              <li key={index}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
 
-                <TabButton
-                  active={activeTab === "qa"}
-                  onClick={() => setActiveTab("qa")}
+                      <div style={responsiveTwoGrid}>
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Clarifying Questions</p>
+                          <ul style={styles.list}>
+                            {result.delivery_lead_review.clarifying_questions?.map((question, index) => (
+                              <li key={index}>{question}</li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Recommended Next Steps</p>
+                          <ul style={styles.list}>
+                            {result.delivery_lead_review.recommended_next_steps?.map((step, index) => (
+                              <li key={index}>{step}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      {result.delivery_lead_review.missing_requirements?.length > 0 && (
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Missing / Weak Requirements</p>
+                          <div style={styles.stack}>
+                            {result.delivery_lead_review.missing_requirements.map((item, index) => (
+                              <div key={index} style={styles.riskBox}>
+                                <p style={styles.riskTitle}>{item.gap}</p>
+                                <p style={styles.bodyText}>
+                                  <strong>Why it matters:</strong> {item.why_it_matters}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {result.delivery_lead_review.assumptions?.length > 0 && (
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Assumptions</p>
+                          <ul style={styles.list}>
+                            {result.delivery_lead_review.assumptions.map((item, index) => (
+                              <li key={index}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <RegeneratePanel
+                        section="delivery_lead_review"
+                        instruction={regenerateInstruction}
+                        setInstruction={setRegenerateInstruction}
+                        regeneratingSection={regeneratingSection}
+                        onRegenerate={regenerateSection}
+                      />
+                    </div>
+                  ) : (
+                    <p style={styles.muted}>No Delivery Lead review generated.</p>
+                  )}
+                </Card>
+
+                <Card
+                  title="Delivery Quality Score"
+                  copyValue={JSON.stringify(result.quality_score, null, 2)}
+                  onCopy={copyToClipboard}
                 >
-                  QA
-                </TabButton>
+                  {result.quality_score ? (
+                    <div style={styles.stack}>
+                      <div style={responsiveScoreGrid}>
+                        <ScoreBox
+                          label="Overall"
+                          score={result.quality_score.overall_score}
+                          color={getScoreColor(result.quality_score.overall_score)}
+                          background={getScoreBackground(result.quality_score.overall_score)}
+                        />
+                        <ScoreBox
+                          label="Completeness"
+                          score={result.quality_score.completeness_score}
+                          color={getScoreColor(result.quality_score.completeness_score)}
+                          background={getScoreBackground(result.quality_score.completeness_score)}
+                        />
+                        <ScoreBox
+                          label="Risk"
+                          score={result.quality_score.risk_score}
+                          color={getScoreColor(result.quality_score.risk_score)}
+                          background={getScoreBackground(result.quality_score.risk_score)}
+                        />
+                        <ScoreBox
+                          label="Readiness"
+                          score={result.quality_score.readiness_score}
+                          color={getScoreColor(result.quality_score.readiness_score)}
+                          background={getScoreBackground(result.quality_score.readiness_score)}
+                        />
+                      </div>
+
+                      <div style={styles.innerCard}>
+                        <p style={styles.label}>Rating</p>
+                        <p style={styles.accentText}>{result.quality_score.rating}</p>
+                        <p style={styles.bodyText}>{result.quality_score.summary}</p>
+                      </div>
+
+                      <div style={responsiveTwoGrid}>
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Strengths</p>
+                          <ul style={styles.list}>
+                            {result.quality_score.strengths?.map((item, index) => (
+                              <li key={index}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Weaknesses</p>
+                          <ul style={styles.list}>
+                            {result.quality_score.weaknesses?.map((item, index) => (
+                              <li key={index}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      <div style={styles.innerCard}>
+                        <p style={styles.label}>Recommended Fixes</p>
+                        <ul style={styles.list}>
+                          {result.quality_score.recommended_fixes?.map((item, index) => (
+                            <li key={index}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <RegeneratePanel
+                        section="quality_score"
+                        instruction={regenerateInstruction}
+                        setInstruction={setRegenerateInstruction}
+                        regeneratingSection={regeneratingSection}
+                        onRegenerate={regenerateSection}
+                      />
+                    </div>
+                  ) : (
+                    <p style={styles.muted}>No quality score generated.</p>
+                  )}
+                </Card>
+
+                <Card
+                  title="Process / State Flow Diagram"
+                  copyValue={result.process_diagram?.mermaid_code || ""}
+                  onCopy={copyToClipboard}
+                >
+                  {result.process_diagram ? (
+                    <div style={styles.stack}>
+                      <div style={styles.innerCard}>
+                        <p style={styles.label}>{result.process_diagram.title}</p>
+                        <p style={styles.bodyText}>{result.process_diagram.summary}</p>
+                      </div>
+
+                      <div style={styles.diagramShell}>
+                        <MermaidDiagram chart={result.process_diagram.mermaid_code} />
+                      </div>
+
+                      <details style={styles.detailsBox}>
+                        <summary style={styles.detailsSummary}>View Mermaid Code</summary>
+                        <pre style={styles.mermaidCodeBlock}>{result.process_diagram.mermaid_code}</pre>
+                      </details>
+
+                      {result.process_diagram.diagram_notes?.length > 0 && (
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Diagram Notes</p>
+                          <ul style={styles.list}>
+                            {result.process_diagram.diagram_notes.map((note, index) => (
+                              <li key={index}>{note}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <RegeneratePanel
+                        section="process_diagram"
+                        instruction={regenerateInstruction}
+                        setInstruction={setRegenerateInstruction}
+                        regeneratingSection={regeneratingSection}
+                        onRegenerate={regenerateSection}
+                      />
+                    </div>
+                  ) : (
+                    <p style={styles.muted}>No diagram generated.</p>
+                  )}
+                </Card>
               </div>
+            )}
 
-              {activeTab === "stories" && (
+            {packageTab === "design" && (
+              <div style={styles.results}>
+                <div style={responsiveTopGrid}>
+                  <Card
+                    title="Requirement Summary"
+                    span={2}
+                    copyValue={result.requirement_summary}
+                    onCopy={copyToClipboard}
+                  >
+                    <p style={styles.bodyText}>{result.requirement_summary}</p>
+                  </Card>
+
+                  <Card
+                    title="Recommended App Type"
+                    copyValue={result.recommended_app_type}
+                    onCopy={copyToClipboard}
+                  >
+                    <p style={styles.accentText}>{result.recommended_app_type}</p>
+                  </Card>
+
+                  <Card
+                    title="Open Questions"
+                    copyValue={result.open_questions?.join("\n")}
+                    onCopy={copyToClipboard}
+                  >
+                    {result.open_questions?.length ? (
+                      <ul style={styles.list}>
+                        {result.open_questions.map((question, index) => (
+                          <li key={index}>{question}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p style={styles.muted}>No open questions identified.</p>
+                    )}
+                  </Card>
+                </div>
+
+                <Card
+                  title="Solution Design"
+                  copyValue={result.solution_design}
+                  onCopy={copyToClipboard}
+                >
+                  <div style={styles.stack}>
+                    <p style={styles.bodyText}>{result.solution_design}</p>
+                    <RegeneratePanel
+                      section="solution_design"
+                      instruction={regenerateInstruction}
+                      setInstruction={setRegenerateInstruction}
+                      regeneratingSection={regeneratingSection}
+                      onRegenerate={regenerateSection}
+                    />
+                  </div>
+                </Card>
+
+                <Card
+                  title="Proposed Tables"
+                  copyValue={JSON.stringify(result.tables, null, 2)}
+                  onCopy={copyToClipboard}
+                >
+                  {result.tables?.length ? (
+                    <table style={styles.table}>
+                      <thead>
+                        <tr>
+                          <th style={styles.th}>Table</th>
+                          <th style={styles.th}>Type</th>
+                          <th style={styles.th}>Purpose</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.tables.map((table, index) => (
+                          <tr key={index}>
+                            <td style={styles.tableName}>{table.table_name}</td>
+                            <td style={styles.td}>{table.type}</td>
+                            <td style={styles.td}>{table.purpose}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p style={styles.muted}>No tables returned.</p>
+                  )}
+                </Card>
+
+                <div style={responsiveTwoGrid}>
+                  <Card
+                    title="Workflow Steps"
+                    copyValue={result.workflow_steps?.join("\n")}
+                    onCopy={copyToClipboard}
+                  >
+                    {result.workflow_steps?.length ? (
+                      <ol style={styles.list}>
+                        {result.workflow_steps.map((step, index) => (
+                          <li key={index}>{step}</li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p style={styles.muted}>No workflow steps returned.</p>
+                    )}
+                  </Card>
+
+                  <Card
+                    title="Risks"
+                    copyValue={JSON.stringify(result.risks, null, 2)}
+                    onCopy={copyToClipboard}
+                  >
+                    {result.risks?.length ? (
+                      <div style={styles.stack}>
+                        {result.risks.map((risk, index) => (
+                          <div key={index} style={styles.riskBox}>
+                            <p style={styles.riskTitle}>{risk.risk}</p>
+                            <p style={styles.bodyText}>
+                              <strong>Mitigation:</strong> {risk.mitigation}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p style={styles.muted}>No risks returned.</p>
+                    )}
+                  </Card>
+                </div>
+              </div>
+            )}
+
+            {packageTab === "stories" && (
+              <Card
+                title="Stories"
+                copyValue={JSON.stringify(result.stories, null, 2)}
+                onCopy={copyToClipboard}
+              >
                 <div style={styles.stack}>
                   {result.epic && (
                     <div style={styles.innerCard}>
@@ -2163,20 +2201,16 @@ ${uat.expected_result}
                             <>
                               <p style={styles.label}>Acceptance Criteria</p>
                               <ul style={styles.list}>
-                                {story.acceptance_criteria.map(
-                                  (criteria, i) => (
-                                    <li key={i}>{criteria}</li>
-                                  )
-                                )}
+                                {story.acceptance_criteria.map((criteria, i) => (
+                                  <li key={i}>{criteria}</li>
+                                ))}
                               </ul>
                             </>
                           )}
 
                           <button
                             style={styles.smallCopyButton}
-                            onClick={() =>
-                              copyToClipboard(JSON.stringify(story, null, 2))
-                            }
+                            onClick={() => copyToClipboard(JSON.stringify(story, null, 2))}
                           >
                             Copy Story
                           </button>
@@ -2186,56 +2220,53 @@ ${uat.expected_result}
                   ) : (
                     <p style={styles.muted}>No stories generated.</p>
                   )}
-                </div>
-              )}
 
-              {activeTab === "technical" && (
+                  <RegeneratePanel
+                    section="stories"
+                    instruction={regenerateInstruction}
+                    setInstruction={setRegenerateInstruction}
+                    regeneratingSection={regeneratingSection}
+                    onRegenerate={regenerateSection}
+                  />
+                </div>
+              </Card>
+            )}
+
+            {packageTab === "technical" && (
+              <Card
+                title="Technical Notes"
+                copyValue={JSON.stringify(result.developer, null, 2)}
+                onCopy={copyToClipboard}
+              >
                 <div style={styles.stack}>
                   {result.developer ? (
                     <>
                       <div style={styles.innerCard}>
-                        <div style={styles.rowBetween}>
-                          <div>
-                            <p style={styles.label}>Implementation Summary</p>
-                            <p style={styles.bodyText}>
-                              {result.developer.implementation_summary}
-                            </p>
-                          </div>
-                        </div>
+                        <p style={styles.label}>Implementation Summary</p>
+                        <p style={styles.bodyText}>{result.developer.implementation_summary}</p>
                       </div>
 
                       {result.developer.service_now_objects?.length > 0 && (
                         <>
                           <p style={styles.label}>ServiceNow Objects</p>
                           <div style={responsiveTwoGrid}>
-                            {result.developer.service_now_objects.map(
-                              (object, index) => (
-                                <button
-                                  key={index}
-                                  style={styles.clickableInnerCard}
-                                  onClick={() =>
-                                    generateCodeForCard(
-                                      {
-                                        category: "ServiceNow Object",
-                                        ...object,
-                                      },
-                                      object.name
-                                    )
-                                  }
-                                >
-                                  <p style={styles.accentText}>{object.name}</p>
-                                  <p style={styles.muted}>
-                                    {object.object_type}
-                                  </p>
-                                  <p style={styles.bodyText}>
-                                    {object.purpose}
-                                  </p>
-                                  <p style={styles.clickHint}>
-                                    Click to generate implementation/code
-                                  </p>
-                                </button>
-                              )
-                            )}
+                            {result.developer.service_now_objects.map((object, index) => (
+                              <button
+                                key={index}
+                                style={styles.clickableInnerCard}
+                                onClick={() =>
+                                  generateCodeForCard(
+                                    { category: "ServiceNow Object", ...object },
+                                    object.name
+                                  )
+                                }
+                              >
+                                <p style={styles.accentText}>{object.name}</p>
+                                <p style={styles.muted}>{object.object_type}</p>
+                                <p style={styles.bodyText}>{object.purpose}</p>
+                                <p style={styles.clickHint}>Click to generate implementation/code</p>
+                              </button>
+                            ))}
                           </div>
                         </>
                       )}
@@ -2244,38 +2275,27 @@ ${uat.expected_result}
                         <>
                           <p style={styles.label}>Flow Designer</p>
                           <div style={responsiveTwoGrid}>
-                            {result.developer.flow_designer_notes.map(
-                              (flow, index) => (
-                                <button
-                                  key={index}
-                                  style={styles.clickableInnerCard}
-                                  onClick={() =>
-                                    generateCodeForCard(
-                                      {
-                                        category: "Flow Designer",
-                                        ...flow,
-                                      },
-                                      flow.flow_name
-                                    )
-                                  }
-                                >
-                                  <h3 style={styles.itemTitle}>
-                                    {flow.flow_name}
-                                  </h3>
-                                  <p style={styles.muted}>
-                                    Trigger: {flow.trigger}
-                                  </p>
-                                  <ol style={styles.list}>
-                                    {flow.steps.map((step, i) => (
-                                      <li key={i}>{step}</li>
-                                    ))}
-                                  </ol>
-                                  <p style={styles.clickHint}>
-                                    Click to generate implementation/code
-                                  </p>
-                                </button>
-                              )
-                            )}
+                            {result.developer.flow_designer_notes.map((flow, index) => (
+                              <button
+                                key={index}
+                                style={styles.clickableInnerCard}
+                                onClick={() =>
+                                  generateCodeForCard(
+                                    { category: "Flow Designer", ...flow },
+                                    flow.flow_name
+                                  )
+                                }
+                              >
+                                <h3 style={styles.itemTitle}>{flow.flow_name}</h3>
+                                <p style={styles.muted}>Trigger: {flow.trigger}</p>
+                                <ol style={styles.list}>
+                                  {flow.steps.map((step, i) => (
+                                    <li key={i}>{step}</li>
+                                  ))}
+                                </ol>
+                                <p style={styles.clickHint}>Click to generate implementation/code</p>
+                              </button>
+                            ))}
                           </div>
                         </>
                       )}
@@ -2284,51 +2304,54 @@ ${uat.expected_result}
                         <>
                           <p style={styles.label}>Business Rules</p>
                           <div style={responsiveTwoGrid}>
-                            {result.developer.business_rules.map(
-                              (rule, index) => (
-                                <button
-                                  key={index}
-                                  style={styles.clickableInnerCard}
-                                  onClick={() =>
-                                    generateCodeForCard(
-                                      {
-                                        category: "Business Rule",
-                                        ...rule,
-                                      },
-                                      rule.name
-                                    )
-                                  }
-                                >
-                                  <h3 style={styles.itemTitle}>{rule.name}</h3>
-                                  <p style={styles.muted}>
-                                    {rule.when} · {rule.condition}
-                                  </p>
-                                  <p style={styles.bodyText}>{rule.purpose}</p>
-                                  <p style={styles.clickHint}>
-                                    Click to generate implementation/code
-                                  </p>
-                                </button>
-                              )
-                            )}
+                            {result.developer.business_rules.map((rule, index) => (
+                              <button
+                                key={index}
+                                style={styles.clickableInnerCard}
+                                onClick={() =>
+                                  generateCodeForCard(
+                                    { category: "Business Rule", ...rule },
+                                    rule.name
+                                  )
+                                }
+                              >
+                                <h3 style={styles.itemTitle}>{rule.name}</h3>
+                                <p style={styles.muted}>{rule.when} · {rule.condition}</p>
+                                <p style={styles.bodyText}>{rule.purpose}</p>
+                                <p style={styles.clickHint}>Click to generate implementation/code</p>
+                              </button>
+                            ))}
                           </div>
                         </>
                       )}
+
+                      <RegeneratePanel
+                        section="developer"
+                        instruction={regenerateInstruction}
+                        setInstruction={setRegenerateInstruction}
+                        regeneratingSection={regeneratingSection}
+                        onRegenerate={regenerateSection}
+                      />
                     </>
                   ) : (
                     <p style={styles.muted}>No technical notes generated.</p>
                   )}
                 </div>
-              )}
+              </Card>
+            )}
 
-              {activeTab === "qa" && (
+            {packageTab === "qa" && (
+              <Card
+                title="QA"
+                copyValue={JSON.stringify(result.qa, null, 2)}
+                onCopy={copyToClipboard}
+              >
                 <div style={styles.stack}>
                   {result.qa ? (
                     <>
                       <div style={styles.innerCard}>
                         <p style={styles.label}>Test Strategy</p>
-                        <p style={styles.bodyText}>
-                          {result.qa.test_strategy}
-                        </p>
+                        <p style={styles.bodyText}>{result.qa.test_strategy}</p>
                       </div>
 
                       {result.qa.test_cases?.length > 0 && (
@@ -2338,32 +2361,22 @@ ${uat.expected_result}
                             {result.qa.test_cases.map((test, index) => (
                               <div key={index} style={styles.innerCard}>
                                 <div style={styles.rowBetween}>
-                                  <h3 style={styles.itemTitle}>
-                                    {test.id}: {test.title}
-                                  </h3>
+                                  <h3 style={styles.itemTitle}>{test.id}: {test.title}</h3>
                                   <Badge>{test.priority}</Badge>
                                 </div>
 
                                 <p style={styles.accentText}>{test.type}</p>
-
                                 <ol style={styles.list}>
                                   {test.steps.map((step, i) => (
                                     <li key={i}>{step}</li>
                                   ))}
                                 </ol>
-
                                 <p style={styles.bodyText}>
-                                  <strong>Expected:</strong>{" "}
-                                  {test.expected_result}
+                                  <strong>Expected:</strong> {test.expected_result}
                                 </p>
-
                                 <button
                                   style={styles.smallCopyButton}
-                                  onClick={() =>
-                                    copyToClipboard(
-                                      JSON.stringify(test, null, 2)
-                                    )
-                                  }
+                                  onClick={() => copyToClipboard(JSON.stringify(test, null, 2))}
                                 >
                                   Copy Test Case
                                 </button>
@@ -2379,27 +2392,19 @@ ${uat.expected_result}
                           <div style={responsiveTwoGrid}>
                             {result.qa.uat_cases.map((uat, index) => (
                               <div key={index} style={styles.innerCard}>
-                                <h3 style={styles.itemTitle}>
-                                  {uat.id}: {uat.title}
-                                </h3>
+                                <h3 style={styles.itemTitle}>{uat.id}: {uat.title}</h3>
                                 <p style={styles.muted}>{uat.persona}</p>
-
                                 <ol style={styles.list}>
                                   {uat.steps.map((step, i) => (
                                     <li key={i}>{step}</li>
                                   ))}
                                 </ol>
-
                                 <p style={styles.bodyText}>
-                                  <strong>Expected:</strong>{" "}
-                                  {uat.expected_result}
+                                  <strong>Expected:</strong> {uat.expected_result}
                                 </p>
-
                                 <button
                                   style={styles.smallCopyButton}
-                                  onClick={() =>
-                                    copyToClipboard(JSON.stringify(uat, null, 2))
-                                  }
+                                  onClick={() => copyToClipboard(JSON.stringify(uat, null, 2))}
                                 >
                                   Copy UAT Case
                                 </button>
@@ -2408,27 +2413,58 @@ ${uat.expected_result}
                           </div>
                         </>
                       )}
+
+                      <RegeneratePanel
+                        section="qa"
+                        instruction={regenerateInstruction}
+                        setInstruction={setRegenerateInstruction}
+                        regeneratingSection={regeneratingSection}
+                        onRegenerate={regenerateSection}
+                      />
                     </>
                   ) : (
                     <p style={styles.muted}>No QA generated.</p>
                   )}
                 </div>
-              )}
+              </Card>
+            )}
 
-              <RegeneratePanel
-                section={
-                  activeTab === "stories"
-                    ? "stories"
-                    : activeTab === "technical"
-                    ? "developer"
-                    : "qa"
-                }
-                instruction={regenerateInstruction}
-                setInstruction={setRegenerateInstruction}
-                regeneratingSection={regeneratingSection}
-                onRegenerate={regenerateSection}
-              />
-            </Card>
+            {packageTab === "export" && (
+              <Card
+                title="Export Package"
+                copyValue={buildMarkdown(result)}
+                onCopy={copyToClipboard}
+              >
+                <div style={styles.stack}>
+                  <div style={styles.innerCard}>
+                    <p style={styles.label}>Export Options</p>
+                    <p style={styles.bodyText}>
+                      Export the full delivery package for review, delivery handoff, or copy-paste into your delivery tools.
+                    </p>
+                  </div>
+
+                  <div style={isMobile ? styles.mobileActionRow : styles.exportActions}>
+                    <button onClick={exportMarkdown} style={styles.secondaryButton}>
+                      Export Markdown
+                    </button>
+                    <button onClick={exportDocx} style={styles.button}>
+                      Export DOCX
+                    </button>
+                    <button
+                      onClick={() => copyToClipboard(buildMarkdown(result))}
+                      style={styles.secondaryButton}
+                    >
+                      Copy Full Package
+                    </button>
+                  </div>
+
+                  <details style={styles.detailsBox}>
+                    <summary style={styles.detailsSummary}>Preview Markdown Export</summary>
+                    <pre style={styles.mermaidCodeBlock}>{buildMarkdown(result)}</pre>
+                  </details>
+                </div>
+              </Card>
+            )}
           </section>
         )}
 
@@ -3062,6 +3098,113 @@ projectMeta: {
     flexDirection: "column",
     gap: "24px",
   },
+  packageWorkspace: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "20px",
+  },
+  packageSummaryCard: {
+    background: "rgba(255,255,255,0.96)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "24px",
+    padding: "22px",
+    boxShadow: "0 18px 50px rgba(15, 23, 42, 0.10)",
+  },
+  packageTitle: {
+    margin: "0 0 8px",
+    color: "#0F172A",
+    fontSize: "26px",
+    lineHeight: "1.2",
+    fontWeight: 900,
+    letterSpacing: "-0.03em",
+  },
+  snapshotGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+    gap: "12px",
+    marginTop: "18px",
+  },
+  mobileSnapshotGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "12px",
+    marginTop: "18px",
+  },
+  snapshotMetric: {
+    background: "#F8FAFC",
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    padding: "14px",
+  },
+  snapshotNumber: {
+    margin: "4px 0 0",
+    color: "#2563EB",
+    fontSize: "30px",
+    lineHeight: "1",
+    fontWeight: 900,
+  },
+  snapshotText: {
+    margin: "5px 0 0",
+    color: "#64748B",
+    fontSize: "12px",
+    fontWeight: 800,
+  },
+  packageNav: {
+    position: "sticky",
+    top: "0",
+    zIndex: 30,
+    display: "grid",
+    gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+    gap: "10px",
+    padding: "12px",
+    background: "rgba(255, 255, 255, 0.92)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "20px",
+    boxShadow: "0 14px 40px rgba(15, 23, 42, 0.10)",
+    backdropFilter: "blur(12px)",
+  },
+  mobilePackageNav: {
+    position: "sticky",
+    top: "0",
+    zIndex: 30,
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "8px",
+    padding: "10px",
+    background: "rgba(255, 255, 255, 0.94)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    boxShadow: "0 14px 40px rgba(15, 23, 42, 0.10)",
+    backdropFilter: "blur(12px)",
+  },
+  activePackageTab: {
+    border: "1px solid #2563EB",
+    background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+    color: "#FFFFFF",
+    borderRadius: "14px",
+    padding: "12px 14px",
+    fontSize: "14px",
+    fontWeight: 900,
+    cursor: "pointer",
+    boxShadow: "0 10px 24px rgba(37, 99, 235, 0.22)",
+  },
+  inactivePackageTab: {
+    border: "1px solid #CBD5E1",
+    background: "#FFFFFF",
+    color: "#334155",
+    borderRadius: "14px",
+    padding: "12px 14px",
+    fontSize: "14px",
+    fontWeight: 850,
+    cursor: "pointer",
+  },
+  exportActions: {
+    display: "flex",
+    gap: "12px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+
   topGrid: {
     display: "grid",
     gridTemplateColumns: "2fr 1fr 1fr",
