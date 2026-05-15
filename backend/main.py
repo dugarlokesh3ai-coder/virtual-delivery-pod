@@ -92,6 +92,7 @@ Uploaded Document Context:
 @app.post("/generate")
 async def generate(
     requirement: str = Form(""),
+    generation_mode: str = Form("full"),
     files: Optional[List[UploadFile]] = File(None),
 ):
     uploaded_context = ""
@@ -132,6 +133,36 @@ Uploaded Document Context:
         combined_requirement,
         architecture,
     )
+
+    if generation_mode == "quick":
+        delivery_lead_review = await asyncio.to_thread(
+            generate_delivery_lead_review,
+            combined_requirement,
+            architecture,
+            story_output,
+            {},
+            {},
+        )
+
+        return {
+            "generation_mode": "quick",
+            "delivery_lead_review": delivery_lead_review,
+            "process_diagram": None,
+            "requirement_summary": architecture.get("requirement_summary", ""),
+            "solution_design": architecture.get("solution_design", ""),
+            "recommended_app_type": architecture.get("recommended_app_type", ""),
+            "tables": architecture.get("tables", []),
+            "workflow_steps": architecture.get("workflow_steps", []),
+            "risks": architecture.get("risks", []),
+            "open_questions": architecture.get("open_questions", []),
+            "epic": story_output.get("epic", ""),
+            "stories": story_output.get("stories", []),
+            "story_assumptions": story_output.get("assumptions", []),
+            "story_dependencies": story_output.get("dependencies", []),
+            "developer": None,
+            "qa": None,
+            "quality_score": None,
+        }
 
     developer_task = asyncio.to_thread(
         generate_developer_notes,
@@ -180,6 +211,7 @@ Uploaded Document Context:
     )
 
     return {
+        "generation_mode": "full",
         "delivery_lead_review": delivery_lead_review,
         "process_diagram": process_diagram,
         "requirement_summary": architecture.get("requirement_summary", ""),
