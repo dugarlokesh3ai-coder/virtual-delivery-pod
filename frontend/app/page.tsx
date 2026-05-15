@@ -191,18 +191,18 @@ type AgentReview = {
 };
 
 type DeliveryLeadArtifactDetails = {
-  name: string;
-  table: string;
-  trigger: string;
-  condition: string;
-  recipients: string[];
-  subject: string;
-  body: string;
-  steps: string[];
-  roles: string[];
-  fields: string[];
-  expected_result: string;
-  notes: string[];
+  name: any;
+  table: any;
+  trigger: any;
+  condition: any;
+  recipients: any[];
+  subject: any;
+  body: any;
+  steps: any[];
+  roles: any[];
+  fields: any[];
+  expected_result: any;
+  notes: any[];
 };
 
 type DeliveryLeadChatResponse = {
@@ -265,6 +265,24 @@ type RequirementTemplate = {
 };
 
 const PROJECT_STORAGE_KEY = "virtual_delivery_pod_saved_projects";
+
+function safeText(value: any): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function safeList(value: any): any[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  return [value];
+}
 
 const REQUIREMENT_TEMPLATES: RequirementTemplate[] = [
   {
@@ -436,6 +454,8 @@ export default function Home() {
   const [deliveryLeadMessage, setDeliveryLeadMessage] = useState("");
   const [deliveryLeadChat, setDeliveryLeadChat] = useState<DeliveryLeadChatMessage[]>([]);
   const [deliveryLeadThinking, setDeliveryLeadThinking] = useState(false);
+  const [deliveryLeadPendingRequirementUpdate, setDeliveryLeadPendingRequirementUpdate] =
+    useState("");
 
   const [projectName, setProjectName] = useState("");
   const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
@@ -616,6 +636,7 @@ export default function Home() {
     setDeliveryLeadMessage("");
     setDeliveryLeadChat([]);
     setDeliveryLeadThinking(false);
+    setDeliveryLeadPendingRequirementUpdate("");
   }
 
   function newProject() {
@@ -682,6 +703,7 @@ export default function Home() {
     setDeliveryLeadMessage("");
     setDeliveryLeadChat([]);
     setDeliveryLeadThinking(false);
+    setDeliveryLeadPendingRequirementUpdate("");
     setShowTemplates(false);
   }
 
@@ -943,11 +965,15 @@ export default function Home() {
 
       const data: DeliveryLeadChatResponse = await response.json();
 
+      if (data.suggested_requirement_update?.trim()) {
+        setDeliveryLeadPendingRequirementUpdate(data.suggested_requirement_update);
+      }
+
       setDeliveryLeadChat([
         ...nextChat,
         {
           role: "delivery_lead",
-          content: data.answer,
+          content: safeText(data.answer),
           response: data,
         },
       ]);
@@ -972,6 +998,7 @@ export default function Home() {
     setRequirement(updateText);
     setClarificationAnswers("");
     setIntakeAnalysis(null);
+    setDeliveryLeadPendingRequirementUpdate("");
     setPackageTab("design");
   }
 
@@ -2945,12 +2972,12 @@ ${uat.expected_result}
                             {message.role === "user" ? "You" : "Delivery Lead"}
                           </p>
 
-                          <p style={styles.bodyText}>{message.content}</p>
+                          <p style={styles.bodyText}>{safeText(message.content)}</p>
                           
                           {message.response?.artifact_type && (
                           <div style={styles.innerCard}>
                             <p style={styles.label}>Artifact Type</p>
-                            <p style={styles.accentText}>{message.response.artifact_type}</p>
+                            <p style={styles.accentText}>{safeText(message.response.artifact_type)}</p>
                           </div>
                         )}
 
@@ -2960,34 +2987,40 @@ ${uat.expected_result}
 
                             {message.response.artifact_details.name && (
                               <p style={styles.bodyText}>
-                                <strong>Name:</strong> {message.response.artifact_details.name}
+                                <strong>Name:</strong>{" "}
+                                {safeText(message.response.artifact_details.name)}
                               </p>
                             )}
 
                             {message.response.artifact_details.table && (
                               <p style={styles.bodyText}>
-                                <strong>Table:</strong> {message.response.artifact_details.table}
+                                <strong>Table:</strong>{" "}
+                                {safeText(message.response.artifact_details.table)}
                               </p>
                             )}
 
                             {message.response.artifact_details.trigger && (
                               <p style={styles.bodyText}>
-                                <strong>Trigger:</strong> {message.response.artifact_details.trigger}
+                                <strong>Trigger:</strong>{" "}
+                                {safeText(message.response.artifact_details.trigger)}
                               </p>
                             )}
 
                             {message.response.artifact_details.condition && (
                               <p style={styles.bodyText}>
-                                <strong>Condition:</strong> {message.response.artifact_details.condition}
+                                <strong>Condition:</strong>{" "}
+                                {safeText(message.response.artifact_details.condition)}
                               </p>
                             )}
 
-                            {message.response.artifact_details.recipients?.length > 0 && (
+                            {safeList(message.response.artifact_details.recipients).length > 0 && (
                               <>
                                 <p style={styles.label}>Recipients</p>
                                 <ul style={styles.list}>
-                                  {message.response.artifact_details.recipients.map((item, i) => (
-                                    <li key={i}>{item}</li>
+                                  {safeList(message.response.artifact_details.recipients).map((item, i) => (
+                                    <li key={i}>
+                                      <pre style={styles.inlinePre}>{safeText(item)}</pre>
+                                    </li>
                                   ))}
                                 </ul>
                               </>
@@ -2995,45 +3028,54 @@ ${uat.expected_result}
 
                             {message.response.artifact_details.subject && (
                               <p style={styles.bodyText}>
-                                <strong>Subject:</strong> {message.response.artifact_details.subject}
+                                <strong>Subject:</strong>{" "}
+                                {safeText(message.response.artifact_details.subject)}
                               </p>
                             )}
 
                             {message.response.artifact_details.body && (
                               <>
                                 <p style={styles.label}>Body / Content</p>
-                                <p style={styles.bodyText}>{message.response.artifact_details.body}</p>
+                                <pre style={styles.inlinePre}>
+                                  {safeText(message.response.artifact_details.body)}
+                                </pre>
                               </>
                             )}
 
-                            {message.response.artifact_details.steps?.length > 0 && (
+                            {safeList(message.response.artifact_details.steps).length > 0 && (
                               <>
                                 <p style={styles.label}>Steps</p>
                                 <ol style={styles.list}>
-                                  {message.response.artifact_details.steps.map((item, i) => (
-                                    <li key={i}>{item}</li>
+                                  {safeList(message.response.artifact_details.steps).map((item, i) => (
+                                    <li key={i}>
+                                      <pre style={styles.inlinePre}>{safeText(item)}</pre>
+                                    </li>
                                   ))}
                                 </ol>
                               </>
                             )}
 
-                            {message.response.artifact_details.roles?.length > 0 && (
+                            {safeList(message.response.artifact_details.roles).length > 0 && (
                               <>
                                 <p style={styles.label}>Roles</p>
                                 <ul style={styles.list}>
-                                  {message.response.artifact_details.roles.map((item, i) => (
-                                    <li key={i}>{item}</li>
+                                  {safeList(message.response.artifact_details.roles).map((item, i) => (
+                                    <li key={i}>
+                                      <pre style={styles.inlinePre}>{safeText(item)}</pre>
+                                    </li>
                                   ))}
                                 </ul>
                               </>
                             )}
 
-                            {message.response.artifact_details.fields?.length > 0 && (
+                            {safeList(message.response.artifact_details.fields).length > 0 && (
                               <>
                                 <p style={styles.label}>Fields</p>
                                 <ul style={styles.list}>
-                                  {message.response.artifact_details.fields.map((item, i) => (
-                                    <li key={i}>{item}</li>
+                                  {safeList(message.response.artifact_details.fields).map((item, i) => (
+                                    <li key={i}>
+                                      <pre style={styles.inlinePre}>{safeText(item)}</pre>
+                                    </li>
                                   ))}
                                 </ul>
                               </>
@@ -3042,16 +3084,18 @@ ${uat.expected_result}
                             {message.response.artifact_details.expected_result && (
                               <p style={styles.bodyText}>
                                 <strong>Expected Result:</strong>{" "}
-                                {message.response.artifact_details.expected_result}
+                                {safeText(message.response.artifact_details.expected_result)}
                               </p>
                             )}
 
-                            {message.response.artifact_details.notes?.length > 0 && (
+                            {safeList(message.response.artifact_details.notes).length > 0 && (
                               <>
                                 <p style={styles.label}>Notes</p>
                                 <ul style={styles.list}>
-                                  {message.response.artifact_details.notes.map((item, i) => (
-                                    <li key={i}>{item}</li>
+                                  {safeList(message.response.artifact_details.notes).map((item, i) => (
+                                    <li key={i}>
+                                      <pre style={styles.inlinePre}>{safeText(item)}</pre>
+                                    </li>
                                   ))}
                                 </ul>
                               </>
@@ -3079,7 +3123,7 @@ ${uat.expected_result}
                                 <div style={styles.innerCard}>
                                   <p style={styles.label}>Recommendation</p>
                                   <p style={styles.bodyText}>
-                                    {message.response.delivery_lead_recommendation}
+                                    {safeText(message.response.delivery_lead_recommendation)}
                                   </p>
                                 </div>
                               )}
@@ -3089,7 +3133,7 @@ ${uat.expected_result}
                                   <p style={styles.label}>Impacted Sections</p>
                                   <ul style={styles.list}>
                                     {message.response.impacted_sections.map((item, i) => (
-                                      <li key={i}>{item}</li>
+                                      <li key={i}>{safeText(item)}</li>
                                     ))}
                                   </ul>
                                 </div>
@@ -3100,7 +3144,7 @@ ${uat.expected_result}
                                   <p style={styles.label}>Follow-Up Questions</p>
                                   <ul style={styles.list}>
                                     {message.response.follow_up_questions.map((item, i) => (
-                                      <li key={i}>{item}</li>
+                                      <li key={i}>{safeText(item)}</li>
                                     ))}
                                   </ul>
                                 </div>
@@ -3110,28 +3154,14 @@ ${uat.expected_result}
                                 <div style={{ ...styles.riskBox, marginTop: "12px" }}>
                                   <p style={styles.riskTitle}>Suggested Requirement Update</p>
                                   <p style={styles.bodyText}>
-                                    {message.response.suggested_requirement_update}
+                                    {safeText(message.response.suggested_requirement_update)}
                                   </p>
-
-                                  <button
-                                    onClick={() =>
-                                      applyDeliveryLeadRequirementUpdate(
-                                        message.response?.suggested_requirement_update || ""
-                                      )
-                                    }
-                                    style={{
-                                      ...styles.button,
-                                      marginTop: "14px",
-                                    }}
-                                  >
-                                    Apply to Requirement
-                                  </button>
                                 </div>
                               )}
 
                               {message.response.recommended_next_action && (
                                 <p style={{ ...styles.accentText, marginTop: "12px" }}>
-                                  Recommended Next Action: {message.response.recommended_next_action}
+                                  Recommended Next Action: {safeText(message.response.recommended_next_action)}
                                 </p>
                               )}
                             </div>
@@ -3161,8 +3191,24 @@ ${uat.expected_result}
                       {deliveryLeadThinking ? "Thinking..." : "Ask Delivery Lead"}
                     </button>
 
+                    {deliveryLeadPendingRequirementUpdate && (
+                      <button
+                        onClick={() =>
+                          applyDeliveryLeadRequirementUpdate(
+                            deliveryLeadPendingRequirementUpdate
+                          )
+                        }
+                        style={styles.secondaryButton}
+                      >
+                        Apply Requirement Update
+                      </button>
+                    )}
+
                     <button
-                      onClick={() => setDeliveryLeadChat([])}
+                      onClick={() => {
+                        setDeliveryLeadChat([]);
+                        setDeliveryLeadPendingRequirementUpdate("");
+                      }}
                       style={styles.secondaryButton}
                     >
                       Clear Chat
@@ -4329,6 +4375,16 @@ mermaidCodeBlock: {
     borderRadius: "18px",
     padding: "18px",
     boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)",
+  },
+  inlinePre: {
+    margin: 0,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    fontFamily: "inherit",
+    fontSize: "14px",
+    lineHeight: "1.7",
+    color: "#334155",
+    background: "transparent",
   },
   mobileContainer: {
     padding: "18px",
