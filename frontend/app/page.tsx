@@ -129,6 +129,7 @@ type IntakeAnalysis = {
 
 type DeliveryResult = {
   generation_mode?: "quick" | "full";
+  agent_review?: AgentReview | null;
   delivery_lead_review: DeliveryLeadReview;
   process_diagram: ProcessDiagram | null;
   requirement_summary: string;
@@ -166,8 +167,38 @@ type QualityScore = {
   build_readiness_verdict?: string;
 };
 
+type AgentReviewerFeedback = {
+  what_looks_good: string[];
+  concerns: string[];
+  recommended_improvements: string[];
+  questions_for_business: string[];
+};
+
+type PriorityFix = {
+  priority: string;
+  fix: string;
+  reason: string;
+};
+
+type AgentReview = {
+  overall_review_summary: string;
+  architect_review: AgentReviewerFeedback;
+  developer_review: AgentReviewerFeedback;
+  qa_review: AgentReviewerFeedback;
+  delivery_lead_review: AgentReviewerFeedback;
+  priority_fixes: PriorityFix[];
+  final_verdict: string;
+};
+
 type ActiveTab = "stories" | "technical" | "qa";
-type PackageTab = "overview" | "design" | "stories" | "technical" | "qa" | "export";
+type PackageTab =
+  | "overview"
+  | "design"
+  | "stories"
+  | "technical"
+  | "qa"
+  | "review"
+  | "export";
 
 const PACKAGE_TABS: { id: PackageTab; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -175,6 +206,7 @@ const PACKAGE_TABS: { id: PackageTab; label: string }[] = [
   { id: "stories", label: "Stories" },
   { id: "technical", label: "Technical" },
   { id: "qa", label: "QA" },
+  { id: "review", label: "Review" },
   { id: "export", label: "Export" },
 ];
 
@@ -703,6 +735,70 @@ export default function Home() {
     alert("This package is already a full package.");
     return;
   }
+
+  async function runAgentReview() {
+  if (!result) {
+    alert("Generate a package first.");
+    return;
+  }
+
+  setLoading(true);
+  setLoadingStage("Agent review board is reviewing the package...");
+
+  const stageTimers = [
+    setTimeout(
+      () => setLoadingStage("Architect is reviewing solution design..."),
+      900
+    ),
+    setTimeout(
+      () => setLoadingStage("Developer is reviewing implementation detail..."),
+      2400
+    ),
+    setTimeout(
+      () => setLoadingStage("QA is reviewing test coverage..."),
+      4200
+    ),
+    setTimeout(
+      () => setLoadingStage("Delivery Lead is reviewing delivery readiness..."),
+      6200
+    ),
+  ];
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/agent-review`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        requirement: buildRequirementWithClarifications(),
+        current_package: result,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Agent review failed response:", response.status, errorText);
+      throw new Error(`Agent review failed: ${response.status}`);
+    }
+
+    const review = await response.json();
+
+    setResult({
+      ...result,
+      agent_review: review,
+    });
+
+    setPackageTab("review");
+  } catch (error) {
+    console.error(error);
+    alert("Agent review failed. Check backend logs.");
+  } finally {
+    stageTimers.forEach((timer) => clearTimeout(timer));
+    setLoading(false);
+    setLoadingStage("");
+  }
+}
 
   setLoading(true);
   setLoadingStage("Upgrading quick package to full detailed package...");
@@ -1906,6 +2002,20 @@ ${uat.expected_result}
                 )}
               </div>
 
+              <div style={{ marginTop: "12px" }}>
+                  <button
+                    onClick={runAgentReview}
+                    disabled={loading}
+                    style={{
+                      ...styles.secondaryButton,
+                      opacity: loading ? 0.65 : 1,
+                      cursor: loading ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {loading ? "Reviewing..." : "Run Agent Review"}
+                  </button>
+                </div>
+
               <div style={isMobile ? styles.mobileSnapshotGrid : styles.snapshotGrid}>
                 <div style={styles.snapshotMetric}>
                   <p style={styles.label}>Quality</p>
@@ -2597,6 +2707,95 @@ ${uat.expected_result}
               </Card>
             )}
 
+            {packageTab === "review" && (
+              <Card
+                title="Agent Review Board"
+                copyValue={JSON.stringify(result.agent_review, null, 2)}
+                onCopy={copyToClipboard}
+              >
+                {result.agent_review ? (
+                  <div style={styles.stack}>
+                    <div style={styles.innerCard}>
+                      <p style={styles.label}>Overall Review Summary</p>
+                      <p style={styles.bodyText}>
+                        {result.agent_review.overall_review_summary}
+                      </p>
+                      <p style={{ ...styles.accentText, marginTop: "12px" }}>
+                        Final Verdict: {result.agent_review.final_verdict}
+                      </p>
+                    </div>
+
+                    {result.agent_review.priority_fixes?.length > 0 && (
+                      <div style={styles.innerCard}>
+                        <p style={styles.label}>Priority Fixes</p>
+                        <div style={styles.stack}>
+                          {result.agent_review.priority_fixes.map((fix, index) => (
+                            <div key={index} style={styles.riskBox}>
+                              <p style={styles.riskTitle}>
+                                {fix.priority}: {fix.fix}
+                              </p>
+                              <p style={styles.bodyText}>
+                                <strong>Reason:</strong> {fix.reason}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={responsiveTwoGrid}>
+                      <ReviewerCard
+                        title="Architect Review"
+                        review={result.agent_review.architect_review}
+                      />
+                      <ReviewerCard
+                        title="Developer Review"
+                        review={result.agent_review.developer_review}
+                      />
+                      <ReviewerCard
+                        title="QA Review"
+                        review={result.agent_review.qa_review}
+                      />
+                      <ReviewerCard
+                        title="Delivery Lead Review"
+                        review={result.agent_review.delivery_lead_review}
+                      />
+                    </div>
+
+                    <button
+                      onClick={runAgentReview}
+                      disabled={loading}
+                      style={{
+                        ...styles.secondaryButton,
+                        opacity: loading ? 0.65 : 1,
+                        cursor: loading ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {loading ? "Reviewing..." : "Rerun Agent Review"}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={styles.stack}>
+                    <p style={styles.bodyText}>
+                      Run the agent review board to have the Architect, Developer, QA Lead,
+                      and Delivery Lead critique this package.
+                    </p>
+                    <button
+                      onClick={runAgentReview}
+                      disabled={loading}
+                      style={{
+                        ...styles.button,
+                        opacity: loading ? 0.65 : 1,
+                        cursor: loading ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {loading ? "Reviewing..." : "Run Agent Review"}
+                    </button>
+                  </div>
+                )}
+              </Card>
+            )}
+            
             {packageTab === "export" && (
               <Card
                 title="Export Package"
@@ -2798,6 +2997,48 @@ function RegeneratePanel({
           ? "Regenerating..."
           : `Regenerate ${label}`}
       </button>
+    </div>
+  );
+}
+
+function ReviewerCard({
+  title,
+  review,
+}: {
+  title: string;
+  review: AgentReviewerFeedback;
+}) {
+  return (
+    <div style={styles.innerCard}>
+      <h3 style={styles.itemTitle}>{title}</h3>
+
+      <p style={styles.label}>What Looks Good</p>
+      <ul style={styles.list}>
+        {review.what_looks_good?.map((item, index) => (
+          <li key={index}>{item}</li>
+        ))}
+      </ul>
+
+      <p style={styles.label}>Concerns</p>
+      <ul style={styles.list}>
+        {review.concerns?.map((item, index) => (
+          <li key={index}>{item}</li>
+        ))}
+      </ul>
+
+      <p style={styles.label}>Recommended Improvements</p>
+      <ul style={styles.list}>
+        {review.recommended_improvements?.map((item, index) => (
+          <li key={index}>{item}</li>
+        ))}
+      </ul>
+
+      <p style={styles.label}>Questions for Business</p>
+      <ul style={styles.list}>
+        {review.questions_for_business?.map((item, index) => (
+          <li key={index}>{item}</li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -3328,19 +3569,19 @@ projectMeta: {
     fontWeight: 800,
   },
   packageNav: {
-    position: "sticky",
-    top: "0",
-    zIndex: 30,
-    display: "grid",
-    gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-    gap: "10px",
-    padding: "12px",
-    background: "rgba(255, 255, 255, 0.92)",
-    border: "1px solid #CBD5E1",
-    borderRadius: "20px",
-    boxShadow: "0 14px 40px rgba(15, 23, 42, 0.10)",
-    backdropFilter: "blur(12px)",
-  },
+  position: "sticky",
+  top: "0",
+  zIndex: 30,
+  display: "grid",
+  gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+  gap: "10px",
+  padding: "12px",
+  background: "rgba(255, 255, 255, 0.92)",
+  border: "1px solid #CBD5E1",
+  borderRadius: "20px",
+  boxShadow: "0 14px 40px rgba(15, 23, 42, 0.10)",
+  backdropFilter: "blur(12px)",
+},
   mobilePackageNav: {
     position: "sticky",
     top: "0",

@@ -15,6 +15,7 @@ from agents.intake_analyzer import analyze_requirement_intake
 from agents.diagram import generate_process_diagram
 from agents.quality_score import generate_quality_score
 from agents.section_regenerator import regenerate_section
+from agents.agent_review import generate_agent_review
 
 app = FastAPI()
 
@@ -23,6 +24,9 @@ class CodeRequest(BaseModel):
     card: dict
     full_context: str
 
+class AgentReviewRequest(BaseModel):
+    requirement: str
+    current_package: dict
 
 class RegenerateSectionRequest(BaseModel):
     section: str
@@ -311,6 +315,16 @@ async def upgrade_package(request: UpgradePackageRequest):
         "qa": qa_output,
         "quality_score": quality_score,
     }
+
+@app.post("/agent-review")
+async def agent_review(request: AgentReviewRequest):
+    review = await asyncio.to_thread(
+        generate_agent_review,
+        request.requirement,
+        request.current_package,
+    )
+
+    return review
 
 @app.post("/generate-code")
 def generate_code(request: CodeRequest):
