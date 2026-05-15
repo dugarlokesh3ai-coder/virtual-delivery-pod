@@ -142,9 +142,16 @@ def regenerate_section(section: str, requirement: str, current_package: dict, us
   "readiness_score": 0,
   "rating": "Strong / Good / Needs Work / Weak",
   "summary": "",
+  "score_rationale": {
+    "completeness": "",
+    "risk": "",
+    "readiness": ""
+  },
+  "score_caps_applied": [],
   "strengths": [],
   "weaknesses": [],
-  "recommended_fixes": []
+  "recommended_fixes": [],
+  "build_readiness_verdict": "Ready / Conditionally Ready / Not Ready"
 }
 """
     }
