@@ -1417,44 +1417,58 @@ ${uat.expected_result}
             </p>
           </div>
 
-          <div style={responsiveHeaderActions}>
-            <button
-              onClick={analyzeRequirement}
-              disabled={analyzing || loading}
-              style={{
-                ...styles.secondaryButton,
-                opacity: analyzing || loading ? 0.65 : 1,
-                cursor: analyzing || loading ? "not-allowed" : "pointer",
-              }}
-            >
-              {analyzing ? "Analyzing..." : "Analyze Requirement"}
-            </button>
+          {result && (
+            <div style={responsiveHeaderActions}>
+              <button onClick={exportMarkdown} style={styles.secondaryButton}>
+                Export Markdown
+              </button>
 
-            {result && (
-              <>
-                <button onClick={exportMarkdown} style={styles.secondaryButton}>
-                  Export Markdown
-                </button>
+              <button onClick={exportDocx} style={styles.secondaryButton}>
+                Export DOCX
+              </button>
+            </div>
+          )}
+        </header>
 
-                <button onClick={exportDocx} style={styles.secondaryButton}>
-                  Export DOCX
-                </button>
-              </>
-            )}
+        <section style={styles.templateCard}>
+          <div style={responsiveTemplateHeader}>
+            <div>
+              <p style={styles.label}>Template Library</p>
+              <h2 style={styles.templateTitle}>Start from a common ServiceNow workflow</h2>
+              <p style={styles.muted}>
+                Pick a template to preload a strong sample requirement. You can edit it before analysis.
+              </p>
+            </div>
 
             <button
-              onClick={generatePackage}
-              disabled={loading || analyzing}
-              style={{
-                ...styles.button,
-                opacity: loading || analyzing ? 0.65 : 1,
-                cursor: loading || analyzing ? "not-allowed" : "pointer",
-              }}
+              onClick={() => setShowTemplates(!showTemplates)}
+              style={styles.secondaryButton}
             >
-              {loading ? "Generating..." : "Generate Package"}
+              {showTemplates ? "Hide Templates" : "Browse Templates"}
             </button>
           </div>
-        </header>
+
+          {showTemplates && (
+            <div style={responsiveTemplateGrid}>
+              {REQUIREMENT_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => applyTemplate(template)}
+                  style={styles.templateTile}
+                >
+                  <div style={styles.templateTileTop}>
+                    <p style={styles.templateName}>{template.name}</p>
+                    <span style={styles.templateCategory}>{template.category}</span>
+                  </div>
+
+                  <p style={styles.templateDescription}>{template.description}</p>
+
+                  <p style={styles.templateUse}>Use template →</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
 
         <section style={styles.projectBar}>
           <div style={responsiveProjectBarTop}>
@@ -1529,46 +1543,6 @@ ${uat.expected_result}
         </section>
 
 
-        <section style={styles.templateCard}>
-          <div style={responsiveTemplateHeader}>
-            <div>
-              <p style={styles.label}>Template Library</p>
-              <h2 style={styles.templateTitle}>Start from a common ServiceNow workflow</h2>
-              <p style={styles.muted}>
-                Pick a template to preload a strong sample requirement. You can edit it before analysis.
-              </p>
-            </div>
-
-            <button
-              onClick={() => setShowTemplates(!showTemplates)}
-              style={styles.secondaryButton}
-            >
-              {showTemplates ? "Hide Templates" : "Browse Templates"}
-            </button>
-          </div>
-
-          {showTemplates && (
-            <div style={responsiveTemplateGrid}>
-              {REQUIREMENT_TEMPLATES.map((template) => (
-                <button
-                  key={template.id}
-                  onClick={() => applyTemplate(template)}
-                  style={styles.templateTile}
-                >
-                  <div style={styles.templateTileTop}>
-                    <p style={styles.templateName}>{template.name}</p>
-                    <span style={styles.templateCategory}>{template.category}</span>
-                  </div>
-
-                  <p style={styles.templateDescription}>{template.description}</p>
-
-                  <p style={styles.templateUse}>Use template →</p>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-
         {loadingStage && <div style={styles.loadingStage}>{loadingStage}</div>}
 
         <section style={styles.intakeCard}>
@@ -1622,6 +1596,32 @@ ${uat.expected_result}
               {requirement.length} characters · {files.length} file
               {files.length === 1 ? "" : "s"}
             </span>
+          </div>
+
+          <div style={isMobile ? { ...styles.intakeActions, ...styles.mobileActionRow } : styles.intakeActions}>
+            <button
+              onClick={analyzeRequirement}
+              disabled={analyzing || loading}
+              style={{
+                ...styles.secondaryButton,
+                opacity: analyzing || loading ? 0.65 : 1,
+                cursor: analyzing || loading ? "not-allowed" : "pointer",
+              }}
+            >
+              {analyzing ? "Analyzing..." : "Analyze Requirement"}
+            </button>
+
+            <button
+              onClick={generatePackage}
+              disabled={loading || analyzing}
+              style={{
+                ...styles.button,
+                opacity: loading || analyzing ? 0.65 : 1,
+                cursor: loading || analyzing ? "not-allowed" : "pointer",
+              }}
+            >
+              {loading ? "Generating..." : "Generate Package"}
+            </button>
           </div>
         </section>
 
@@ -3014,6 +3014,16 @@ projectMeta: {
     gap: "12px",
     marginTop: "18px",
     alignItems: "center",
+    flexWrap: "wrap",
+  },
+  intakeActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: "12px",
+    marginTop: "18px",
+    paddingTop: "18px",
+    borderTop: "1px solid #E2E8F0",
     flexWrap: "wrap",
   },
   regeneratePanel: {
