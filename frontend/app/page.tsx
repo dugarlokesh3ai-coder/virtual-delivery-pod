@@ -206,15 +206,15 @@ type DeliveryLeadArtifactDetails = {
 };
 
 type DeliveryLeadChatResponse = {
-  answer: string;
-  delivery_lead_recommendation: string;
-  artifact_type: string;
-  artifact_details: DeliveryLeadArtifactDetails;
-  suggested_requirement_update: string;
+  answer: any;
+  delivery_lead_recommendation: any;
+  artifact_type: any;
+  artifact_details: Partial<DeliveryLeadArtifactDetails> | any;
+  suggested_requirement_update: any;
   should_update_requirement: boolean;
-  impacted_sections: string[];
-  follow_up_questions: string[];
-  recommended_next_action: string;
+  impacted_sections: any[];
+  follow_up_questions: any[];
+  recommended_next_action: any;
 };
 
 type DeliveryLeadChatMessage = {
@@ -963,20 +963,51 @@ export default function Home() {
         throw new Error(`Delivery Lead chat failed: ${response.status}`);
       }
 
-      const data: DeliveryLeadChatResponse = await response.json();
+      const rawData: DeliveryLeadChatResponse = await response.json();
 
-      if (data.suggested_requirement_update?.trim()) {
-        setDeliveryLeadPendingRequirementUpdate(data.suggested_requirement_update);
-      }
+const normalizedData: DeliveryLeadChatResponse = {
+  ...rawData,
+  answer: safeText(rawData.answer),
+  delivery_lead_recommendation: safeText(
+    rawData.delivery_lead_recommendation
+  ),
+  artifact_type: safeText(rawData.artifact_type),
+  suggested_requirement_update: safeText(
+    rawData.suggested_requirement_update
+  ),
+  recommended_next_action: safeText(rawData.recommended_next_action),
+  impacted_sections: safeList(rawData.impacted_sections),
+  follow_up_questions: safeList(rawData.follow_up_questions),
+  artifact_details: {
+    name: safeText(rawData.artifact_details?.name),
+    table: safeText(rawData.artifact_details?.table),
+    trigger: safeText(rawData.artifact_details?.trigger),
+    condition: safeText(rawData.artifact_details?.condition),
+    recipients: safeList(rawData.artifact_details?.recipients),
+    subject: safeText(rawData.artifact_details?.subject),
+    body: safeText(rawData.artifact_details?.body),
+    steps: safeList(rawData.artifact_details?.steps),
+    roles: safeList(rawData.artifact_details?.roles),
+    fields: safeList(rawData.artifact_details?.fields),
+    expected_result: safeText(rawData.artifact_details?.expected_result),
+    notes: safeList(rawData.artifact_details?.notes),
+  },
+};
 
-      setDeliveryLeadChat([
-        ...nextChat,
-        {
-          role: "delivery_lead",
-          content: safeText(data.answer),
-          response: data,
-        },
-      ]);
+if (normalizedData.suggested_requirement_update.trim()) {
+  setDeliveryLeadPendingRequirementUpdate(
+    normalizedData.suggested_requirement_update
+  );
+}
+
+setDeliveryLeadChat([
+  ...nextChat,
+  {
+    role: "delivery_lead",
+    content: normalizedData.answer,
+    response: normalizedData,
+  },
+]);
     } catch (error) {
       console.error(error);
       alert("Delivery Lead chat failed. Check backend logs.");
