@@ -336,8 +336,6 @@ export default function Home() {
 
   const [intakeAnalysis, setIntakeAnalysis] =
     useState<IntakeAnalysis | null>(null);
-  const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
   const [analyzing, setAnalyzing] = useState(false);
   const [clarificationAnswers, setClarificationAnswers] = useState("");
 
@@ -353,6 +351,7 @@ export default function Home() {
   const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(PROJECT_STORAGE_KEY);
@@ -364,6 +363,17 @@ export default function Home() {
     } catch (error) {
       console.error("Unable to load saved projects", error);
     }
+  }, []);
+
+  useEffect(() => {
+    const updateLayout = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    updateLayout();
+    window.addEventListener("resize", updateLayout);
+
+    return () => window.removeEventListener("resize", updateLayout);
   }, []);
 
   function persistProjects(projects: SavedProject[]) {
@@ -398,7 +408,7 @@ export default function Home() {
         formData.append("files", file);
       });
 
-      const response = await fetch(`${API_BASE_URL}/analyze-requirement`, {
+      const response = await fetch("http://127.0.0.1:8000/analyze-requirement", {
         method: "POST",
         body: formData,
       });
@@ -614,7 +624,7 @@ export default function Home() {
         formData.append("files", file);
       });
 
-      const response = await fetch(`${API_BASE_URL}/generate`, {
+      const response = await fetch("http://127.0.0.1:8000/generate", {
         method: "POST",
         body: formData,
       });
@@ -847,7 +857,7 @@ ${uat.expected_result}
     setSelectedCode("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/generate-code`, {
+      const response = await fetch("http://127.0.0.1:8000/generate-code", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -902,7 +912,7 @@ ${uat.expected_result}
     setLoadingStage(`Regenerating ${section.replaceAll("_", " ")}...`);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/regenerate-section`, {
+      const response = await fetch("http://127.0.0.1:8000/regenerate-section", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1315,13 +1325,73 @@ ${uat.expected_result}
   }
 
 
+  const responsiveContainer = isMobile
+    ? { ...styles.container, ...styles.mobileContainer }
+    : styles.container;
+
+  const responsiveHeader = isMobile
+    ? { ...styles.header, ...styles.mobileHeader }
+    : styles.header;
+
+  const responsiveHeaderActions = isMobile
+    ? { ...styles.headerActions, ...styles.mobileHeaderActions }
+    : styles.headerActions;
+
+  const responsiveTitle = isMobile
+    ? { ...styles.title, ...styles.mobileTitle }
+    : styles.title;
+
+  const responsiveProjectBarTop = isMobile
+    ? { ...styles.projectBarTop, ...styles.mobileStackRow }
+    : styles.projectBarTop;
+
+  const responsiveProjectActions = isMobile
+    ? { ...styles.projectActions, ...styles.mobileActionRow }
+    : styles.projectActions;
+
+  const responsiveProjectControls = isMobile
+    ? { ...styles.projectControls, ...styles.mobileOneColumnGrid }
+    : styles.projectControls;
+
+  const responsiveTemplateHeader = isMobile
+    ? { ...styles.templateHeader, ...styles.mobileStackRow }
+    : styles.templateHeader;
+
+  const responsiveTemplateGrid = isMobile
+    ? { ...styles.templateGrid, ...styles.mobileTemplateGrid }
+    : styles.templateGrid;
+
+  const responsiveCardHeader = isMobile
+    ? { ...styles.cardHeader, ...styles.mobileStackRow }
+    : styles.cardHeader;
+
+  const responsiveUploadArea = isMobile
+    ? { ...styles.uploadArea, ...styles.mobileOneColumnGrid }
+    : styles.uploadArea;
+
+  const responsiveTextareaFooter = isMobile
+    ? { ...styles.textareaFooter, ...styles.mobileStackRow }
+    : styles.textareaFooter;
+
+  const responsiveTwoGrid = isMobile
+    ? { ...styles.twoGrid, ...styles.mobileOneColumnGrid }
+    : styles.twoGrid;
+
+  const responsiveTopGrid = isMobile
+    ? { ...styles.topGrid, ...styles.mobileOneColumnGrid }
+    : styles.topGrid;
+
+  const responsiveScoreGrid = isMobile
+    ? { ...styles.scoreGrid, ...styles.mobileScoreGrid }
+    : styles.scoreGrid;
+
   return (
     <main style={styles.page}>
-      <div style={styles.container}>
-        <header style={styles.header}>
+      <div style={responsiveContainer}>
+        <header style={responsiveHeader}>
           <div>
             <div style={styles.kicker}>AI Delivery Workspace</div>
-            <h1 style={styles.title}>Virtual ServiceNow Delivery Pod</h1>
+            <h1 style={responsiveTitle}>Virtual ServiceNow Delivery Pod</h1>
             <p style={styles.subtitle}>
               Paste requirements or upload documents. The Delivery Lead converts
               them into solution design, stories, technical notes, and QA
@@ -1329,7 +1399,7 @@ ${uat.expected_result}
             </p>
           </div>
 
-          <div style={styles.headerActions}>
+          <div style={responsiveHeaderActions}>
             <button
               onClick={analyzeRequirement}
               disabled={analyzing || loading}
@@ -1369,13 +1439,13 @@ ${uat.expected_result}
         </header>
 
         <section style={styles.projectBar}>
-          <div style={styles.projectBarTop}>
+          <div style={responsiveProjectBarTop}>
             <div>
               <p style={styles.label}>Project Workspace</p>
               <h2 style={styles.projectBarTitle}>Save and reload delivery packages</h2>
             </div>
 
-            <div style={styles.projectActions}>
+            <div style={responsiveProjectActions}>
               <button onClick={newProject} style={styles.secondaryButton}>
                 New / Clear
               </button>
@@ -1386,7 +1456,7 @@ ${uat.expected_result}
             </div>
           </div>
 
-          <div style={styles.projectControls}>
+          <div style={responsiveProjectControls}>
             <div style={styles.projectField}>
               <label style={styles.projectLabel}>Current Project</label>
               <input
@@ -1442,7 +1512,7 @@ ${uat.expected_result}
 
 
         <section style={styles.templateCard}>
-          <div style={styles.templateHeader}>
+          <div style={responsiveTemplateHeader}>
             <div>
               <p style={styles.label}>Template Library</p>
               <h2 style={styles.templateTitle}>Start from a common ServiceNow workflow</h2>
@@ -1460,7 +1530,7 @@ ${uat.expected_result}
           </div>
 
           {showTemplates && (
-            <div style={styles.templateGrid}>
+            <div style={responsiveTemplateGrid}>
               {REQUIREMENT_TEMPLATES.map((template) => (
                 <button
                   key={template.id}
@@ -1484,7 +1554,7 @@ ${uat.expected_result}
         {loadingStage && <div style={styles.loadingStage}>{loadingStage}</div>}
 
         <section style={styles.intakeCard}>
-          <div style={styles.cardHeader}>
+          <div style={responsiveCardHeader}>
             <h2 style={styles.sectionTitle}>Requirement Intake</h2>
             <span style={styles.muted}>
               Text or docs → delivery-ready package
@@ -1498,7 +1568,7 @@ ${uat.expected_result}
             style={styles.textarea}
           />
 
-          <div style={styles.uploadArea}>
+          <div style={responsiveUploadArea}>
             <div>
               <p style={styles.uploadTitle}>Upload supporting documents</p>
               <p style={styles.muted}>
@@ -1526,7 +1596,7 @@ ${uat.expected_result}
             </div>
           )}
 
-          <div style={styles.textareaFooter}>
+          <div style={responsiveTextareaFooter}>
             <span>
               Paste rough notes. It does not need to be perfectly formatted.
             </span>
@@ -1554,7 +1624,7 @@ ${uat.expected_result}
                 <p style={styles.bodyText}>{intakeAnalysis.understanding}</p>
               </div>
 
-              <div style={styles.twoGrid}>
+              <div style={responsiveTwoGrid}>
                 <div style={styles.innerCard}>
                   <p style={styles.label}>Clarifying Questions</p>
                   {intakeAnalysis.clarifying_questions?.length ? (
@@ -1689,7 +1759,7 @@ ${uat.expected_result}
                       {result.delivery_lead_review.understanding}
                     </p>
                   </div>
-                  <div style={styles.twoGrid}>
+                  <div style={responsiveTwoGrid}>
                     <div style={styles.innerCard}>
                       <p style={styles.label}>MVP Scope</p>
                       <ul style={styles.list}>
@@ -1713,7 +1783,7 @@ ${uat.expected_result}
                     </div>
                   </div>
 
-                  <div style={styles.twoGrid}>
+                  <div style={responsiveTwoGrid}>
                     <div style={styles.innerCard}>
                       <p style={styles.label}>Clarifying Questions</p>
                       <ul style={styles.list}>
@@ -1790,7 +1860,7 @@ ${uat.expected_result}
 >
   {result.quality_score ? (
     <div style={styles.stack}>
-      <div style={styles.scoreGrid}>
+      <div style={responsiveScoreGrid}>
         <ScoreBox
           label="Overall"
           score={result.quality_score.overall_score}
@@ -1826,7 +1896,7 @@ ${uat.expected_result}
         <p style={styles.bodyText}>{result.quality_score.summary}</p>
       </div>
 
-      <div style={styles.twoGrid}>
+      <div style={responsiveTwoGrid}>
         <div style={styles.innerCard}>
           <p style={styles.label}>Strengths</p>
           <ul style={styles.list}>
@@ -1915,7 +1985,7 @@ ${uat.expected_result}
                     )}
                   </Card>  
 
-            <div style={styles.topGrid}>
+            <div style={responsiveTopGrid}>
               <Card
                 title="Requirement Summary"
                 span={2}
@@ -1996,7 +2066,7 @@ ${uat.expected_result}
               )}
             </Card>
 
-            <div style={styles.twoGrid}>
+            <div style={responsiveTwoGrid}>
               <Card
                 title="Workflow Steps"
                 copyValue={result.workflow_steps?.join("\n")}
@@ -2079,7 +2149,7 @@ ${uat.expected_result}
                   )}
 
                   {result.stories?.length ? (
-                    <div style={styles.twoGrid}>
+                    <div style={responsiveTwoGrid}>
                       {result.stories.map((story, index) => (
                         <div key={index} style={styles.innerCard}>
                           <div style={styles.rowBetween}>
@@ -2137,7 +2207,7 @@ ${uat.expected_result}
                       {result.developer.service_now_objects?.length > 0 && (
                         <>
                           <p style={styles.label}>ServiceNow Objects</p>
-                          <div style={styles.twoGrid}>
+                          <div style={responsiveTwoGrid}>
                             {result.developer.service_now_objects.map(
                               (object, index) => (
                                 <button
@@ -2173,7 +2243,7 @@ ${uat.expected_result}
                       {result.developer.flow_designer_notes?.length > 0 && (
                         <>
                           <p style={styles.label}>Flow Designer</p>
-                          <div style={styles.twoGrid}>
+                          <div style={responsiveTwoGrid}>
                             {result.developer.flow_designer_notes.map(
                               (flow, index) => (
                                 <button
@@ -2213,7 +2283,7 @@ ${uat.expected_result}
                       {result.developer.business_rules?.length > 0 && (
                         <>
                           <p style={styles.label}>Business Rules</p>
-                          <div style={styles.twoGrid}>
+                          <div style={responsiveTwoGrid}>
                             {result.developer.business_rules.map(
                               (rule, index) => (
                                 <button
@@ -2264,7 +2334,7 @@ ${uat.expected_result}
                       {result.qa.test_cases?.length > 0 && (
                         <>
                           <p style={styles.label}>Test Cases</p>
-                          <div style={styles.twoGrid}>
+                          <div style={responsiveTwoGrid}>
                             {result.qa.test_cases.map((test, index) => (
                               <div key={index} style={styles.innerCard}>
                                 <div style={styles.rowBetween}>
@@ -2306,7 +2376,7 @@ ${uat.expected_result}
                       {result.qa.uat_cases?.length > 0 && (
                         <>
                           <p style={styles.label}>UAT Cases</p>
-                          <div style={styles.twoGrid}>
+                          <div style={responsiveTwoGrid}>
                             {result.qa.uat_cases.map((uat, index) => (
                               <div key={index} style={styles.innerCard}>
                                 <h3 style={styles.itemTitle}>
@@ -2779,70 +2849,62 @@ projectMeta: {
   },
 
   templateGrid: {
-  display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-  gap: "14px",
-  marginTop: "18px",
-},
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: "14px",
+    marginTop: "18px",
+  },
 
-templateTile: {
-  border: "1px solid #CBD5E1",
-  borderRadius: "18px",
-  background: "#FFFFFF",
-  padding: "18px",
-  textAlign: "left",
-  cursor: "pointer",
-  boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)",
-  minHeight: "170px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "space-between",
-},
+  templateTile: {
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    background: "#FFFFFF",
+    padding: "16px",
+    textAlign: "left",
+    cursor: "pointer",
+    boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)",
+  },
 
-templateTileTop: {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "flex-start",
-  gap: "8px",
-  marginBottom: "12px",
-},
+  templateTileTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "10px",
+    alignItems: "flex-start",
+    marginBottom: "10px",
+  },
 
-templateName: {
-  margin: 0,
-  color: "#0F172A",
-  fontSize: "17px",
-  fontWeight: 850,
-  lineHeight: "1.35",
-  letterSpacing: "-0.01em",
-  whiteSpace: "normal",
-},
+  templateName: {
+    margin: 0,
+    color: "#0F172A",
+    fontSize: "16px",
+    fontWeight: 850,
+    lineHeight: "1.4",
+  },
 
-templateCategory: {
-  display: "inline-flex",
-  borderRadius: "999px",
-  background: "#DBEAFE",
-  color: "#1D4ED8",
-  padding: "5px 9px",
-  fontSize: "11px",
-  fontWeight: 800,
-  whiteSpace: "normal",
-  lineHeight: "1.2",
-  maxWidth: "100%",
-},
+  templateCategory: {
+    display: "inline-flex",
+    borderRadius: "999px",
+    background: "#DBEAFE",
+    color: "#1D4ED8",
+    padding: "4px 8px",
+    fontSize: "11px",
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  },
 
-templateDescription: {
-  margin: 0,
-  color: "#475569",
-  fontSize: "14px",
-  lineHeight: "1.6",
-},
+  templateDescription: {
+    margin: 0,
+    color: "#475569",
+    fontSize: "14px",
+    lineHeight: "1.6",
+  },
 
-templateUse: {
-  margin: "14px 0 0",
-  color: "#7C3AED",
-  fontSize: "13px",
-  fontWeight: 850,
-},
+  templateUse: {
+    margin: "14px 0 0",
+    color: "#7C3AED",
+    fontSize: "13px",
+    fontWeight: 850,
+  },
 
   loadingStage: {
     marginBottom: "20px",
@@ -3317,4 +3379,50 @@ mermaidCodeBlock: {
     lineHeight: "1.7",
     marginBottom: "16px",
   },
+  mobileContainer: {
+    padding: "18px",
+    maxWidth: "100%",
+  },
+  mobileHeader: {
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: "18px",
+    marginBottom: "20px",
+  },
+  mobileHeaderActions: {
+    width: "100%",
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    gap: "10px",
+    justifyContent: "stretch",
+  },
+  mobileTitle: {
+    fontSize: "32px",
+    lineHeight: "1.12",
+  },
+  mobileStackRow: {
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: "12px",
+  },
+  mobileActionRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    width: "100%",
+    gap: "10px",
+  },
+  mobileOneColumnGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    gap: "14px",
+  },
+  mobileTemplateGrid: {
+    gridTemplateColumns: "1fr",
+    gap: "12px",
+  },
+  mobileScoreGrid: {
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "12px",
+  },
+
 };
