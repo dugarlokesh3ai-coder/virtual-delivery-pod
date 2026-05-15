@@ -16,6 +16,7 @@ from agents.diagram import generate_process_diagram
 from agents.quality_score import generate_quality_score
 from agents.section_regenerator import regenerate_section
 from agents.agent_review import generate_agent_review
+from agents.delivery_lead_chat import chat_with_delivery_lead
 
 app = FastAPI()
 
@@ -27,6 +28,12 @@ class CodeRequest(BaseModel):
 class AgentReviewRequest(BaseModel):
     requirement: str
     current_package: dict
+
+class DeliveryLeadChatRequest(BaseModel):
+    message: str
+    requirement: str
+    current_package: dict | None = None
+    chat_history: list = []
 
 class RegenerateSectionRequest(BaseModel):
     section: str
@@ -325,6 +332,18 @@ async def agent_review(request: AgentReviewRequest):
     )
 
     return review
+
+@app.post("/delivery_lead_chat")
+async def delivery_lead_chat(request: DeliveryLeadChatRequest):
+    response = await asyncio.to_thread(
+        chat_with_delivery_lead,
+        request.message,
+        request.requirement,
+        request.current_package,
+        request.chat_history,
+    )
+
+    return response
 
 @app.post("/generate-code")
 def generate_code(request: CodeRequest):
