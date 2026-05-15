@@ -153,9 +153,16 @@ type QualityScore = {
   readiness_score: number;
   rating: string;
   summary: string;
+  score_rationale?: {
+    completeness: string;
+    risk: string;
+    readiness: string;
+  };
+  score_caps_applied?: string[];
   strengths: string[];
   weaknesses: string[];
   recommended_fixes: string[];
+  build_readiness_verdict?: string;
 };
 
 type ActiveTab = "stories" | "technical" | "qa";
@@ -1959,6 +1966,43 @@ ${uat.expected_result}
                         <p style={styles.accentText}>{result.quality_score.rating}</p>
                         <p style={styles.bodyText}>{result.quality_score.summary}</p>
                       </div>
+
+                      {result.quality_score.build_readiness_verdict && (
+  <div style={styles.innerCard}>
+    <p style={styles.label}>Build Readiness Verdict</p>
+    <p style={styles.accentText}>
+      {result.quality_score.build_readiness_verdict}
+    </p>
+  </div>
+)}
+
+    {result.quality_score.score_rationale && (
+      <div style={styles.innerCard}>
+        <p style={styles.label}>Score Rationale</p>
+        <p style={styles.bodyText}>
+          <strong>Completeness:</strong>{" "}
+          {result.quality_score.score_rationale.completeness}
+        </p>
+        <p style={styles.bodyText}>
+          <strong>Risk:</strong> {result.quality_score.score_rationale.risk}
+        </p>
+        <p style={styles.bodyText}>
+          <strong>Readiness:</strong>{" "}
+          {result.quality_score.score_rationale.readiness}
+        </p>
+      </div>
+    )}
+
+    {result.quality_score.score_caps_applied?.length ? (
+      <div style={styles.riskBox}>
+        <p style={styles.riskTitle}>Score Caps / Penalties Applied</p>
+        <ul style={styles.list}>
+          {result.quality_score.score_caps_applied.map((item, index) => (
+            <li key={index}>{item}</li>
+          ))}
+        </ul>
+      </div>
+    ) : null}
 
                       <div style={responsiveTwoGrid}>
                         <div style={styles.innerCard}>
