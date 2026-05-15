@@ -693,6 +693,69 @@ export default function Home() {
     }
   }
 
+  async function upgradeQuickPackageToFull() {
+  if (!result) {
+    alert("Generate a quick package first.");
+    return;
+  }
+
+  if (result.generation_mode !== "quick") {
+    alert("This package is already a full package.");
+    return;
+  }
+
+  setLoading(true);
+  setLoadingStage("Upgrading quick package to full detailed package...");
+
+  const stageTimers = [
+    setTimeout(
+      () => setLoadingStage("Developer is preparing technical notes..."),
+      900
+    ),
+    setTimeout(
+      () => setLoadingStage("Creating process/state flow diagram..."),
+      2200
+    ),
+    setTimeout(
+      () => setLoadingStage("QA is building test cases and UAT scenarios..."),
+      4200
+    ),
+    setTimeout(
+      () => setLoadingStage("Quality gate is scoring the full package..."),
+      6800
+    ),
+  ];
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/upgrade-package`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        requirement: buildRequirementWithClarifications(),
+        current_package: result,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Upgrade package failed");
+    }
+
+    const data = await response.json();
+
+    setResult(data);
+    setPackageTab("overview");
+  } catch (error) {
+    console.error(error);
+    alert("Upgrade failed. Check your backend logs.");
+  } finally {
+    stageTimers.forEach((timer) => clearTimeout(timer));
+    setLoading(false);
+    setLoadingStage("");
+  }
+}
+
   async function copyToClipboard(value: string) {
     await navigator.clipboard.writeText(value);
     alert("Copied.");
@@ -1826,6 +1889,21 @@ ${uat.expected_result}
                 <p style={styles.muted}>
                   Use the section tabs to review, refine, and export the package without scrolling through the full output.
                 </p>
+                {result.generation_mode === "quick" && (
+                  <div style={{ marginTop: "14px" }}>
+                    <button
+                      onClick={upgradeQuickPackageToFull}
+                      disabled={loading}
+                      style={{
+                        ...styles.button,
+                        opacity: loading ? 0.65 : 1,
+                        cursor: loading ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {loading ? "Upgrading..." : "Upgrade to Full Detailed Package"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div style={isMobile ? styles.mobileSnapshotGrid : styles.snapshotGrid}>

@@ -30,6 +30,10 @@ class RegenerateSectionRequest(BaseModel):
     current_package: dict
     user_instruction: str
 
+class UpgradePackageRequest(BaseModel):
+    requirement: str
+    current_package: dict
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -225,6 +229,84 @@ Uploaded Document Context:
         "stories": story_output.get("stories", []),
         "story_assumptions": story_output.get("assumptions", []),
         "story_dependencies": story_output.get("dependencies", []),
+        "developer": developer_output,
+        "qa": qa_output,
+        "quality_score": quality_score,
+    }
+
+@app.post("/upgrade-package")
+async def upgrade_package(request: UpgradePackageRequest):
+    requirement = request.requirement
+    current_package = request.current_package
+
+    architecture = {
+        "requirement_summary": current_package.get("requirement_summary", ""),
+        "solution_design": current_package.get("solution_design", ""),
+        "recommended_app_type": current_package.get("recommended_app_type", ""),
+        "tables": current_package.get("tables", []),
+        "workflow_steps": current_package.get("workflow_steps", []),
+        "risks": current_package.get("risks", []),
+        "open_questions": current_package.get("open_questions", []),
+    }
+
+    story_output = {
+        "epic": current_package.get("epic", ""),
+        "stories": current_package.get("stories", []),
+        "assumptions": current_package.get("story_assumptions", []),
+        "dependencies": current_package.get("story_dependencies", []),
+    }
+
+    developer_task = asyncio.to_thread(
+        generate_developer_notes,
+        requirement,
+        architecture,
+        story_output,
+    )
+
+    diagram_task = asyncio.to_thread(
+        generate_process_diagram,
+        requirement,
+        architecture,
+        story_output,
+    )
+
+    developer_output, process_diagram = await asyncio.gather(
+        developer_task,
+        diagram_task,
+    )
+
+    qa_output = await asyncio.to_thread(
+        generate_qa_package,
+        requirement,
+        architecture,
+        story_output,
+        developer_output,
+    )
+
+    delivery_lead_review = await asyncio.to_thread(
+        generate_delivery_lead_review,
+        requirement,
+        architecture,
+        story_output,
+        developer_output,
+        qa_output,
+    )
+
+    quality_score = await asyncio.to_thread(
+        generate_quality_score,
+        requirement,
+        architecture,
+        story_output,
+        developer_output,
+        qa_output,
+        delivery_lead_review,
+    )
+
+    return {
+        **current_package,
+        "generation_mode": "full",
+        "delivery_lead_review": delivery_lead_review,
+        "process_diagram": process_diagram,
         "developer": developer_output,
         "qa": qa_output,
         "quality_score": quality_score,
