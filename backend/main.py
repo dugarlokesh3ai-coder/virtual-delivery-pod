@@ -171,13 +171,6 @@ Uploaded Document Context:
         story_output,
     )
 
-    qa_task = asyncio.to_thread(
-        generate_qa_package,
-        combined_requirement,
-        architecture,
-        story_output,
-    )
-
     diagram_task = asyncio.to_thread(
         generate_process_diagram,
         combined_requirement,
@@ -185,10 +178,17 @@ Uploaded Document Context:
         story_output,
     )
 
-    developer_output, qa_output, process_diagram = await asyncio.gather(
+    developer_output, process_diagram = await asyncio.gather(
         developer_task,
-        qa_task,
         diagram_task,
+    )
+
+    qa_output = await asyncio.to_thread(
+        generate_qa_package,
+        combined_requirement,
+        architecture,
+        story_output,
+        developer_output,
     )
 
     delivery_lead_review = await asyncio.to_thread(
@@ -229,7 +229,6 @@ Uploaded Document Context:
         "qa": qa_output,
         "quality_score": quality_score,
     }
-
 
 @app.post("/generate-code")
 def generate_code(request: CodeRequest):
