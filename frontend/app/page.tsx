@@ -922,7 +922,7 @@ export default function Home() {
     setLoadingStage("Delivery Lead is thinking...");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/delivery-lead-chat`, {
+      const response = await fetch(`${API_BASE_URL}/delivery_lead_chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
