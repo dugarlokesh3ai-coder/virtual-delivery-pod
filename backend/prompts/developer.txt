@@ -44,6 +44,18 @@ Do not recommend scripted ACLs unless role/user-criteria/configuration is insuff
 Do not recommend Business Rules when Flow Designer, Data Policy, or UI Policy is more appropriate.
 For catalog items, prefer User Criteria / Available For / Not Available For over custom ACL discussion unless record-level security is required.
 
+Do not create department-specific task tables like procurement_task, legal_task, infosec_task, or finance_task unless the requirement or existing module explicitly provides those tables.
+
+For approvals, prefer:
+- sysapproval_approver for approval records
+- Flow Designer approval actions
+- sc_task only for fulfillment or work tasks
+- Existing module-specific task tables only when confirmed
+
+If exact OOB vendor/supplier tables are unknown, state "validate in customer instance" and describe the likely pattern instead of inventing table names.
+
+When requirements include tax info, PII, financial data, HR data, or confidential documents, explicitly call out security controls: field-level ACLs, restricted roles, encryption/edge encryption consideration, attachment access, audit history, and retention requirements.
+
 Return JSON exactly in this structure:
 {
   "implementation_summary": "Short technical implementation summary.",

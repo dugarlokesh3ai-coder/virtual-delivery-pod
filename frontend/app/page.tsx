@@ -816,36 +816,74 @@ export default function Home() {
     }
   }
 
+  function clearLocalSupabaseAuthStorage() {
+    if (typeof window === "undefined") return;
+
+    const clearStorage = (storage: Storage) => {
+      const keysToRemove: string[] = [];
+
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+
+        if (
+          key &&
+          key.startsWith("sb-") &&
+          (key.includes("auth") || key.includes("token") || key.includes("code-verifier"))
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+
+      keysToRemove.forEach((key) => storage.removeItem(key));
+    };
+
+    clearStorage(window.localStorage);
+    clearStorage(window.sessionStorage);
+  }
+
   async function signOut() {
     if (authLoading) return;
 
     setAuthLoading(true);
 
+    // Clear UI immediately. Supabase sign-out can occasionally hang in browser
+    // storage/session cleanup, so do not let the button stay stuck on
+    // "Signing out...".
+    setUser(null);
+    setAuthEmail("");
+    setAuthPassword("");
+    setSavedProjects([]);
+    clearWorkspace();
+    clearLocalSupabaseAuthStorage();
+    setAuthLoading(false);
+
+    addDiagnostic({
+      area: "Authentication",
+      status: "success",
+      message: "Signed out locally.",
+    });
+
     try {
-      await withDbTimeout(supabase.auth.signOut({ scope: "local" }), "Sign out", 12000);
-      addDiagnostic({
-        area: "Authentication",
-        status: "success",
-        message: "Signed out successfully.",
-      });
+      const { error } = await withDbTimeout(
+        supabase.auth.signOut({ scope: "local" }),
+        "Supabase sign out",
+        3000,
+      );
+
+      if (error) {
+        throw error;
+      }
     } catch (error) {
-      console.error("Sign out failed", error);
+      console.warn("Remote Supabase sign out did not confirm", error);
       addDiagnostic({
         area: "Authentication",
-        status: "error",
-        message: "Sign out failed.",
+        status: "warning",
+        message: "Local sign out completed, but Supabase did not confirm remote sign out.",
         detail: getErrorMessage(error),
       });
-      alert("Sign out failed. Open Workspace menu > Diagnostics for details.");
-    } finally {
-      setUser(null);
-      setAuthEmail("");
-      setAuthPassword("");
-      setSavedProjects([]);
-      clearWorkspace();
-      setAuthLoading(false);
     }
   }
+
 
   async function loadSavedProjectsFromDb(currentUserId?: string) {
     const userId = currentUserId || user?.id;

@@ -26,6 +26,8 @@ Rules:
 - Clearly flag assumptions and risks.
 - Use ServiceNow table/module names carefully. If not certain, mark table/module as "to validate in customer instance" instead of inventing exact names.
 
+When requirements include tax info, PII, financial data, HR data, or confidential documents, explicitly call out security controls: field-level ACLs, restricted roles, encryption/edge encryption consideration, attachment access, audit history, and retention requirements.
+
 OOB-first architecture requirement:
 Before recommending a custom scoped application, evaluate whether the requirement can be solved with standard ServiceNow capabilities such as:
 - Service Catalog / Request Management
@@ -65,6 +67,8 @@ If custom build is recommended:
 - Explain why OOB module/configuration, catalog item, existing task table, or platform table reuse is not sufficient.
 - Call out technical debt, maintenance, and upgrade impact.
 - Include pros/cons of custom versus OOB.
+
+If reporting is explicitly requested by the user, include basic standard reports/dashboards in MVP. Move only advanced analytics, Performance Analytics, executive dashboards, or enhanced reporting to Phase 2.
 
 Return JSON exactly in this structure:
 {
