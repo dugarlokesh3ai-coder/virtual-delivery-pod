@@ -748,47 +748,100 @@ export default function Home() {
       return;
     }
 
-    const payload = {
-      user_id: user.id,
+    const now = new Date().toISOString();
+
+    const basePayload = {
       project_name: projectName.trim(),
       requirement,
       clarification_answers: clarificationAnswers,
       uploaded_file_names: files.map((file) => file.name),
-      result,
-      delivery_lead_chat: deliveryLeadChat,
-      updated_at: new Date().toISOString(),
+      result: result || null,
+      delivery_lead_chat: deliveryLeadChat || [],
+      updated_at: now,
     };
 
-    if (activeProjectId) {
-      const { error } = await supabase
-        .from("delivery_projects")
-        .update(payload)
-        .eq("id", activeProjectId)
-        .eq("user_id", user.id);
+    try {
+      let savedRecord: any = null;
 
-      if (error) {
-        console.error(error);
-        alert("Unable to update project.");
-        return;
+      if (activeProjectId) {
+        const { data, error } = await supabase
+          .from("delivery_projects")
+          .update(basePayload)
+          .eq("id", activeProjectId)
+          .eq("user_id", user.id)
+          .select("*")
+          .maybeSingle();
+
+        if (error) {
+          console.error("Unable to update project", error);
+          alert(`Unable to update project: ${error.message}`);
+          return;
+        }
+
+        if (!data) {
+          alert(
+            "This saved project could not be found for your account. Use Save Project to create a new saved copy."
+          );
+          setActiveProjectId(null);
+          await loadSavedProjectsFromDb(user.id);
+          return;
+        }
+
+        savedRecord = data;
+      } else {
+        const { data, error } = await supabase
+          .from("delivery_projects")
+          .insert({
+            ...basePayload,
+            user_id: user.id,
+          })
+          .select("*")
+          .single();
+
+        if (error) {
+          console.error("Unable to save project", error);
+          alert(`Unable to save project: ${error.message}`);
+          return;
+        }
+
+        savedRecord = data;
       }
-    } else {
-      const { data, error } = await supabase
-        .from("delivery_projects")
-        .insert(payload)
-        .select()
-        .single();
 
-      if (error) {
-        console.error(error);
-        alert("Unable to save project.");
-        return;
-      }
+      const savedProject: SavedProject = {
+        id: savedRecord.id,
+        project_name: savedRecord.project_name,
+        created_at: savedRecord.created_at,
+        updated_at: savedRecord.updated_at,
+        requirement: savedRecord.requirement || "",
+        clarification_answers: savedRecord.clarification_answers || "",
+        uploaded_file_names: savedRecord.uploaded_file_names || [],
+        result: savedRecord.result || null,
+        delivery_lead_chat: savedRecord.delivery_lead_chat || [],
+      };
 
-      setActiveProjectId(data.id);
+      setActiveProjectId(savedProject.id);
+      setProjectName(savedProject.project_name);
+
+      setSavedProjects((previousProjects) => {
+        const existingIndex = previousProjects.findIndex(
+          (project) => project.id === savedProject.id
+        );
+
+        if (existingIndex >= 0) {
+          return previousProjects.map((project) =>
+            project.id === savedProject.id ? savedProject : project
+          );
+        }
+
+        return [savedProject, ...previousProjects];
+      });
+
+      await loadSavedProjectsFromDb(user.id);
+      alert(activeProjectId ? "Project updated." : "Project saved.");
+    } catch (error) {
+      console.error("Project save/update failed", error);
+      alert("Project save/update failed. Check browser console and Supabase logs.");
     }
-
-    await loadSavedProjectsFromDb(user.id);
-    alert("Project saved.");
   }
 
   function loadProject(project: SavedProject) {
