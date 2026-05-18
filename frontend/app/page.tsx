@@ -501,6 +501,7 @@ export default function Home() {
       return;
     }
 
+    setAuthPassword("");
     alert("Signup complete. Check your email if confirmation is enabled.");
   }
 
@@ -521,12 +522,18 @@ export default function Home() {
 
     if (error) {
       alert(error.message);
+      return;
     }
+
+    setAuthEmail("");
+    setAuthPassword("");
   }
 
   async function signOut() {
     await supabase.auth.signOut();
     setUser(null);
+    setAuthEmail("");
+    setAuthPassword("");
     setSavedProjects([]);
     clearWorkspace();
   }
@@ -1923,39 +1930,32 @@ ${uat.expected_result}
             </p>
           </div>
 
-          {result && (
-            <div style={responsiveHeaderActions}>
-              <button onClick={exportMarkdown} style={styles.secondaryButton}>
-                Export Markdown
-              </button>
+          <div style={responsiveHeaderActions}>
+            {result && user && (
+              <>
+                <button onClick={exportMarkdown} style={styles.secondaryButton}>
+                  Export Markdown
+                </button>
 
-              <button onClick={exportDocx} style={styles.secondaryButton}>
-                Export DOCX
-              </button>
-            </div>
-          )}
-        </header>
-
-        <section style={styles.projectBar}>
-          <div style={responsiveProjectBarTop}>
-            <div>
-              <p style={styles.label}>Account</p>
-              <h2 style={styles.projectBarTitle}>
-                {user ? "Signed in" : "Sign in to save projects"}
-              </h2>
-              <p style={styles.muted}>
-                {user
-                  ? user.email
-                  : "Create an account to save packages and load them across devices."}
-              </p>
-            </div>
+                <button onClick={exportDocx} style={styles.secondaryButton}>
+                  Export DOCX
+                </button>
+              </>
+            )}
 
             {user ? (
-              <button onClick={signOut} style={styles.secondaryButton}>
-                Sign Out
-              </button>
+              <div style={isMobile ? styles.mobileActionRow : styles.accountTopRight}>
+                <div style={styles.signedInPill}>
+                  <span style={styles.signedInDot}></span>
+                  <span style={styles.signedInText}>Signed in</span>
+                  <span style={styles.signedInEmail}>{user.email}</span>
+                </div>
+                <button onClick={signOut} style={styles.secondaryButton}>
+                  Sign Out
+                </button>
+              </div>
             ) : (
-              <div style={isMobile ? styles.mobileActionRow : styles.authBox}>
+              <div style={isMobile ? styles.mobileActionRow : styles.authBoxCompact}>
                 <input
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
@@ -1994,7 +1994,19 @@ ${uat.expected_result}
               </div>
             )}
           </div>
-        </section>
+        </header>
+
+        {!user ? (
+          <section style={styles.loginOnlyCard}>
+            <p style={styles.label}>Account Required</p>
+            <h2 style={styles.loginOnlyTitle}>Sign in to access your delivery workspace</h2>
+            <p style={styles.loginOnlyText}>
+              Use the sign-in controls in the top-right corner to create packages, save projects,
+              reload previous work, and continue Delivery Lead conversations across devices.
+            </p>
+          </section>
+        ) : (
+          <>
 
         <section style={styles.templateCard}>
           <div style={responsiveTemplateHeader}>
@@ -3484,6 +3496,8 @@ ${uat.expected_result}
             )}
           </section>
         )}
+          </>
+        )}
 
         {codeModalOpen && (
           <div style={styles.modalOverlay}>
@@ -3924,6 +3938,79 @@ authBox: {
   gridTemplateColumns: "180px 180px auto auto",
   gap: "10px",
   alignItems: "center",
+},
+
+authBoxCompact: {
+  display: "grid",
+  gridTemplateColumns: "180px 180px auto auto",
+  gap: "10px",
+  alignItems: "center",
+},
+
+accountTopRight: {
+  display: "flex",
+  gap: "10px",
+  alignItems: "center",
+  justifyContent: "flex-end",
+  flexWrap: "wrap",
+},
+
+signedInPill: {
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+  border: "1px solid #CBD5E1",
+  borderRadius: "999px",
+  background: "#FFFFFF",
+  padding: "10px 14px",
+  color: "#334155",
+  fontSize: "13px",
+  fontWeight: 800,
+},
+
+signedInDot: {
+  width: "8px",
+  height: "8px",
+  borderRadius: "999px",
+  background: "#16A34A",
+},
+
+signedInText: {
+  color: "#16A34A",
+  fontWeight: 900,
+},
+
+signedInEmail: {
+  color: "#475569",
+  fontWeight: 800,
+},
+
+loginOnlyCard: {
+  maxWidth: "720px",
+  margin: "80px auto 0",
+  background: "rgba(255,255,255,0.96)",
+  border: "1px solid #CBD5E1",
+  borderRadius: "28px",
+  padding: "42px",
+  boxShadow: "0 24px 70px rgba(15, 23, 42, 0.12)",
+  textAlign: "center",
+},
+
+loginOnlyTitle: {
+  margin: "0 0 12px",
+  color: "#0F172A",
+  fontSize: "30px",
+  lineHeight: "1.15",
+  fontWeight: 900,
+  letterSpacing: "-0.03em",
+},
+
+loginOnlyText: {
+  margin: "0 auto",
+  maxWidth: "560px",
+  color: "#475569",
+  fontSize: "16px",
+  lineHeight: "1.75",
 },
 
   templateCard: {
