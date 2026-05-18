@@ -456,6 +456,9 @@ export default function Home() {
   const [deliveryLeadThinking, setDeliveryLeadThinking] = useState(false);
   const [deliveryLeadPendingRequirementUpdate, setDeliveryLeadPendingRequirementUpdate] =
     useState("");
+  const [activeGenerationMode, setActiveGenerationMode] =
+    useState<"quick" | "full" | null>(null);
+  const [floatingChatOpen, setFloatingChatOpen] = useState(false);
 
   const [projectName, setProjectName] = useState("");
   const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
@@ -765,6 +768,8 @@ export default function Home() {
     setDeliveryLeadChat([]);
     setDeliveryLeadThinking(false);
     setDeliveryLeadPendingRequirementUpdate("");
+    setActiveGenerationMode(null);
+    setFloatingChatOpen(false);
   }
 
   function newProject() {
@@ -858,6 +863,7 @@ export default function Home() {
     }
 
     setLoading(true);
+    setActiveGenerationMode(mode);
     setLoadingStage(
       mode === "quick"
         ? "Generating quick delivery package..."
@@ -933,6 +939,7 @@ export default function Home() {
     } finally {
       stageTimers.forEach((timer) => clearTimeout(timer));
       setLoading(false);
+      setActiveGenerationMode(null);
       setLoadingStage("");
     }
   }
@@ -2304,7 +2311,7 @@ ${uat.expected_result}
                 cursor: loading || analyzing ? "not-allowed" : "pointer",
               }}
             >
-              {loading ? "Generating..." : "Quick Package"}
+              {activeGenerationMode === "quick" ? "Generating Quick..." : "Quick Package"}
             </button>
 
             <button
@@ -2316,7 +2323,7 @@ ${uat.expected_result}
                 cursor: loading || analyzing ? "not-allowed" : "pointer",
               }}
             >
-              {loading ? "Generating..." : "Full Detailed Package"}
+              {activeGenerationMode === "full" ? "Generating Full..." : "Full Detailed Package"}
             </button>
           </div>
         </section>
@@ -2430,7 +2437,7 @@ ${uat.expected_result}
                       cursor: loading || analyzing ? "not-allowed" : "pointer",
                     }}
                   >
-                    Quick Package with Answers
+                    {activeGenerationMode === "quick" ? "Generating Quick..." : "Quick Package with Answers"}
                   </button>
 
                   <button
@@ -2442,7 +2449,7 @@ ${uat.expected_result}
                       cursor: loading || analyzing ? "not-allowed" : "pointer",
                     }}
                   >
-                    Full Detailed Package with Answers
+                    {activeGenerationMode === "full" ? "Generating Full..." : "Full Detailed Package with Answers"}
                   </button>
 
                   <button
@@ -2840,24 +2847,28 @@ ${uat.expected_result}
                     onCopy={copyToClipboard}
                   >
                     <p style={styles.accentText}>{result.recommended_app_type}</p>
-                  </Card>
-
-                  <Card
-                    title="Open Questions"
-                    copyValue={result.open_questions?.join("\n")}
-                    onCopy={copyToClipboard}
-                  >
-                    {result.open_questions?.length ? (
-                      <ul style={styles.list}>
-                        {result.open_questions.map((question, index) => (
-                          <li key={index}>{question}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p style={styles.muted}>No open questions identified.</p>
-                    )}
+                    <p style={styles.muted}>Use this as the delivery architecture direction before refining stories and technical notes.</p>
                   </Card>
                 </div>
+
+                <Card
+                  title="Open Questions / Build Gaps"
+                  copyValue={result.open_questions?.join("\n")}
+                  onCopy={copyToClipboard}
+                >
+                  {result.open_questions?.length ? (
+                    <div style={responsiveTwoGrid}>
+                      {result.open_questions.map((question, index) => (
+                        <div key={index} style={styles.questionCard}>
+                          <p style={styles.questionNumber}>Question {index + 1}</p>
+                          <p style={styles.bodyText}>{question}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={styles.muted}>No open questions identified.</p>
+                  )}
+                </Card>
 
                 <Card
                   title="Solution Design"
@@ -3008,21 +3019,43 @@ ${uat.expected_result}
 
             {packageTab === "technical" && (
               <Card
-                title="Technical Notes"
+                title="Technical Workbench"
                 copyValue={JSON.stringify(result.developer, null, 2)}
                 onCopy={copyToClipboard}
               >
                 <div style={styles.stack}>
                   {result.developer ? (
                     <>
-                      <div style={styles.innerCard}>
-                        <p style={styles.label}>Implementation Summary</p>
-                        <p style={styles.bodyText}>{result.developer.implementation_summary}</p>
+                      <div style={styles.technicalHero}>
+                        <div>
+                          <p style={styles.label}>Implementation Summary</p>
+                          <p style={styles.bodyText}>{result.developer.implementation_summary}</p>
+                        </div>
+                        <div style={styles.technicalStatsGrid}>
+                          <div style={styles.technicalStat}>
+                            <p style={styles.label}>Objects</p>
+                            <p style={styles.snapshotNumber}>{result.developer.service_now_objects?.length || 0}</p>
+                          </div>
+                          <div style={styles.technicalStat}>
+                            <p style={styles.label}>Flows</p>
+                            <p style={styles.snapshotNumber}>{result.developer.flow_designer_notes?.length || 0}</p>
+                          </div>
+                          <div style={styles.technicalStat}>
+                            <p style={styles.label}>Rules</p>
+                            <p style={styles.snapshotNumber}>{result.developer.business_rules?.length || 0}</p>
+                          </div>
+                        </div>
                       </div>
 
                       {result.developer.service_now_objects?.length > 0 && (
-                        <>
-                          <p style={styles.label}>ServiceNow Objects</p>
+                        <div style={styles.techSection}>
+                          <div style={styles.techSectionHeader}>
+                            <div>
+                              <p style={styles.label}>Build Inventory</p>
+                              <h3 style={styles.itemTitle}>ServiceNow Objects</h3>
+                            </div>
+                            <Badge>{result.developer.service_now_objects.length} objects</Badge>
+                          </div>
                           <div style={responsiveTwoGrid}>
                             {result.developer.service_now_objects.map((object, index) => (
                               <button
@@ -3035,20 +3068,28 @@ ${uat.expected_result}
                                   )
                                 }
                               >
-                                <p style={styles.accentText}>{object.name}</p>
-                                <p style={styles.muted}>{object.object_type}</p>
+                                <div style={styles.rowBetween}>
+                                  <p style={styles.accentText}>{object.name}</p>
+                                  <span style={styles.objectTypePill}>{object.object_type}</span>
+                                </div>
                                 <p style={styles.bodyText}>{object.purpose}</p>
-                                <p style={styles.clickHint}>Click to generate implementation/code</p>
+                                <p style={styles.clickHint}>Generate implementation guidance →</p>
                               </button>
                             ))}
                           </div>
-                        </>
+                        </div>
                       )}
 
                       {result.developer.flow_designer_notes?.length > 0 && (
-                        <>
-                          <p style={styles.label}>Flow Designer</p>
-                          <div style={responsiveTwoGrid}>
+                        <div style={styles.techSection}>
+                          <div style={styles.techSectionHeader}>
+                            <div>
+                              <p style={styles.label}>Automation</p>
+                              <h3 style={styles.itemTitle}>Flow Designer</h3>
+                            </div>
+                            <Badge>{result.developer.flow_designer_notes.length} flows</Badge>
+                          </div>
+                          <div style={styles.stack}>
                             {result.developer.flow_designer_notes.map((flow, index) => (
                               <button
                                 key={index}
@@ -3060,23 +3101,32 @@ ${uat.expected_result}
                                   )
                                 }
                               >
-                                <h3 style={styles.itemTitle}>{flow.flow_name}</h3>
+                                <div style={styles.rowBetween}>
+                                  <h3 style={styles.itemTitle}>{flow.flow_name}</h3>
+                                  <span style={styles.statusChip}>Flow</span>
+                                </div>
                                 <p style={styles.muted}>Trigger: {flow.trigger}</p>
                                 <ol style={styles.list}>
                                   {flow.steps.map((step, i) => (
                                     <li key={i}>{step}</li>
                                   ))}
                                 </ol>
-                                <p style={styles.clickHint}>Click to generate implementation/code</p>
+                                <p style={styles.clickHint}>Generate flow implementation details →</p>
                               </button>
                             ))}
                           </div>
-                        </>
+                        </div>
                       )}
 
                       {result.developer.business_rules?.length > 0 && (
-                        <>
-                          <p style={styles.label}>Business Rules</p>
+                        <div style={styles.techSection}>
+                          <div style={styles.techSectionHeader}>
+                            <div>
+                              <p style={styles.label}>Server Logic</p>
+                              <h3 style={styles.itemTitle}>Business Rules</h3>
+                            </div>
+                            <Badge>{result.developer.business_rules.length} rules</Badge>
+                          </div>
                           <div style={responsiveTwoGrid}>
                             {result.developer.business_rules.map((rule, index) => (
                               <button
@@ -3089,14 +3139,55 @@ ${uat.expected_result}
                                   )
                                 }
                               >
-                                <h3 style={styles.itemTitle}>{rule.name}</h3>
-                                <p style={styles.muted}>{rule.when} · {rule.condition}</p>
+                                <div style={styles.rowBetween}>
+                                  <h3 style={styles.itemTitle}>{rule.name}</h3>
+                                  <span style={styles.statusChip}>{rule.when}</span>
+                                </div>
+                                <p style={styles.muted}>Condition: {rule.condition}</p>
                                 <p style={styles.bodyText}>{rule.purpose}</p>
-                                <p style={styles.clickHint}>Click to generate implementation/code</p>
+                                <p style={styles.clickHint}>Generate business rule script/guidance →</p>
                               </button>
                             ))}
                           </div>
-                        </>
+                        </div>
+                      )}
+
+                      <div style={responsiveTwoGrid}>
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>ACL / Security Notes</p>
+                          {result.developer.acl_notes?.length ? (
+                            <ul style={styles.list}>
+                              {result.developer.acl_notes.map((item, index) => (
+                                <li key={index}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p style={styles.muted}>No ACL notes generated.</p>
+                          )}
+                        </div>
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Notification Notes</p>
+                          {result.developer.notification_notes?.length ? (
+                            <ul style={styles.list}>
+                              {result.developer.notification_notes.map((item, index) => (
+                                <li key={index}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p style={styles.muted}>No notification notes generated.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {result.developer.deployment_notes?.length > 0 && (
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Deployment Notes</p>
+                          <ul style={styles.list}>
+                            {result.developer.deployment_notes.map((item, index) => (
+                              <li key={index}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
 
                       <RegeneratePanel
@@ -3108,7 +3199,12 @@ ${uat.expected_result}
                       />
                     </>
                   ) : (
-                    <p style={styles.muted}>No technical notes generated.</p>
+                    <div style={styles.emptyCard}>
+                      <h2 style={styles.sectionTitle}>Technical notes are not available yet</h2>
+                      <p style={styles.bodyText}>
+                        Generate a full detailed package or upgrade the quick package to create implementation notes, flows, ACL guidance, notifications, and code-ready objects.
+                      </p>
+                    </div>
                   )}
                 </div>
               </Card>
@@ -3603,6 +3699,77 @@ ${uat.expected_result}
           </section>
         )}
           </>
+        )}
+
+        {user && (
+          <button
+            onClick={() => setFloatingChatOpen(true)}
+            style={styles.floatingChatButton}
+            aria-label="Open Delivery Lead chat"
+          >
+            <span style={styles.floatingChatIcon}>✦</span>
+            Ask Delivery Lead
+          </button>
+        )}
+
+        {floatingChatOpen && (
+          <div style={styles.floatingChatPanel}>
+            <div style={styles.floatingChatHeader}>
+              <div>
+                <p style={styles.label}>Delivery Lead Copilot</p>
+                <h3 style={styles.modalTitle}>Ask about this site or package</h3>
+              </div>
+              <button
+                style={styles.closeButton}
+                onClick={() => setFloatingChatOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={styles.miniChatBody}>
+              {deliveryLeadChat.length ? (
+                deliveryLeadChat.slice(-6).map((message, index) => (
+                  <div
+                    key={index}
+                    style={message.role === "user" ? styles.chatUserBubble : styles.chatLeadBubble}
+                  >
+                    <p style={styles.label}>{message.role === "user" ? "You" : "Delivery Lead"}</p>
+                    <p style={styles.bodyText}>{safeText(message.content)}</p>
+                  </div>
+                ))
+              ) : (
+                <div style={styles.innerCard}>
+                  <p style={styles.bodyText}>
+                    Ask about using the site, refining your requirement, package gaps, business rules, email notifications, ACLs, or how to improve the generated package.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <textarea
+              value={deliveryLeadMessage}
+              onChange={(e) => setDeliveryLeadMessage(e.target.value)}
+              placeholder="Ask the Delivery Lead anything about this package or site..."
+              style={styles.miniChatTextarea}
+            />
+            <div style={styles.exportActions}>
+              <button
+                onClick={askDeliveryLead}
+                disabled={deliveryLeadThinking || loading}
+                style={{
+                  ...styles.button,
+                  opacity: deliveryLeadThinking || loading ? 0.65 : 1,
+                  cursor: deliveryLeadThinking || loading ? "not-allowed" : "pointer",
+                }}
+              >
+                {deliveryLeadThinking ? "Thinking..." : "Send"}
+              </button>
+              <button onClick={() => setDeliveryLeadChat([])} style={styles.secondaryButton}>
+                Clear
+              </button>
+            </div>
+          </div>
         )}
 
         {codeModalOpen && (
@@ -5099,6 +5266,148 @@ mermaidCodeBlock: {
     lineHeight: "1.7",
     color: "#334155",
     background: "transparent",
+  },
+  technicalHero: {
+    background: "linear-gradient(135deg, #EFF6FF, #F8FAFC)",
+    border: "1px solid #BFDBFE",
+    borderRadius: "20px",
+    padding: "20px",
+    display: "grid",
+    gridTemplateColumns: "2fr 1fr",
+    gap: "18px",
+    alignItems: "center",
+  },
+  technicalStatsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: "10px",
+  },
+  technicalStat: {
+    background: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    borderRadius: "16px",
+    padding: "12px",
+    textAlign: "center",
+  },
+  techSection: {
+    background: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    borderRadius: "20px",
+    padding: "18px",
+    boxShadow: "0 10px 26px rgba(15, 23, 42, 0.05)",
+  },
+  techSectionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "12px",
+    marginBottom: "16px",
+  },
+  objectTypePill: {
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: "999px",
+    background: "#EEF2FF",
+    color: "#4338CA",
+    padding: "5px 9px",
+    fontSize: "12px",
+    fontWeight: 850,
+    whiteSpace: "nowrap",
+  },
+  statusChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: "999px",
+    background: "#ECFDF5",
+    color: "#047857",
+    padding: "5px 9px",
+    fontSize: "12px",
+    fontWeight: 850,
+    whiteSpace: "nowrap",
+  },
+  questionCard: {
+    background: "#FFFBEB",
+    border: "1px solid #FACC15",
+    borderRadius: "18px",
+    padding: "16px",
+  },
+  questionNumber: {
+    margin: "0 0 8px",
+    color: "#92400E",
+    fontSize: "12px",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    fontWeight: 850,
+  },
+  floatingChatButton: {
+    position: "fixed",
+    right: "24px",
+    bottom: "24px",
+    zIndex: 800,
+    border: "0",
+    borderRadius: "999px",
+    background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+    color: "#FFFFFF",
+    padding: "14px 18px",
+    fontSize: "14px",
+    fontWeight: 900,
+    boxShadow: "0 20px 50px rgba(37, 99, 235, 0.35)",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  },
+  floatingChatIcon: {
+    display: "inline-flex",
+    width: "24px",
+    height: "24px",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "999px",
+    background: "rgba(255,255,255,0.20)",
+  },
+  floatingChatPanel: {
+    position: "fixed",
+    right: "24px",
+    bottom: "86px",
+    zIndex: 850,
+    width: "min(440px, calc(100vw - 32px))",
+    maxHeight: "72vh",
+    overflow: "auto",
+    background: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    borderRadius: "24px",
+    padding: "18px",
+    boxShadow: "0 30px 80px rgba(15, 23, 42, 0.28)",
+  },
+  floatingChatHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "12px",
+    marginBottom: "14px",
+  },
+  miniChatBody: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+    maxHeight: "300px",
+    overflowY: "auto",
+    marginBottom: "12px",
+  },
+  miniChatTextarea: {
+    width: "100%",
+    minHeight: "96px",
+    resize: "vertical",
+    border: "1px solid #94A3B8",
+    borderRadius: "16px",
+    background: "#FFFFFF",
+    padding: "13px",
+    color: "#0F172A",
+    fontSize: "14px",
+    lineHeight: "1.6",
+    outline: "none",
+    boxSizing: "border-box",
   },
   mobileContainer: {
     padding: "18px",
