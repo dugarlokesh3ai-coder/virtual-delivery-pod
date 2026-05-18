@@ -15,20 +15,28 @@ Core implementation rules:
 - For complex conditional visibility, explicitly state that scripted ACLs, before-query business rules, domain separation, or task-based visibility may be required after security design confirmation.
 - Use UI Policies for simple client-side mandatory/visible/read-only behavior.
 - Use Client Scripts only for behavior UI Policies cannot support.
-- Use Business Rules for server-side validation, defaulting, state protection, or data integrity.
+- Use Business Rules for server-side validation, defaulting, state protection, cancellation restrictions, or data integrity.
 - Do not overuse Business Rules for workflow orchestration when Flow Designer is a better fit.
 - Use scheduled jobs only for reminders, expirations, revalidations, aging checks, or batch updates explicitly required by the process.
 - For reporting, default to standard reports/dashboards unless Performance Analytics is explicitly required or called out as optional.
 - Do not assume "No SLA" unless the requirement explicitly says no SLA. If SLA is missing, list it as a technical assumption/open item.
 - Keep states consistent with the architecture and stories. Do not introduce new lifecycle states unless required.
+- Do not include both "Approved" and "Review Complete" unless architecture explains distinct usage.
 - Separate review tasks from approval records/tasks where relevant.
 - Explain why each object exists.
+- Use a meaningful placeholder scoped app prefix based on the solution name, not x_custom, unless no clear app name exists. Example: Contract Review Intake -> x_cri.
 
 When the architecture recommends a custom scoped app with catalog intake:
 - Treat it as one pattern: "scoped application data model with Service Catalog intake front door."
 - Include the custom request table and catalog item.
 - Explain how the catalog item creates or maps to the custom table.
 - Do not make it sound like the team must choose between catalog and scoped app.
+
+Threshold and condition precision:
+- Respect exact threshold language from the requirement and architecture.
+- "Above $250,000" means greater than $250,000. It does not include exactly $250,000.
+- "At or above $250,000" includes exactly $250,000.
+- If threshold wording is ambiguous, list it as a technical assumption.
 
 Include:
 - custom tables
@@ -54,21 +62,32 @@ ServiceNow object guidance:
 - Include important fields as service_now_objects when they materially affect build or testing.
 - Include at least one role object when role-based access is required.
 - Include ACL notes that distinguish table ACLs, field ACLs, and row-level/security filtering concerns.
+- Include reports or dashboards as objects when reporting is required.
+- Avoid pseudo objects like "attachments field" if the platform uses native attachments; describe native attachment handling in purpose or technical assumptions.
 
 Flow Designer guidance:
 - Each flow should have a clear trigger.
 - Steps should include routing, task creation, approval/review handling, state updates, notification activities, and exception/rejection handling where relevant.
 - For parallel approvals/reviews, include how completion is evaluated and how rejection overrides completion.
 - For request-more-information loops, include state handling and resume behavior.
-- Do not claim Flow Designer can pause/resume arbitrary parallel tasks without noting that implementation design must handle task state, cancellation, or reactivation.
+- Do not claim Flow Designer can pause/resume arbitrary parallel tasks without noting that implementation design must handle task state, cancellation, reactivation, or waiting conditions.
+- If state moves to "Pending Approval" or "Approved", explain the exact trigger for those states.
 
 Business rule guidance:
-- Include business rules for default state, mandatory rejection comments, state transition protection, cancellation restriction, date validation, and server-side data integrity when applicable.
+- Include business rules for default state, mandatory rejection comments, state transition protection, cancellation restriction, date validation, threshold validation, and server-side data integrity when applicable.
 - Conditions should be concrete and ServiceNow-oriented, but avoid pretending exact scripts are final unless enough detail exists.
+- Do not create duplicate business rules for the same enforcement unless they apply to different tables.
+
+UI policy/client behavior guidance:
+- UI policies should include concrete actions.
+- If no UI policies are needed, return an empty list.
+- If a UI policy is included, it must have a name, condition, and actions.
+- Use Client Scripts only when UI Policies cannot meet the need.
 
 Notification guidance:
-- For each notification note, include trigger, recipient, purpose, and important content.
+- For each notification note, include trigger, recipients, purpose, and key content.
 - If notification body/templates are unknown, list as a technical assumption.
+- Do not invent exact email body text unless the user asks for it.
 
 Deployment guidance:
 - Include update set/application repository notes.
