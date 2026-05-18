@@ -525,6 +525,7 @@ export default function Home() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [projectSaving, setProjectSaving] = useState(false);
 
   useEffect(() => {
     const updateLayout = () => {
@@ -756,21 +757,44 @@ export default function Home() {
     return `project-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
+  function buildDefaultProjectName() {
+    const summary = result?.requirement_summary?.trim();
+    const firstRequirementLine = requirement
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.length > 0);
+
+    const baseName =
+      summary ||
+      firstRequirementLine ||
+      (result?.generation_mode === "quick"
+        ? "Quick Delivery Package"
+        : "ServiceNow Delivery Package");
+
+    const cleanName = baseName
+      .replace(/[`*_#>]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 72);
+
+    return cleanName || "ServiceNow Delivery Package";
+  }
+
   async function saveProject() {
     if (!user) {
       alert("Sign in before saving projects.");
       return;
     }
 
-    if (!projectName.trim()) {
-      alert("Enter a project name first.");
-      return;
-    }
+    if (projectSaving) return;
+
+    const resolvedProjectName = projectName.trim() || buildDefaultProjectName();
+    setProjectSaving(true);
 
     const now = new Date().toISOString();
 
     const basePayload = {
-      project_name: projectName.trim(),
+      project_name: resolvedProjectName,
       requirement,
       clarification_answers: clarificationAnswers,
       uploaded_file_names: files.map((file) => file.name),
@@ -781,6 +805,7 @@ export default function Home() {
 
     try {
       let savedRecord: any = null;
+      const wasUpdating = !!activeProjectId;
 
       if (activeProjectId) {
         const { data, error } = await supabase
@@ -798,15 +823,36 @@ export default function Home() {
         }
 
         if (!data) {
-          alert(
-            "This saved project could not be found for your account. Use Save Project to create a new saved copy."
+          const createNewCopy = window.confirm(
+            "This saved project could not be found for your account. Create a new saved copy instead?"
           );
-          setActiveProjectId(null);
-          await loadSavedProjectsFromDb(user.id);
-          return;
-        }
 
-        savedRecord = data;
+          setActiveProjectId(null);
+
+          if (!createNewCopy) {
+            await loadSavedProjectsFromDb(user.id);
+            return;
+          }
+
+          const { data: insertedData, error: insertError } = await supabase
+            .from("delivery_projects")
+            .insert({
+              ...basePayload,
+              user_id: user.id,
+            })
+            .select("*")
+            .single();
+
+          if (insertError) {
+            console.error("Unable to save new project copy", insertError);
+            alert(`Unable to save new project copy: ${insertError.message}`);
+            return;
+          }
+
+          savedRecord = insertedData;
+        } else {
+          savedRecord = data;
+        }
       } else {
         const { data, error } = await supabase
           .from("delivery_projects")
@@ -824,6 +870,11 @@ export default function Home() {
         }
 
         savedRecord = data;
+      }
+
+      if (!savedRecord) {
+        alert("Project was not saved. No database record was returned.");
+        return;
       }
 
       const savedProject: SavedProject = {
@@ -856,10 +907,12 @@ export default function Home() {
       });
 
       await loadSavedProjectsFromDb(user.id);
-      alert(activeProjectId ? "Project updated." : "Project saved.");
+      alert(wasUpdating ? "Project updated." : "Project saved.");
     } catch (error) {
       console.error("Project save/update failed", error);
       alert("Project save/update failed. Check browser console and Supabase logs.");
+    } finally {
+      setProjectSaving(false);
     }
   }
 
@@ -920,6 +973,7 @@ export default function Home() {
       delivery_lead: [],
     });
     setReviewAgentPendingRequirementUpdate("");
+    setProjectSaving(false);
   }
 
   function newProject() {
@@ -2577,8 +2631,20 @@ ${uat.expected_result}
                 New / Clear
               </button>
 
-              <button onClick={saveProject} style={styles.button}>
-                {activeProjectId ? "Update Project" : "Save Project"}
+              <button
+                onClick={saveProject}
+                disabled={projectSaving}
+                style={{
+                  ...styles.button,
+                  opacity: projectSaving ? 0.65 : 1,
+                  cursor: projectSaving ? "not-allowed" : "pointer",
+                }}
+              >
+                {projectSaving
+                  ? "Saving..."
+                  : activeProjectId
+                    ? "Update Project"
+                    : "Save Project"}
               </button>
             </div>
           </div>
@@ -2589,7 +2655,7 @@ ${uat.expected_result}
               <input
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
-                placeholder="Name this delivery package..."
+                placeholder="Optional. Name this delivery package..."
                 style={styles.projectInput}
               />
             </div>
