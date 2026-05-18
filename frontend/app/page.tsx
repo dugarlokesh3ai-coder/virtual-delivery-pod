@@ -576,6 +576,8 @@ export default function Home() {
   const [compareVersionId, setCompareVersionId] = useState("");
   const [showComparePanel, setShowComparePanel] = useState(false);
   const [showOnboardingTips, setShowOnboardingTips] = useState(false);
+  const [showSavedProjectsPanel, setShowSavedProjectsPanel] = useState(false);
+  const [showVersionHistoryPanel, setShowVersionHistoryPanel] = useState(false);
 
   useEffect(() => {
     const updateLayout = () => {
@@ -1321,6 +1323,8 @@ ${update}`;
     setPackageNeedsRegeneration(false);
     setCompareVersionId("");
     setShowComparePanel(false);
+    setShowSavedProjectsPanel(false);
+    setShowVersionHistoryPanel(false);
   }
 
   function newProject() {
@@ -3007,25 +3011,59 @@ ${uat.expected_result}
           </section>
         )}
 
-        <section style={styles.templateCard}>
-          <div style={responsiveTemplateHeader}>
-            <div>
-              <p style={styles.label}>Template Library</p>
-              <h2 style={styles.templateTitle}>Start from a common ServiceNow workflow</h2>
-              <p style={styles.muted}>
-                Pick a template to preload a strong sample requirement. You can edit it before analysis.
-              </p>
-            </div>
-
-            <button
-              onClick={() => setShowTemplates(!showTemplates)}
-              style={styles.secondaryButton}
-            >
-              {showTemplates ? "Hide Templates" : "Browse Templates"}
-            </button>
+        <section style={styles.workspaceCommandBar}>
+          <div>
+            <p style={styles.label}>Workspace Controls</p>
+            <h2 style={styles.commandBarTitle}>Manage templates, saved work, and versions</h2>
           </div>
 
-          {showTemplates && (
+          <div style={isMobile ? styles.mobileActionRow : styles.commandBarActions}>
+            <button
+              onClick={() => setShowTemplates(!showTemplates)}
+              style={showTemplates ? styles.activeUtilityButton : styles.secondaryButton}
+            >
+              Templates
+            </button>
+            <button
+              onClick={() => setShowSavedProjectsPanel(!showSavedProjectsPanel)}
+              style={showSavedProjectsPanel ? styles.activeUtilityButton : styles.secondaryButton}
+            >
+              Saved Projects ({savedProjects.length})
+            </button>
+            <button
+              onClick={() => setShowVersionHistoryPanel(!showVersionHistoryPanel)}
+              style={showVersionHistoryPanel ? styles.activeUtilityButton : styles.secondaryButton}
+            >
+              Version History ({projectVersions.length})
+            </button>
+            <button
+              onClick={() => setShowOnboardingTips(true)}
+              style={styles.secondaryButton}
+            >
+              Guide
+            </button>
+          </div>
+        </section>
+
+        {showTemplates && (
+          <section style={styles.compactPanel}>
+            <div style={responsiveTemplateHeader}>
+              <div>
+                <p style={styles.label}>Template Library</p>
+                <h2 style={styles.templateTitle}>Start from a common ServiceNow workflow</h2>
+                <p style={styles.muted}>
+                  Pick a template to preload a strong sample requirement. You can edit it before analysis.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowTemplates(false)}
+                style={styles.copyButton}
+              >
+                Close
+              </button>
+            </div>
+
             <div style={responsiveTemplateGrid}>
               {REQUIREMENT_TEMPLATES.map((template) => (
                 <button
@@ -3044,14 +3082,217 @@ ${uat.expected_result}
                 </button>
               ))}
             </div>
-          )}
+          </section>
+        )}
+
+        {showSavedProjectsPanel && (
+          <section style={styles.compactPanel}>
+            <div style={styles.cardTitleRow}>
+              <div>
+                <p style={styles.label}>Saved Projects</p>
+                <h2 style={styles.cardTitle}>Load or delete saved delivery packages</h2>
+              </div>
+              <button onClick={() => setShowSavedProjectsPanel(false)} style={styles.copyButton}>
+                Close
+              </button>
+            </div>
+
+            {savedProjects.length ? (
+              <div style={isMobile ? styles.mobileOneColumnGrid : styles.savedProjectGrid}>
+                {savedProjects.map((project) => (
+                  <div
+                    key={project.id}
+                    style={
+                      project.id === activeProjectId
+                        ? { ...styles.savedProjectCard, ...styles.savedProjectCardActive }
+                        : styles.savedProjectCard
+                    }
+                  >
+                    <button
+                      onClick={() => {
+                        loadProject(project);
+                        setShowSavedProjectsPanel(false);
+                      }}
+                      style={styles.savedProjectLoadButton}
+                    >
+                      <div style={styles.rowBetween}>
+                        <h3 style={styles.itemTitle}>{project.project_name}</h3>
+                        <Badge>{project.project_status || "Draft"}</Badge>
+                      </div>
+                      <p style={styles.muted}>
+                        Updated {new Date(project.updated_at).toLocaleString()}
+                      </p>
+                      <p style={styles.projectMeta}>
+                        {project.result?.generation_mode || "No package"} · {scoreText(project.result?.quality_score?.overall_score)} · {(project.versions || []).length} version{(project.versions || []).length === 1 ? "" : "s"}
+                      </p>
+                    </button>
+
+                    <button
+                      onClick={() => deleteProject(project.id)}
+                      style={styles.dangerButton}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={styles.muted}>No saved projects yet. Create or generate a package, then click Save Project.</p>
+            )}
+          </section>
+        )}
+
+        {showVersionHistoryPanel && (
+          <section style={styles.compactPanel}>
+            <div style={styles.cardTitleRow}>
+              <div>
+                <p style={styles.label}>Version History</p>
+                <h2 style={styles.cardTitle}>Compare current package with previous saved states</h2>
+              </div>
+              <button onClick={() => setShowVersionHistoryPanel(false)} style={styles.copyButton}>
+                Close
+              </button>
+            </div>
+
+            {projectVersions.length ? (
+              <div style={styles.stack}>
+                <div style={isMobile ? styles.mobileOneColumnGrid : styles.versionControlRow}>
+                  <div style={styles.projectField}>
+                    <label style={styles.projectLabel}>Previous Version</label>
+                    <select
+                      value={compareVersionId}
+                      onChange={(e) => setCompareVersionId(e.target.value)}
+                      style={styles.projectSelect}
+                    >
+                      <option value="">Select a previous version...</option>
+                      {projectVersions.map((version) => (
+                        <option key={version.id} value={version.id}>
+                          {version.label} · {new Date(version.created_at).toLocaleString()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (!compareVersionId) {
+                        alert("Select a previous version first.");
+                        return;
+                      }
+                      setShowComparePanel(!showComparePanel);
+                    }}
+                    disabled={!compareVersionId || !result}
+                    style={{
+                      ...styles.secondaryButton,
+                      opacity: compareVersionId && result ? 1 : 0.5,
+                      cursor: compareVersionId && result ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    Compare Version
+                  </button>
+                </div>
+
+                <div style={styles.versionList}>
+                  {projectVersions.map((version) => (
+                    <button
+                      key={version.id}
+                      onClick={() => {
+                        setCompareVersionId(version.id);
+                        setShowComparePanel(true);
+                      }}
+                      style={
+                        version.id === compareVersionId
+                          ? { ...styles.versionRow, ...styles.versionRowActive }
+                          : styles.versionRow
+                      }
+                    >
+                      <div>
+                        <p style={styles.itemTitle}>{version.label}</p>
+                        <p style={styles.muted}>{new Date(version.created_at).toLocaleString()}</p>
+                      </div>
+                      <div style={styles.versionMetaGroup}>
+                        <Badge>{version.project_status}</Badge>
+                        <span style={styles.versionMeta}>{version.result?.generation_mode || "No package"}</span>
+                        <span style={styles.versionMeta}>{scoreText(version.result?.quality_score?.overall_score)}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {showComparePanel && getSelectedCompareVersion() && (
+                  <div style={styles.comparePanel}>
+                    <div style={styles.cardTitleRow}>
+                      <div>
+                        <p style={styles.label}>Compare current package vs previous version</p>
+                        <h3 style={styles.itemTitle}>{getSelectedCompareVersion()?.label}</h3>
+                      </div>
+                      <button
+                        style={styles.copyButton}
+                        onClick={() => setShowComparePanel(false)}
+                      >
+                        Close Compare
+                      </button>
+                    </div>
+
+                    <table style={styles.table}>
+                      <thead>
+                        <tr>
+                          <th style={styles.th}>Area</th>
+                          <th style={styles.th}>Previous Version</th>
+                          <th style={styles.th}>Current Workspace</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {buildPackageComparison(getSelectedCompareVersion()).map((row) => (
+                          <tr key={row.label}>
+                            <td style={styles.tableName}>{row.label}</td>
+                            <td style={styles.td}>{row.previous}</td>
+                            <td style={styles.td}>{row.current}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p style={styles.muted}>No versions yet. Manual Save/Update creates version snapshots.</p>
+            )}
+          </section>
+        )}
+
+        <section style={styles.statusBanner}>
+          <div>
+            <p style={styles.label}>Project Status</p>
+            <h2 style={styles.statusTitle}>{projectStatus}</h2>
+            <p style={styles.projectMeta}>
+              {activeProjectId ? "Active saved project" : "Unsaved workspace"} · {files.length} file{files.length === 1 ? "" : "s"} attached by name · {autoSaveState}
+              {lastAutoSavedAt ? ` at ${new Date(lastAutoSavedAt).toLocaleTimeString()}` : ""}
+            </p>
+          </div>
+
+          <div style={isMobile ? styles.mobileStatusFlow : styles.statusFlow}>
+            {PROJECT_STATUS_OPTIONS.map((status) => (
+              <button
+                key={status}
+                onClick={() => setProjectStatus(status)}
+                style={
+                  projectStatus === status
+                    ? styles.statusStepActive
+                    : styles.statusStep
+                }
+              >
+                {status}
+              </button>
+            ))}
+          </div>
         </section>
 
         <section style={styles.projectBar}>
           <div style={responsiveProjectBarTop}>
             <div>
               <p style={styles.label}>Project Workspace</p>
-              <h2 style={styles.projectBarTitle}>Save and reload delivery packages</h2>
+              <h2 style={styles.projectBarTitle}>Name and save the current package</h2>
             </div>
 
             <div style={responsiveProjectActions}>
@@ -3077,7 +3318,7 @@ ${uat.expected_result}
             </div>
           </div>
 
-          <div style={responsiveProjectControls}>
+          <div style={isMobile ? styles.mobileOneColumnGrid : styles.simpleProjectControls}>
             <div style={styles.projectField}>
               <label style={styles.projectLabel}>Current Project</label>
               <input
@@ -3086,27 +3327,6 @@ ${uat.expected_result}
                 placeholder="Optional. Name this delivery package..."
                 style={styles.projectInput}
               />
-            </div>
-
-            <div style={styles.projectField}>
-              <label style={styles.projectLabel}>Saved Projects</label>
-              <select
-                value={activeProjectId || ""}
-                onChange={(e) => {
-                  const selected = savedProjects.find(
-                    (project) => project.id === e.target.value
-                  );
-                  if (selected) loadProject(selected);
-                }}
-                style={styles.projectSelect}
-              >
-                <option value="">Select a saved project...</option>
-                {savedProjects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.project_name} · {new Date(project.updated_at).toLocaleDateString()}
-                  </option>
-                ))}
-              </select>
             </div>
 
             <button
@@ -3123,100 +3343,7 @@ ${uat.expected_result}
               Delete
             </button>
           </div>
-
-          <div style={isMobile ? styles.mobileOneColumnGrid : styles.projectUtilityGrid}>
-            <div style={styles.projectField}>
-              <label style={styles.projectLabel}>Project Status</label>
-              <select
-                value={projectStatus}
-                onChange={(e) => setProjectStatus(e.target.value as ProjectStatus)}
-                style={styles.projectSelect}
-              >
-                {PROJECT_STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={styles.projectField}>
-              <label style={styles.projectLabel}>Version History</label>
-              <select
-                value={compareVersionId}
-                onChange={(e) => setCompareVersionId(e.target.value)}
-                style={styles.projectSelect}
-              >
-                <option value="">Select a previous version...</option>
-                {projectVersions.map((version) => (
-                  <option key={version.id} value={version.id}>
-                    {version.label} · {new Date(version.created_at).toLocaleString()}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              onClick={() => {
-                if (!compareVersionId) {
-                  alert("Select a previous version first.");
-                  return;
-                }
-                setShowComparePanel(!showComparePanel);
-              }}
-              disabled={!compareVersionId || !result}
-              style={{
-                ...styles.secondaryButton,
-                opacity: compareVersionId && result ? 1 : 0.5,
-                cursor: compareVersionId && result ? "pointer" : "not-allowed",
-              }}
-            >
-              Compare Version
-            </button>
-          </div>
-
-          <p style={styles.projectMeta}>
-            {activeProjectId ? "Active saved project" : "Unsaved workspace"} · Status: {projectStatus} · {files.length} file{files.length === 1 ? "" : "s"} attached by name · {autoSaveState}
-            {lastAutoSavedAt ? ` at ${new Date(lastAutoSavedAt).toLocaleTimeString()}` : ""}
-          </p>
-
-          {showComparePanel && getSelectedCompareVersion() && (
-            <div style={styles.comparePanel}>
-              <div style={styles.cardTitleRow}>
-                <div>
-                  <p style={styles.label}>Compare current package vs previous version</p>
-                  <h3 style={styles.itemTitle}>{getSelectedCompareVersion()?.label}</h3>
-                </div>
-                <button
-                  style={styles.copyButton}
-                  onClick={() => setShowComparePanel(false)}
-                >
-                  Close
-                </button>
-              </div>
-
-              <table style={styles.table}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>Area</th>
-                    <th style={styles.th}>Previous Version</th>
-                    <th style={styles.th}>Current Workspace</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {buildPackageComparison(getSelectedCompareVersion()).map((row) => (
-                    <tr key={row.label}>
-                      <td style={styles.tableName}>{row.label}</td>
-                      <td style={styles.td}>{row.previous}</td>
-                      <td style={styles.td}>{row.current}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </section>
-
 
         {loadingStage && <div style={styles.loadingStage}>{loadingStage}</div>}
 
@@ -7038,6 +7165,180 @@ mermaidCodeBlock: {
     gap: "12px",
     flexWrap: "wrap",
     marginTop: "14px",
+  },
+
+  workspaceCommandBar: {
+    background: "rgba(255,255,255,0.92)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "22px",
+    padding: "18px 20px",
+    boxShadow: "0 14px 36px rgba(15, 23, 42, 0.07)",
+    marginBottom: "18px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "18px",
+  },
+  commandBarTitle: {
+    margin: 0,
+    fontSize: "20px",
+    fontWeight: 850,
+    letterSpacing: "-0.02em",
+    color: "#0F172A",
+  },
+  commandBarActions: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+  activeUtilityButton: {
+    border: "1px solid #2563EB",
+    borderRadius: "14px",
+    background: "#EFF6FF",
+    color: "#1D4ED8",
+    padding: "14px 22px",
+    fontSize: "15px",
+    fontWeight: 850,
+    cursor: "pointer",
+    boxShadow: "0 10px 24px rgba(37, 99, 235, 0.14)",
+  },
+  compactPanel: {
+    background: "rgba(255,255,255,0.96)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "22px",
+    padding: "20px",
+    boxShadow: "0 16px 42px rgba(15, 23, 42, 0.08)",
+    marginBottom: "18px",
+  },
+  statusBanner: {
+    background: "linear-gradient(135deg, rgba(239,246,255,0.95), rgba(245,243,255,0.95))",
+    border: "1px solid #BFDBFE",
+    borderRadius: "22px",
+    padding: "18px 20px",
+    boxShadow: "0 14px 38px rgba(37, 99, 235, 0.10)",
+    marginBottom: "18px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "18px",
+  },
+  statusTitle: {
+    margin: 0,
+    fontSize: "24px",
+    lineHeight: "1.2",
+    fontWeight: 900,
+    color: "#0F172A",
+    letterSpacing: "-0.03em",
+  },
+  statusFlow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(110px, 1fr))",
+    gap: "10px",
+    minWidth: "520px",
+  },
+  mobileStatusFlow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "8px",
+    width: "100%",
+  },
+  statusStep: {
+    border: "1px solid #CBD5E1",
+    background: "#FFFFFF",
+    color: "#334155",
+    borderRadius: "999px",
+    padding: "11px 14px",
+    fontSize: "14px",
+    fontWeight: 850,
+    cursor: "pointer",
+  },
+  statusStepActive: {
+    border: "1px solid #2563EB",
+    background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+    color: "#FFFFFF",
+    borderRadius: "999px",
+    padding: "11px 14px",
+    fontSize: "14px",
+    fontWeight: 900,
+    cursor: "pointer",
+    boxShadow: "0 12px 28px rgba(37, 99, 235, 0.22)",
+  },
+  simpleProjectControls: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto",
+    gap: "14px",
+    alignItems: "end",
+  },
+  savedProjectGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: "14px",
+  },
+  savedProjectCard: {
+    background: "#F8FAFC",
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    padding: "14px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+  },
+  savedProjectCardActive: {
+    border: "1px solid #2563EB",
+    background: "#EFF6FF",
+  },
+  savedProjectLoadButton: {
+    border: "0",
+    background: "transparent",
+    padding: 0,
+    textAlign: "left",
+    cursor: "pointer",
+    width: "100%",
+  },
+  versionControlRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto",
+    gap: "14px",
+    alignItems: "end",
+  },
+  versionList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+  },
+  versionRow: {
+    border: "1px solid #CBD5E1",
+    background: "#FFFFFF",
+    borderRadius: "16px",
+    padding: "14px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "12px",
+    textAlign: "left",
+    cursor: "pointer",
+  },
+  versionRowActive: {
+    border: "1px solid #2563EB",
+    background: "#EFF6FF",
+  },
+  versionMetaGroup: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+  versionMeta: {
+    borderRadius: "999px",
+    border: "1px solid #CBD5E1",
+    background: "#F8FAFC",
+    color: "#334155",
+    padding: "5px 9px",
+    fontSize: "12px",
+    fontWeight: 800,
   },
 
 };
