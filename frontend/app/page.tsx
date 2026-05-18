@@ -28,6 +28,43 @@ type RiskItem = {
   mitigation: string;
 };
 
+type PlatformFitOption = {
+  option?: any;
+  name?: any;
+  module?: any;
+  feature?: any;
+  fit?: any;
+  rationale?: any;
+  pros?: any[];
+  cons?: any[];
+};
+
+type TechnicalDebtItem = {
+  item?: any;
+  level?: any;
+  impact?: any;
+  mitigation?: any;
+};
+
+type PlatformFitDecision = {
+  recommended_approach?: any;
+  oob_options_considered?: PlatformFitOption[];
+  oob_features_considered?: PlatformFitOption[];
+  oob_modules_considered?: PlatformFitOption[];
+  oob_fit_assessment?: any;
+  custom_build_needed?: any;
+  customization_required?: any[];
+  customization_summary?: any[];
+  technical_debt?: TechnicalDebtItem[];
+  maintenance_impact?: any[];
+  upgrade_impact?: any[];
+  licensing_assumptions?: any[];
+  pros?: any[];
+  cons?: any[];
+  final_recommendation?: any;
+  build_readiness_verdict?: any;
+};
+
 type ProcessDiagram = {
   title: string;
   summary: string;
@@ -136,6 +173,9 @@ type DeliveryResult = {
   requirement_summary: string;
   solution_design: string;
   recommended_app_type: string;
+  platform_fit_decision?: PlatformFitDecision | null;
+  oob_vs_custom_decision?: PlatformFitDecision | null;
+  service_now_platform_fit?: PlatformFitDecision | null;
   tables: TableItem[];
   workflow_steps: string[];
   risks: RiskItem[];
@@ -396,6 +436,73 @@ function scoreText(value: any) {
 
 function hasUsableQualityScore(score: QualityScore | null | undefined) {
   return !!score && isValidScore(score.overall_score);
+}
+
+function getPlatformFitDecision(
+  data: DeliveryResult | null | undefined,
+): PlatformFitDecision | null {
+  const raw =
+    (data as any)?.platform_fit_decision ||
+    (data as any)?.oob_vs_custom_decision ||
+    (data as any)?.service_now_platform_fit ||
+    null;
+
+  if (!raw || typeof raw !== "object") return null;
+  return raw as PlatformFitDecision;
+}
+
+function getOobOptions(decision: PlatformFitDecision | null) {
+  if (!decision) return [];
+
+  return (
+    safeList(decision.oob_options_considered).length
+      ? safeList(decision.oob_options_considered)
+      : safeList(decision.oob_features_considered).length
+        ? safeList(decision.oob_features_considered)
+        : safeList(decision.oob_modules_considered)
+  ) as PlatformFitOption[];
+}
+
+function buildPlatformFitMarkdown(data: DeliveryResult | null | undefined) {
+  const decision = getPlatformFitDecision(data);
+
+  if (!decision) {
+    return `## ServiceNow Platform Fit / OOB vs Custom Decision\n\nNo platform-fit decision was returned by the backend. Update the architect prompt/backend response to include platform_fit_decision.`;
+  }
+
+  const oobOptions = getOobOptions(decision);
+
+  return `## ServiceNow Platform Fit / OOB vs Custom Decision\n\n### Recommended Approach\n${safeText(decision.recommended_approach) || "Not specified"}\n\n### OOB Features / Modules Considered\n${
+    oobOptions.length
+      ? oobOptions
+          .map(
+            (option) =>
+              `- **${safeText(option.option || option.name || option.module || option.feature) || "Option"}** — ${safeText(option.fit) || "Fit not stated"}: ${safeText(option.rationale)}`,
+          )
+          .join("\n")
+      : "- Not provided"
+  }\n\n### OOB Fit Assessment\n${safeText(decision.oob_fit_assessment) || "Not provided"}\n\n### Custom Build Needed\n${safeText(decision.custom_build_needed) || "Not specified"}\n\n### Customization Required\n${safeList(decision.customization_required || decision.customization_summary)
+  .map((item) => `- ${safeText(item)}`)
+  .join("\n") || "- Not provided"}\n\n### Technical Debt / Maintenance Impact\n${
+    safeList(decision.technical_debt).length
+      ? safeList(decision.technical_debt)
+          .map(
+            (item: TechnicalDebtItem) =>
+              `- **${safeText(item.item) || "Technical debt item"}** (${safeText(item.level) || "Level not stated"}): ${safeText(item.impact)} Mitigation: ${safeText(item.mitigation)}`,
+          )
+          .join("\n")
+      : safeList(decision.maintenance_impact)
+          .map((item) => `- ${safeText(item)}`)
+          .join("\n") || "- Not provided"
+  }\n\n### Upgrade Impact\n${safeList(decision.upgrade_impact)
+  .map((item) => `- ${safeText(item)}`)
+  .join("\n") || "- Not provided"}\n\n### Licensing Assumptions\n${safeList(decision.licensing_assumptions)
+  .map((item) => `- ${safeText(item)}`)
+  .join("\n") || "- Not provided"}\n\n### Pros\n${safeList(decision.pros)
+  .map((item) => `- ${safeText(item)}`)
+  .join("\n") || "- Not provided"}\n\n### Cons\n${safeList(decision.cons)
+  .map((item) => `- ${safeText(item)}`)
+  .join("\n") || "- Not provided"}\n\n### Final Recommendation\n${safeText(decision.final_recommendation) || "Not provided"}`;
 }
 
 const REQUIREMENT_TEMPLATES: RequirementTemplate[] = [
@@ -2468,6 +2575,8 @@ ${data.requirement_summary}
 ## Recommended App Type
 ${data.recommended_app_type}
 
+${buildPlatformFitMarkdown(data)}
+
 ## Solution Design
 ${data.solution_design}
 
@@ -2944,6 +3053,83 @@ ${uat.expected_result}
 
     children.push(docHeading("Recommended App Type"));
     children.push(docParagraph(result.recommended_app_type));
+
+    const platformFitDecision = getPlatformFitDecision(result);
+    children.push(docHeading("ServiceNow Platform Fit / OOB vs Custom Decision"));
+    if (platformFitDecision) {
+      children.push(docHeading("Recommended Approach", HeadingLevel.HEADING_2));
+      children.push(docParagraph(safeText(platformFitDecision.recommended_approach)));
+
+      children.push(docHeading("OOB Features / Modules Considered", HeadingLevel.HEADING_2));
+      const oobOptions = getOobOptions(platformFitDecision);
+      if (oobOptions.length) {
+        oobOptions.forEach((option) => {
+          children.push(
+            docBullet(
+              `${safeText(option.option || option.name || option.module || option.feature) || "Option"} — ${safeText(option.fit) || "Fit not stated"}: ${safeText(option.rationale)}`,
+            ),
+          );
+        });
+      } else {
+        children.push(docParagraph("Not provided."));
+      }
+
+      children.push(docHeading("OOB Fit Assessment", HeadingLevel.HEADING_2));
+      children.push(docParagraph(safeText(platformFitDecision.oob_fit_assessment)));
+
+      children.push(docHeading("Custom Build Needed", HeadingLevel.HEADING_2));
+      children.push(docParagraph(safeText(platformFitDecision.custom_build_needed)));
+
+      children.push(docHeading("Customization Required", HeadingLevel.HEADING_2));
+      safeList(
+        platformFitDecision.customization_required ||
+          platformFitDecision.customization_summary,
+      ).forEach((item) => children.push(docBullet(safeText(item))));
+
+      children.push(docHeading("Technical Debt / Maintenance Impact", HeadingLevel.HEADING_2));
+      if (safeList(platformFitDecision.technical_debt).length) {
+        safeList(platformFitDecision.technical_debt).forEach((item: TechnicalDebtItem) => {
+          children.push(
+            docBullet(
+              `${safeText(item.item) || "Technical debt item"} (${safeText(item.level) || "Level not stated"}): ${safeText(item.impact)} Mitigation: ${safeText(item.mitigation)}`,
+            ),
+          );
+        });
+      } else {
+        safeList(platformFitDecision.maintenance_impact).forEach((item) =>
+          children.push(docBullet(safeText(item))),
+        );
+      }
+
+      children.push(docHeading("Upgrade Impact", HeadingLevel.HEADING_2));
+      safeList(platformFitDecision.upgrade_impact).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+
+      children.push(docHeading("Licensing Assumptions", HeadingLevel.HEADING_2));
+      safeList(platformFitDecision.licensing_assumptions).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+
+      children.push(docHeading("Pros", HeadingLevel.HEADING_2));
+      safeList(platformFitDecision.pros).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+
+      children.push(docHeading("Cons", HeadingLevel.HEADING_2));
+      safeList(platformFitDecision.cons).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+
+      children.push(docHeading("Final Recommendation", HeadingLevel.HEADING_2));
+      children.push(docParagraph(safeText(platformFitDecision.final_recommendation)));
+    } else {
+      children.push(
+        docParagraph(
+          "No platform-fit decision was returned by the backend. Update the architect prompt/backend response to include platform_fit_decision.",
+        ),
+      );
+    }
 
     children.push(docHeading("Solution Design"));
     children.push(docParagraph(result.solution_design));
@@ -4762,6 +4948,12 @@ ${uat.expected_result}
                       </Card>
                     </div>
 
+                    <PlatformFitDecisionCard
+                      decision={getPlatformFitDecision(result)}
+                      copyValue={buildPlatformFitMarkdown(result)}
+                      onCopy={copyToClipboard}
+                    />
+
                     <Card
                       title="Open Questions / Build Gaps"
                       copyValue={result.open_questions?.join("\n")}
@@ -6334,6 +6526,213 @@ function ScoreBox({
         {isValidScore(score) ? "/ 100" : "Unavailable"}
       </p>
     </div>
+  );
+}
+
+function PlatformFitDecisionCard({
+  decision,
+  copyValue,
+  onCopy,
+}: {
+  decision: PlatformFitDecision | null;
+  copyValue: string;
+  onCopy: (value: string) => void;
+}) {
+  const oobOptions = getOobOptions(decision);
+
+  return (
+    <Card
+      title="ServiceNow Platform Fit / OOB vs Custom Decision"
+      copyValue={copyValue}
+      onCopy={onCopy}
+    >
+      {decision ? (
+        <div style={styles.stack}>
+          <div style={styles.innerCard}>
+            <p style={styles.label}>Recommended Approach</p>
+            <p style={styles.accentText}>
+              {safeText(decision.recommended_approach) || "Not specified"}
+            </p>
+            {decision.build_readiness_verdict && (
+              <p style={styles.muted}>
+                Build readiness: {safeText(decision.build_readiness_verdict)}
+              </p>
+            )}
+          </div>
+
+          <div style={styles.innerCard}>
+            <p style={styles.label}>OOB Features / Modules Considered</p>
+            {oobOptions.length ? (
+              <div style={styles.stack}>
+                {oobOptions.map((option, index) => (
+                  <div key={index} style={styles.platformFitOption}>
+                    <div style={styles.rowBetween}>
+                      <p style={styles.itemTitle}>
+                        {safeText(
+                          option.option ||
+                            option.name ||
+                            option.module ||
+                            option.feature,
+                        ) || "ServiceNow option"}
+                      </p>
+                      <Badge>{safeText(option.fit) || "Fit not stated"}</Badge>
+                    </div>
+                    <p style={styles.bodyText}>{safeText(option.rationale)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={styles.muted}>
+                No OOB/module comparison returned. The architect prompt should
+                evaluate Service Catalog, existing task records, licensed modules,
+                and App Engine before recommending custom build.
+              </p>
+            )}
+          </div>
+
+          <div style={styles.innerCard}>
+            <p style={styles.label}>OOB Fit Assessment</p>
+            <p style={styles.bodyText}>
+              {safeText(decision.oob_fit_assessment) || "Not provided"}
+            </p>
+          </div>
+
+          <div style={styles.platformDecisionGrid}>
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Custom Build Needed</p>
+              <p style={styles.accentText}>
+                {safeText(decision.custom_build_needed) || "Not specified"}
+              </p>
+            </div>
+
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Licensing Assumptions</p>
+              {safeList(decision.licensing_assumptions).length ? (
+                <ul style={styles.list}>
+                  {safeList(decision.licensing_assumptions).map((item, index) => (
+                    <li key={index}>{safeText(item)}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={styles.muted}>Not provided.</p>
+              )}
+            </div>
+          </div>
+
+          <div style={styles.platformDecisionGrid}>
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Customization Required</p>
+              {safeList(
+                decision.customization_required || decision.customization_summary,
+              ).length ? (
+                <ul style={styles.list}>
+                  {safeList(
+                    decision.customization_required ||
+                      decision.customization_summary,
+                  ).map((item, index) => (
+                    <li key={index}>{safeText(item)}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={styles.muted}>Not provided.</p>
+              )}
+            </div>
+
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Upgrade Impact</p>
+              {safeList(decision.upgrade_impact).length ? (
+                <ul style={styles.list}>
+                  {safeList(decision.upgrade_impact).map((item, index) => (
+                    <li key={index}>{safeText(item)}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={styles.muted}>Not provided.</p>
+              )}
+            </div>
+          </div>
+
+          <div style={styles.innerCard}>
+            <p style={styles.label}>Technical Debt / Maintenance Impact</p>
+            {safeList(decision.technical_debt).length ? (
+              <div style={styles.stack}>
+                {safeList(decision.technical_debt).map(
+                  (item: TechnicalDebtItem, index) => (
+                    <div key={index} style={styles.riskBox}>
+                      <p style={styles.riskTitle}>
+                        {safeText(item.item) || "Technical debt item"} · {safeText(item.level) || "Level not stated"}
+                      </p>
+                      <p style={styles.bodyText}>
+                        <strong>Impact:</strong> {safeText(item.impact)}
+                      </p>
+                      <p style={styles.bodyText}>
+                        <strong>Mitigation:</strong> {safeText(item.mitigation)}
+                      </p>
+                    </div>
+                  ),
+                )}
+              </div>
+            ) : safeList(decision.maintenance_impact).length ? (
+              <ul style={styles.list}>
+                {safeList(decision.maintenance_impact).map((item, index) => (
+                  <li key={index}>{safeText(item)}</li>
+                ))}
+              </ul>
+            ) : (
+              <p style={styles.muted}>Not provided.</p>
+            )}
+          </div>
+
+          <div style={styles.platformDecisionGrid}>
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Pros</p>
+              {safeList(decision.pros).length ? (
+                <ul style={styles.list}>
+                  {safeList(decision.pros).map((item, index) => (
+                    <li key={index}>{safeText(item)}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={styles.muted}>Not provided.</p>
+              )}
+            </div>
+
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Cons</p>
+              {safeList(decision.cons).length ? (
+                <ul style={styles.list}>
+                  {safeList(decision.cons).map((item, index) => (
+                    <li key={index}>{safeText(item)}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={styles.muted}>Not provided.</p>
+              )}
+            </div>
+          </div>
+
+          <div style={styles.innerCard}>
+            <p style={styles.label}>Final Recommendation</p>
+            <p style={styles.bodyText}>
+              {safeText(decision.final_recommendation) || "Not provided"}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div style={styles.stack}>
+          <div style={styles.riskBox}>
+            <p style={styles.riskTitle}>Platform-fit decision missing</p>
+            <p style={styles.bodyText}>
+              The backend did not return an OOB vs Custom decision. Add
+              platform_fit_decision to the architect output so every package
+              evaluates OOB modules, Service Catalog, existing tables, licensing,
+              technical debt, maintenance impact, and upgrade impact before
+              recommending custom build.
+            </p>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -8447,4 +8846,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "12px",
     fontWeight: 800,
   },
+  platformDecisionGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "16px",
+  },
+  platformFitOption: {
+    background: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    borderRadius: "16px",
+    padding: "14px",
+  },
+
 };
