@@ -150,10 +150,10 @@ type DeliveryResult = {
 };
 
 type QualityScore = {
-  overall_score: number;
-  completeness_score: number;
-  risk_score: number;
-  readiness_score: number;
+  overall_score: number | null;
+  completeness_score: number | null;
+  risk_score: number | null;
+  readiness_score: number | null;
   rating: string;
   summary: string;
   score_rationale?: {
@@ -302,6 +302,23 @@ function safeList(value: any): any[] {
   if (Array.isArray(value)) return value;
   return [value];
 }
+
+function isValidScore(value: any): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function displayScore(value: any) {
+  return isValidScore(value) ? String(value) : "—";
+}
+
+function scoreText(value: any) {
+  return isValidScore(value) ? `${value}/100` : "Score unavailable";
+}
+
+function hasUsableQualityScore(score: QualityScore | null | undefined) {
+  return !!score && isValidScore(score.overall_score);
+}
+
 
 const REQUIREMENT_TEMPLATES: RequirementTemplate[] = [
   {
@@ -715,14 +732,16 @@ export default function Home() {
     }
   }
 
-  function getScoreColor(score: number) {
+  function getScoreColor(score: number | null | undefined) {
+      if (!isValidScore(score)) return "#64748B";
       if (score >= 85) return "#15803D";
       if (score >= 70) return "#2563EB";
       if (score >= 50) return "#B45309";
       return "#B91C1C";
     }
 
-    function getScoreBackground(score: number) {
+    function getScoreBackground(score: number | null | undefined) {
+      if (!isValidScore(score)) return "#F1F5F9";
       if (score >= 85) return "#DCFCE7";
       if (score >= 70) return "#DBEAFE";
       if (score >= 50) return "#FEF3C7";
@@ -1612,16 +1631,16 @@ ${data.process_diagram?.mermaid_code || ""}
 ### Diagram Notes
 ${data.process_diagram?.diagram_notes?.map((note) => `- ${note}`).join("\n")}
 
-## Delivery Quality Score
+## ${data.generation_mode === "quick" ? "Quick Readiness Score" : "Delivery Quality Score"}
 
-Overall Score: ${data.quality_score?.overall_score || 0}/100  
-Completeness Score: ${data.quality_score?.completeness_score || 0}/100  
-Risk Score: ${data.quality_score?.risk_score || 0}/100  
-Readiness Score: ${data.quality_score?.readiness_score || 0}/100  
-Rating: ${data.quality_score?.rating || ""}
+Overall Score: ${scoreText(data.quality_score?.overall_score)}  
+Completeness Score: ${scoreText(data.quality_score?.completeness_score)}  
+Risk Score: ${scoreText(data.quality_score?.risk_score)}  
+Readiness Score: ${scoreText(data.quality_score?.readiness_score)}  
+Rating: ${data.quality_score?.rating || "Score unavailable"}
 
 ### Quality Summary
-${data.quality_score?.summary || ""}
+${data.quality_score?.summary || "Quality score was not generated for this package."}
 
 ### Strengths
 ${data.quality_score?.strengths?.map((item) => `- ${item}`).join("\n")}
@@ -2049,24 +2068,24 @@ ${uat.expected_result}
       children.push(docBullet(item))
     );
 
-    children.push(docHeading("Delivery Quality Score"));
+    children.push(docHeading(result.generation_mode === "quick" ? "Quick Readiness Score" : "Delivery Quality Score"));
     children.push(
-      docParagraph(`Overall Score: ${result.quality_score?.overall_score || 0}/100`)
+      docParagraph(`Overall Score: ${scoreText(result.quality_score?.overall_score)}`)
     );
     children.push(
       docParagraph(
-        `Completeness Score: ${result.quality_score?.completeness_score || 0}/100`
+        `Completeness Score: ${scoreText(result.quality_score?.completeness_score)}`
       )
     );
     children.push(
-      docParagraph(`Risk Score: ${result.quality_score?.risk_score || 0}/100`)
+      docParagraph(`Risk Score: ${scoreText(result.quality_score?.risk_score)}`)
     );
     children.push(
       docParagraph(
-        `Readiness Score: ${result.quality_score?.readiness_score || 0}/100`
+        `Readiness Score: ${scoreText(result.quality_score?.readiness_score)}`
       )
     );
-    children.push(docParagraph(`Rating: ${result.quality_score?.rating || ""}`));
+    children.push(docParagraph(`Rating: ${result.quality_score?.rating || "Score unavailable"}`));
     children.push(docParagraph(result.quality_score?.summary));
 
     children.push(docHeading("Strengths", HeadingLevel.HEADING_2));
@@ -2294,6 +2313,13 @@ ${uat.expected_result}
   const responsiveScoreGrid = isMobile
     ? { ...styles.scoreGrid, ...styles.mobileScoreGrid }
     : styles.scoreGrid;
+
+  const hasScore = hasUsableQualityScore(result?.quality_score);
+  const packageScoreLabel = result?.generation_mode === "quick" ? "Readiness" : "Quality";
+  const packageScoreTitle =
+    result?.generation_mode === "quick"
+      ? "Quick Readiness Score"
+      : "Delivery Quality Score";
 
   return (
     <main style={styles.page}>
@@ -2899,11 +2925,13 @@ ${uat.expected_result}
 
               <div style={isMobile ? styles.mobileSnapshotGrid : styles.snapshotGrid}>
                 <div style={styles.snapshotMetric}>
-                  <p style={styles.label}>Quality</p>
+                  <p style={styles.label}>{packageScoreLabel}</p>
                   <p style={styles.snapshotNumber}>
-                    {result.quality_score?.overall_score || 0}
+                    {displayScore(result.quality_score?.overall_score)}
                   </p>
-                  <p style={styles.snapshotText}>/ 100</p>
+                  <p style={styles.snapshotText}>
+                    {hasScore ? "/ 100" : result.generation_mode === "quick" ? "not scored yet" : "unavailable"}
+                  </p>
                 </div>
                 <div style={styles.snapshotMetric}>
                   <p style={styles.label}>Stories</p>
@@ -2912,15 +2940,21 @@ ${uat.expected_result}
                 </div>
                 <div style={styles.snapshotMetric}>
                   <p style={styles.label}>Test Cases</p>
-                  <p style={styles.snapshotNumber}>{result.qa?.test_cases?.length || 0}</p>
-                  <p style={styles.snapshotText}>QA cases</p>
+                  <p style={styles.snapshotNumber}>
+                    {result.generation_mode === "quick" ? "—" : result.qa?.test_cases?.length || 0}
+                  </p>
+                  <p style={styles.snapshotText}>
+                    {result.generation_mode === "quick" ? "full package only" : "QA cases"}
+                  </p>
                 </div>
                 <div style={styles.snapshotMetric}>
                   <p style={styles.label}>Tech Objects</p>
                   <p style={styles.snapshotNumber}>
-                    {result.developer?.service_now_objects?.length || 0}
+                    {result.generation_mode === "quick" ? "—" : result.developer?.service_now_objects?.length || 0}
                   </p>
-                  <p style={styles.snapshotText}>objects</p>
+                  <p style={styles.snapshotText}>
+                    {result.generation_mode === "quick" ? "full package only" : "objects"}
+                  </p>
                 </div>
                 <div style={styles.snapshotMetric}>
                   <p style={styles.label}>Open Questions</p>
@@ -3043,12 +3077,22 @@ ${uat.expected_result}
                 </Card>
 
                 <Card
-                  title="Delivery Quality Score"
+                  title={packageScoreTitle}
                   copyValue={JSON.stringify(result.quality_score, null, 2)}
                   onCopy={copyToClipboard}
                 >
                   {result.quality_score ? (
                     <div style={styles.stack}>
+                      {!hasUsableQualityScore(result.quality_score) && (
+                        <div style={styles.riskBox}>
+                          <p style={styles.riskTitle}>Score unavailable</p>
+                          <p style={styles.bodyText}>
+                            {result.quality_score.summary ||
+                              "The backend did not return a usable score. Regenerate the score or check the quality score agent."}
+                          </p>
+                        </div>
+                      )}
+
                       <div style={responsiveScoreGrid}>
                         <ScoreBox
                           label="Overall"
@@ -4429,15 +4473,15 @@ function ScoreBox({
   background,
 }: {
   label: string;
-  score: number;
+  score: number | null | undefined;
   color: string;
   background: string;
 }) {
   return (
     <div style={{ ...styles.scoreBox, background }}>
       <p style={styles.label}>{label}</p>
-      <p style={{ ...styles.scoreNumber, color }}>{score}</p>
-      <p style={styles.scoreOutOf}>/ 100</p>
+      <p style={{ ...styles.scoreNumber, color }}>{displayScore(score)}</p>
+      <p style={styles.scoreOutOf}>{isValidScore(score) ? "/ 100" : "Unavailable"}</p>
     </div>
   );
 }

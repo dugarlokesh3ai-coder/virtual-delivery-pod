@@ -2,121 +2,148 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import json
+import re
 
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-def safe_list(value):
-    return value if isinstance(value, list) else []
+DEFAULT_SCORE = {
+    "overall_score": None,
+    "completeness_score": None,
+    "risk_score": None,
+    "readiness_score": None,
+    "rating": "Score unavailable",
+    "summary": "The quality score could not be generated or parsed. Review the package manually.",
+    "score_rationale": {
+        "completeness": "Unable to score.",
+        "risk": "Unable to score.",
+        "readiness": "Unable to score.",
+    },
+    "score_caps_applied": [
+        "Score unavailable because quality scoring returned invalid output."
+    ],
+    "strengths": [],
+    "weaknesses": [
+        "Quality scoring failed or returned invalid JSON."
+    ],
+    "recommended_fixes": [
+        "Regenerate the quality score or review the package manually."
+    ],
+    "build_readiness_verdict": "Not assessed",
+}
 
 
-def count_package_gaps(delivery_lead_review: dict, architecture: dict, developer_output: dict, qa_output: dict):
-    open_questions = safe_list(architecture.get("open_questions", []))
-    assumptions = safe_list(delivery_lead_review.get("assumptions", []))
-    missing_requirements = safe_list(delivery_lead_review.get("missing_requirements", []))
-    risks = safe_list(architecture.get("risks", []))
+def extract_json(content: str):
+    if not content:
+        return None
 
-    acl_notes = safe_list(developer_output.get("acl_notes", []))
-    service_now_objects = safe_list(developer_output.get("service_now_objects", []))
-    flow_notes = safe_list(developer_output.get("flow_designer_notes", []))
-    business_rules = safe_list(developer_output.get("business_rules", []))
+    content = content.strip()
 
-    test_cases = safe_list(qa_output.get("test_cases", []))
-    uat_cases = safe_list(qa_output.get("uat_cases", []))
-    edge_cases = safe_list(qa_output.get("edge_cases", []))
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
 
-    return {
-        "open_question_count": len(open_questions),
-        "assumption_count": len(assumptions),
-        "missing_requirement_count": len(missing_requirements),
-        "risk_count": len(risks),
-        "acl_note_count": len(acl_notes),
-        "service_now_object_count": len(service_now_objects),
-        "flow_count": len(flow_notes),
-        "business_rule_count": len(business_rules),
-        "test_case_count": len(test_cases),
-        "uat_case_count": len(uat_cases),
-        "edge_case_count": len(edge_cases),
-    }
+    match = re.search(r"\{[\s\S]*\}", content)
+    if not match:
+        return None
+
+    try:
+        return json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return None
 
 
-def apply_score_caps(parsed: dict, gap_counts: dict):
-    caps_applied = list(parsed.get("score_caps_applied", []))
+def normalize_score(value):
+    try:
+        if value is None:
+            return None
 
-    overall_cap = 100
-    readiness_cap = 100
-    risk_cap = 100
-    completeness_cap = 100
+        score = int(round(float(value)))
 
-    if gap_counts["open_question_count"] > 5:
-        overall_cap = min(overall_cap, 72)
-        caps_applied.append("More than 5 open questions; overall score capped at 72.")
+        if score < 0:
+            return 0
 
-    if gap_counts["assumption_count"] > 8:
-        overall_cap = min(overall_cap, 70)
-        caps_applied.append("More than 8 assumptions; overall score capped at 70.")
+        if score > 100:
+            return 100
 
-    if gap_counts["missing_requirement_count"] >= 3:
-        overall_cap = min(overall_cap, 74)
-        completeness_cap = min(completeness_cap, 72)
-        caps_applied.append("Three or more missing/weak requirements; completeness and overall score capped.")
+        return score
+    except Exception:
+        return None
 
-    if gap_counts["acl_note_count"] < 3:
-        overall_cap = min(overall_cap, 76)
-        risk_cap = min(risk_cap, 74)
-        caps_applied.append("ACL/security model appears incomplete; risk and overall score capped.")
 
-    if gap_counts["service_now_object_count"] < 5:
-        overall_cap = min(overall_cap, 78)
-        completeness_cap = min(completeness_cap, 76)
-        caps_applied.append("ServiceNow object/data model appears thin; completeness and overall score capped.")
+def apply_score_safety(output: dict):
+    if not isinstance(output, dict):
+        return DEFAULT_SCORE
 
-    if gap_counts["flow_count"] < 2:
-        readiness_cap = min(readiness_cap, 72)
-        caps_applied.append("Flow Designer/build workflow detail appears thin; readiness score capped at 72.")
+    required_keys = [
+        "overall_score",
+        "completeness_score",
+        "risk_score",
+        "readiness_score",
+        "rating",
+        "summary",
+        "strengths",
+        "weaknesses",
+        "recommended_fixes",
+    ]
 
-    if gap_counts["business_rule_count"] < 1:
-        readiness_cap = min(readiness_cap, 74)
-        caps_applied.append("Business rule/server-side logic detail appears incomplete; readiness score capped at 74.")
+    for key in required_keys:
+        if key not in output:
+            output[key] = DEFAULT_SCORE.get(key)
 
-    if gap_counts["test_case_count"] < 8:
-        readiness_cap = min(readiness_cap, 70)
-        overall_cap = min(overall_cap, 76)
-        caps_applied.append("Fewer than 8 test cases; readiness and overall score capped.")
+    output["overall_score"] = normalize_score(output.get("overall_score"))
+    output["completeness_score"] = normalize_score(output.get("completeness_score"))
+    output["risk_score"] = normalize_score(output.get("risk_score"))
+    output["readiness_score"] = normalize_score(output.get("readiness_score"))
 
-    if gap_counts["uat_case_count"] < 3:
-        readiness_cap = min(readiness_cap, 72)
-        caps_applied.append("Fewer than 3 UAT cases; readiness score capped.")
+    score_values = [
+        output["overall_score"],
+        output["completeness_score"],
+        output["risk_score"],
+        output["readiness_score"],
+    ]
 
-    if gap_counts["edge_case_count"] < 3:
-        risk_cap = min(risk_cap, 72)
-        caps_applied.append("Edge case coverage appears limited; risk score capped.")
+    if any(score is None for score in score_values):
+        return DEFAULT_SCORE
 
-    parsed["overall_score"] = min(int(parsed.get("overall_score", 0)), overall_cap)
-    parsed["completeness_score"] = min(int(parsed.get("completeness_score", 0)), completeness_cap)
-    parsed["risk_score"] = min(int(parsed.get("risk_score", 0)), risk_cap)
-    parsed["readiness_score"] = min(int(parsed.get("readiness_score", 0)), readiness_cap)
+    if not isinstance(output.get("strengths"), list):
+        output["strengths"] = []
 
-    parsed["score_caps_applied"] = caps_applied
+    if not isinstance(output.get("weaknesses"), list):
+        output["weaknesses"] = []
 
-    overall = parsed["overall_score"]
+    if not isinstance(output.get("recommended_fixes"), list):
+        output["recommended_fixes"] = []
 
-    if overall >= 85:
-        parsed["rating"] = "Strong"
-        parsed["build_readiness_verdict"] = "Ready"
-    elif overall >= 70:
-        parsed["rating"] = "Good"
-        parsed["build_readiness_verdict"] = "Conditionally Ready"
-    elif overall >= 50:
-        parsed["rating"] = "Needs Work"
-        parsed["build_readiness_verdict"] = "Not Ready"
-    else:
-        parsed["rating"] = "Weak"
-        parsed["build_readiness_verdict"] = "Not Ready"
+    if not isinstance(output.get("score_caps_applied"), list):
+        output["score_caps_applied"] = []
 
-    return parsed
+    if not isinstance(output.get("score_rationale"), dict):
+        output["score_rationale"] = {
+            "completeness": "",
+            "risk": "",
+            "readiness": "",
+        }
+
+    if not output.get("rating"):
+        score = output["overall_score"]
+
+        if score >= 85:
+            output["rating"] = "Strong"
+        elif score >= 70:
+            output["rating"] = "Good Draft"
+        elif score >= 50:
+            output["rating"] = "Needs Work"
+        else:
+            output["rating"] = "Not Build Ready"
+
+    if not output.get("build_readiness_verdict"):
+        output["build_readiness_verdict"] = "Review required before build handoff."
+
+    return output
 
 
 def generate_quality_score(
@@ -127,72 +154,75 @@ def generate_quality_score(
     qa_output: dict,
     delivery_lead_review: dict,
 ):
-    gap_counts = count_package_gaps(
-        delivery_lead_review,
-        architecture,
-        developer_output,
-        qa_output,
-    )
+    is_quick_package = not developer_output or not qa_output
 
     prompt = f"""
-You are a strict ServiceNow delivery quality gate reviewer.
+You are a strict ServiceNow delivery quality reviewer.
 
-Score whether this package is ready to hand to a real ServiceNow build team.
-
-Be strict. Most AI-generated draft packages should score between 45 and 75.
-Scores above 85 should be rare and require highly specific, build-ready detail.
-
-Evaluate:
-- business clarity
-- personas
-- states
-- routing
-- assignment
-- approvals
-- rejection paths
-- notification rules
-- ACL/security model
-- data model/tables/fields
-- reporting
-- admin/configuration needs
-- stories
-- acceptance criteria
-- technical implementation notes
-- QA depth
-- UAT depth
-- open questions
-- assumptions
-- unresolved risks
-
-Current measured package signals:
-{json.dumps(gap_counts, indent=2)}
-
-Scoring calibration:
-90-100 = production-quality package, rare
-80-89 = strong but still needs minor clarification
-70-79 = good draft, needs stakeholder refinement
-60-69 = needs work before build
-45-59 = weak draft with major gaps
-0-44 = not build-ready
+Your job is to score the generated delivery package honestly.
+Do not be generous.
+Do not give the same score repeatedly.
+Do not return 85 unless the package is genuinely close to build-ready.
+Do not return 0 unless the input/package is empty, unusable, or impossible to score.
 
 Return ONLY valid JSON.
 Do not include markdown.
 Do not include explanations outside JSON.
-Do not inflate the score.
+
+Package Type:
+{"QUICK PACKAGE" if is_quick_package else "FULL PACKAGE"}
+
+Scoring Rules:
+
+For QUICK PACKAGE:
+- Score requirement readiness and delivery draft quality.
+- Developer notes and QA may be missing. Do NOT penalize heavily just because those sections are missing.
+- Score based on requirement clarity, architecture quality, workflow clarity, story usefulness, missing requirements, open questions, assumptions, risks, and next steps.
+
+For FULL PACKAGE:
+- Score full build handoff readiness.
+- Score requirement clarity, architecture, stories, technical notes, QA coverage, risks, open questions, deployment readiness, and delivery lead review.
+
+Score Bands:
+- 90-100: Excellent. Rare. Clear requirement, detailed package, few or no meaningful gaps.
+- 80-89: Strong. Mostly build-ready, only minor clarifications needed.
+- 70-79: Good Draft. Useful package but has meaningful open questions or minor gaps.
+- 50-69: Needs Work. Many gaps, assumptions, or missing implementation details.
+- 30-49: Weak. Requirement is vague, incomplete, contradictory, or not ready for delivery.
+- 0-29: Not usable. Too little information or major contradictions prevent useful delivery planning.
+
+Mandatory Score Caps:
+- If core request type, workflow, roles, or data fields are unclear: overall_score must be <= 60.
+- If approval rules are unclear or contradictory: overall_score must be <= 60.
+- If there are major contradictions in the requirement: overall_score must be <= 55.
+- If the requirement is only a few vague sentences: overall_score must be <= 50.
+- If package recommends a custom scoped app when an OOB catalog item is clearly better: overall_score must be <= 65.
+- If open questions include items required for build, readiness_score must be <= 70.
+- If more than 5 significant missing requirements exist, overall_score must be <= 70.
+- If more than 8 significant missing requirements exist, overall_score must be <= 60.
+- If notification recipients/templates are unclear but notifications are required, readiness_score must be <= 75.
+- If assignment groups or approvers are unknown, readiness_score must be <= 70.
+
+Expected Behavior:
+- A strong detailed requirement should usually score 75-85.
+- A rough but workable requirement should usually score 55-70.
+- A vague requirement should usually score 35-55.
+- A contradictory requirement should usually score 35-60 depending on severity.
+- A simple catalog item with clear fields and approval should not be over-engineered.
 
 Business Requirement:
 {requirement}
 
-Architecture:
+Architecture Output:
 {json.dumps(architecture, indent=2)}
 
-Stories:
+Story Output:
 {json.dumps(story_output, indent=2)}
 
-Developer Notes:
+Developer Output:
 {json.dumps(developer_output, indent=2)}
 
-QA Package:
+QA Output:
 {json.dumps(qa_output, indent=2)}
 
 Delivery Lead Review:
@@ -205,18 +235,26 @@ Return this JSON structure exactly:
   "completeness_score": 0,
   "risk_score": 0,
   "readiness_score": 0,
-  "rating": "Strong / Good / Needs Work / Weak",
-  "summary": "Strict quality assessment. Mention why the score is not higher.",
+  "rating": "Strong / Good Draft / Needs Work / Weak / Not Build Ready",
+  "summary": "Clear summary of why this score was assigned.",
   "score_rationale": {{
-    "completeness": "Why this score was given.",
-    "risk": "Why this score was given.",
-    "readiness": "Why this score was given."
+    "completeness": "Why the completeness score was assigned.",
+    "risk": "Why the risk score was assigned.",
+    "readiness": "Why the readiness score was assigned."
   }},
-  "score_caps_applied": [],
-  "strengths": [],
-  "weaknesses": [],
-  "recommended_fixes": [],
-  "build_readiness_verdict": "Ready / Conditionally Ready / Not Ready"
+  "score_caps_applied": [
+    "List any score caps or penalties applied. If none, return an empty list."
+  ],
+  "strengths": [
+    "Strength 1"
+  ],
+  "weaknesses": [
+    "Weakness 1"
+  ],
+  "recommended_fixes": [
+    "Fix 1"
+  ],
+  "build_readiness_verdict": "Clear verdict on whether this is ready for build handoff."
 }}
 """
 
@@ -225,44 +263,17 @@ Return this JSON structure exactly:
         messages=[
             {
                 "role": "system",
-                "content": "You are a strict ServiceNow delivery quality gate reviewer. Return only valid JSON."
+                "content": "You are a strict ServiceNow delivery quality reviewer. Return only valid JSON.",
             },
             {
                 "role": "user",
-                "content": prompt
+                "content": prompt,
             },
         ],
-        temperature=0.0,
+        temperature=0.1,
     )
 
     content = response.choices[0].message.content
+    parsed = extract_json(content)
 
-    try:
-        parsed = json.loads(content)
-        return apply_score_caps(parsed, gap_counts)
-
-    except Exception:
-        return {
-            "overall_score": 45,
-            "completeness_score": 45,
-            "risk_score": 45,
-            "readiness_score": 45,
-            "rating": "Weak",
-            "summary": "Unable to parse quality score output. Manual review required.",
-            "score_rationale": {
-                "completeness": "Parse failure.",
-                "risk": "Parse failure.",
-                "readiness": "Parse failure.",
-            },
-            "score_caps_applied": [
-                "Parsing failed; conservative score applied."
-            ],
-            "strengths": [],
-            "weaknesses": [
-                "Quality score output could not be parsed."
-            ],
-            "recommended_fixes": [
-                "Regenerate quality score."
-            ],
-            "build_readiness_verdict": "Not Ready",
-        }
+    return apply_score_safety(parsed)
