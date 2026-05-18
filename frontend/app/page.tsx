@@ -236,6 +236,49 @@ type ReviewAgentChatMessage = {
   content: string;
 };
 
+type ProjectStatus = "Draft" | "Reviewed" | "Ready" | "Blocked";
+
+type ProjectVersion = {
+  id: string;
+  created_at: string;
+  label: string;
+  requirement: string;
+  clarification_answers: string;
+  result: DeliveryResult | null;
+  project_status: ProjectStatus;
+};
+
+const PROJECT_STATUS_OPTIONS: ProjectStatus[] = [
+  "Draft",
+  "Reviewed",
+  "Ready",
+  "Blocked",
+];
+
+function emptyReviewAgentChats(): Record<ReviewAgentKey, ReviewAgentChatMessage[]> {
+  return {
+    architect: [],
+    developer: [],
+    qa: [],
+    delivery_lead: [],
+  };
+}
+
+function normalizeReviewAgentChats(value: any): Record<ReviewAgentKey, ReviewAgentChatMessage[]> {
+  const empty = emptyReviewAgentChats();
+
+  if (!value || typeof value !== "object") {
+    return empty;
+  }
+
+  return {
+    architect: Array.isArray(value.architect) ? value.architect : [],
+    developer: Array.isArray(value.developer) ? value.developer : [],
+    qa: Array.isArray(value.qa) ? value.qa : [],
+    delivery_lead: Array.isArray(value.delivery_lead) ? value.delivery_lead : [],
+  };
+}
+
 const REVIEW_AGENT_TABS: { id: ReviewAgentKey; label: string; title: string }[] = [
   { id: "architect", label: "Architect", title: "Architect Review" },
   { id: "developer", label: "Developer", title: "Developer Review" },
@@ -275,6 +318,10 @@ type SavedProject = {
   uploaded_file_names: string[];
   result: DeliveryResult | null;
   delivery_lead_chat?: DeliveryLeadChatMessage[];
+  review_agent_chats?: Record<ReviewAgentKey, ReviewAgentChatMessage[]>;
+  project_status?: ProjectStatus;
+  versions?: ProjectVersion[];
+  last_autosaved_at?: string | null;
 };
 
 type RequirementTemplate = {
@@ -504,12 +551,7 @@ export default function Home() {
   const [reviewAgentThinking, setReviewAgentThinking] = useState(false);
   const [reviewAgentChats, setReviewAgentChats] = useState<
     Record<ReviewAgentKey, ReviewAgentChatMessage[]>
-  >({
-    architect: [],
-    developer: [],
-    qa: [],
-    delivery_lead: [],
-  });
+  >(emptyReviewAgentChats());
   const [reviewAgentPendingRequirementUpdate, setReviewAgentPendingRequirementUpdate] =
     useState("");
 
@@ -526,6 +568,14 @@ export default function Home() {
   const [authPassword, setAuthPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [projectSaving, setProjectSaving] = useState(false);
+  const [projectStatus, setProjectStatus] = useState<ProjectStatus>("Draft");
+  const [projectVersions, setProjectVersions] = useState<ProjectVersion[]>([]);
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string | null>(null);
+  const [autoSaveState, setAutoSaveState] = useState("Auto-save idle");
+  const [packageNeedsRegeneration, setPackageNeedsRegeneration] = useState(false);
+  const [compareVersionId, setCompareVersionId] = useState("");
+  const [showComparePanel, setShowComparePanel] = useState(false);
+  const [showOnboardingTips, setShowOnboardingTips] = useState(false);
 
   useEffect(() => {
     const updateLayout = () => {
@@ -650,6 +700,10 @@ export default function Home() {
       uploaded_file_names: project.uploaded_file_names || [],
       result: project.result || null,
       delivery_lead_chat: project.delivery_lead_chat || [],
+      review_agent_chats: normalizeReviewAgentChats(project.review_agent_chats),
+      project_status: project.project_status || "Draft",
+      versions: project.versions || [],
+      last_autosaved_at: project.last_autosaved_at || null,
     }));
 
     setSavedProjects(mappedProjects);
@@ -684,6 +738,40 @@ export default function Home() {
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const seen = window.localStorage.getItem("virtual_delivery_pod_seen_onboarding");
+    setShowOnboardingTips(!seen);
+  }, []);
+
+  function dismissOnboardingTips() {
+    window.localStorage.setItem("virtual_delivery_pod_seen_onboarding", "true");
+    setShowOnboardingTips(false);
+  }
+
+  useEffect(() => {
+    if (!user) return;
+
+    const timer = window.setInterval(() => {
+      persistProjectDraft({ autosave: true });
+    }, 45000);
+
+    return () => window.clearInterval(timer);
+  }, [
+    user?.id,
+    activeProjectId,
+    projectName,
+    requirement,
+    clarificationAnswers,
+    result,
+    deliveryLeadChat,
+    reviewAgentChats,
+    projectStatus,
+    projectVersions,
+    loading,
+    analyzing,
+    projectSaving,
+  ]);
 
   function buildRequirementWithClarifications() {
   return `
@@ -780,6 +868,191 @@ export default function Home() {
     return cleanName || "ServiceNow Delivery Package";
   }
 
+  function buildProjectVersion(label: string): ProjectVersion {
+    return {
+      id: createProjectId(),
+      created_at: new Date().toISOString(),
+      label,
+      requirement,
+      clarification_answers: clarificationAnswers,
+      result: result || null,
+      project_status: projectStatus,
+    };
+  }
+
+  function getUpdatedVersions(label: string) {
+    const nextVersion = buildProjectVersion(label);
+    return [nextVersion, ...projectVersions].slice(0, 15);
+  }
+
+  function countReviewAgentMessages(
+    chats: Record<ReviewAgentKey, ReviewAgentChatMessage[]> = reviewAgentChats
+  ) {
+    return Object.values(chats).reduce(
+      (total, messages) => total + messages.length,
+      0
+    );
+  }
+
+  function buildProjectPayload(
+    resolvedProjectName: string,
+    options?: { includeVersion?: boolean; versionLabel?: string; autosave?: boolean }
+  ) {
+    const nextVersions = options?.includeVersion
+      ? getUpdatedVersions(options.versionLabel || "Manual save")
+      : projectVersions;
+
+    return {
+      project_name: resolvedProjectName,
+      requirement,
+      clarification_answers: clarificationAnswers,
+      uploaded_file_names: files.map((file) => file.name),
+      result: result || null,
+      delivery_lead_chat: deliveryLeadChat || [],
+      review_agent_chats: reviewAgentChats || emptyReviewAgentChats(),
+      project_status: projectStatus,
+      versions: nextVersions,
+      last_autosaved_at: options?.autosave ? new Date().toISOString() : lastAutoSavedAt,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  function mapDbProject(savedRecord: any): SavedProject {
+    return {
+      id: savedRecord.id,
+      project_name: savedRecord.project_name,
+      created_at: savedRecord.created_at,
+      updated_at: savedRecord.updated_at,
+      requirement: savedRecord.requirement || "",
+      clarification_answers: savedRecord.clarification_answers || "",
+      uploaded_file_names: savedRecord.uploaded_file_names || [],
+      result: savedRecord.result || null,
+      delivery_lead_chat: savedRecord.delivery_lead_chat || [],
+      review_agent_chats: normalizeReviewAgentChats(savedRecord.review_agent_chats),
+      project_status: savedRecord.project_status || "Draft",
+      versions: savedRecord.versions || [],
+      last_autosaved_at: savedRecord.last_autosaved_at || null,
+    };
+  }
+
+  async function persistProjectDraft({ autosave = false }: { autosave?: boolean } = {}) {
+    if (!user || projectSaving || loading || analyzing) return null;
+
+    const hasWorkspaceContent =
+      !!projectName.trim() ||
+      !!requirement.trim() ||
+      !!clarificationAnswers.trim() ||
+      !!result ||
+      deliveryLeadChat.length > 0 ||
+      countReviewAgentMessages() > 0;
+
+    if (!hasWorkspaceContent) return null;
+
+    const resolvedProjectName = projectName.trim() || buildDefaultProjectName();
+    const payload = buildProjectPayload(resolvedProjectName, {
+      autosave,
+      includeVersion: false,
+    });
+
+    try {
+      if (activeProjectId) {
+        const { data, error } = await supabase
+          .from("delivery_projects")
+          .update(payload)
+          .eq("id", activeProjectId)
+          .eq("user_id", user.id)
+          .select("*")
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return null;
+
+        const mapped = mapDbProject(data);
+        setSavedProjects((previousProjects) =>
+          previousProjects.map((project) =>
+            project.id === mapped.id ? mapped : project
+          )
+        );
+        setLastAutoSavedAt(mapped.last_autosaved_at || null);
+        if (autosave) setAutoSaveState("Auto-saved");
+        return mapped;
+      }
+
+      const { data, error } = await supabase
+        .from("delivery_projects")
+        .insert({
+          ...payload,
+          user_id: user.id,
+        })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      const mapped = mapDbProject(data);
+      setActiveProjectId(mapped.id);
+      setProjectName(mapped.project_name);
+      setSavedProjects((previousProjects) => [mapped, ...previousProjects]);
+      setLastAutoSavedAt(mapped.last_autosaved_at || null);
+      if (autosave) setAutoSaveState("Auto-saved");
+      return mapped;
+    } catch (error) {
+      console.error("Auto-save failed", error);
+      if (autosave) {
+        setAutoSaveState("Auto-save failed. Run the database migration and retry.");
+      }
+      return null;
+    }
+  }
+
+  function getSelectedCompareVersion() {
+    return projectVersions.find((version) => version.id === compareVersionId) || null;
+  }
+
+  function buildPackageComparison(version: ProjectVersion | null) {
+    if (!version || !result) return [];
+
+    const previous = version.result;
+
+    return [
+      {
+        label: "Requirement length",
+        previous: `${version.requirement?.length || 0} characters`,
+        current: `${requirement.length} characters`,
+      },
+      {
+        label: "Package mode",
+        previous: previous?.generation_mode || "No package",
+        current: result.generation_mode || "Unknown",
+      },
+      {
+        label: "Score",
+        previous: scoreText(previous?.quality_score?.overall_score),
+        current: scoreText(result.quality_score?.overall_score),
+      },
+      {
+        label: "Stories",
+        previous: String(previous?.stories?.length || 0),
+        current: String(result.stories?.length || 0),
+      },
+      {
+        label: "Open questions",
+        previous: String(previous?.open_questions?.length || 0),
+        current: String(result.open_questions?.length || 0),
+      },
+      {
+        label: "Tech objects",
+        previous: String(previous?.developer?.service_now_objects?.length || 0),
+        current: String(result.developer?.service_now_objects?.length || 0),
+      },
+      {
+        label: "Test cases",
+        previous: String(previous?.qa?.test_cases?.length || 0),
+        current: String(result.qa?.test_cases?.length || 0),
+      },
+    ];
+  }
+
   async function saveProject() {
     if (!user) {
       alert("Sign in before saving projects.");
@@ -791,17 +1064,10 @@ export default function Home() {
     const resolvedProjectName = projectName.trim() || buildDefaultProjectName();
     setProjectSaving(true);
 
-    const now = new Date().toISOString();
-
-    const basePayload = {
-      project_name: resolvedProjectName,
-      requirement,
-      clarification_answers: clarificationAnswers,
-      uploaded_file_names: files.map((file) => file.name),
-      result: result || null,
-      delivery_lead_chat: deliveryLeadChat || [],
-      updated_at: now,
-    };
+    const basePayload = buildProjectPayload(resolvedProjectName, {
+      includeVersion: true,
+      versionLabel: activeProjectId ? "Manual project update" : "Initial project save",
+    });
 
     try {
       let savedRecord: any = null;
@@ -877,20 +1143,13 @@ export default function Home() {
         return;
       }
 
-      const savedProject: SavedProject = {
-        id: savedRecord.id,
-        project_name: savedRecord.project_name,
-        created_at: savedRecord.created_at,
-        updated_at: savedRecord.updated_at,
-        requirement: savedRecord.requirement || "",
-        clarification_answers: savedRecord.clarification_answers || "",
-        uploaded_file_names: savedRecord.uploaded_file_names || [],
-        result: savedRecord.result || null,
-        delivery_lead_chat: savedRecord.delivery_lead_chat || [],
-      };
+      const savedProject: SavedProject = mapDbProject(savedRecord);
 
       setActiveProjectId(savedProject.id);
       setProjectName(savedProject.project_name);
+      setProjectStatus(savedProject.project_status || "Draft");
+      setProjectVersions(savedProject.versions || []);
+      setLastAutoSavedAt(savedProject.last_autosaved_at || null);
 
       setSavedProjects((previousProjects) => {
         const existingIndex = previousProjects.findIndex(
@@ -928,6 +1187,14 @@ export default function Home() {
     setPackageTab("overview");
     setRegenerateInstruction("");
     setDeliveryLeadChat(project.delivery_lead_chat || []);
+    setReviewAgentChats(normalizeReviewAgentChats(project.review_agent_chats));
+    setProjectStatus(project.project_status || "Draft");
+    setProjectVersions(project.versions || []);
+    setLastAutoSavedAt(project.last_autosaved_at || null);
+    setAutoSaveState(project.last_autosaved_at ? "Loaded saved autosave" : "Auto-save idle");
+    setPackageNeedsRegeneration(false);
+    setCompareVersionId("");
+    setShowComparePanel(false);
     setDeliveryLeadPendingRequirementUpdate("");
   }
 
@@ -966,14 +1233,16 @@ export default function Home() {
     setActiveReviewAgent("architect");
     setReviewAgentMessage("");
     setReviewAgentThinking(false);
-    setReviewAgentChats({
-      architect: [],
-      developer: [],
-      qa: [],
-      delivery_lead: [],
-    });
+    setReviewAgentChats(emptyReviewAgentChats());
     setReviewAgentPendingRequirementUpdate("");
     setProjectSaving(false);
+    setProjectStatus("Draft");
+    setProjectVersions([]);
+    setLastAutoSavedAt(null);
+    setAutoSaveState("Auto-save idle");
+    setPackageNeedsRegeneration(false);
+    setCompareVersionId("");
+    setShowComparePanel(false);
   }
 
   function newProject() {
@@ -1042,6 +1311,12 @@ export default function Home() {
     }
 
     setProjectName(template.name);
+    setProjectStatus("Draft");
+    setProjectVersions([]);
+    setLastAutoSavedAt(null);
+    setPackageNeedsRegeneration(false);
+    setCompareVersionId("");
+    setShowComparePanel(false);
     setRequirement(template.requirement);
     setClarificationAnswers("");
     setFiles([]);
@@ -1060,12 +1335,7 @@ export default function Home() {
     setActiveReviewAgent("architect");
     setReviewAgentMessage("");
     setReviewAgentThinking(false);
-    setReviewAgentChats({
-      architect: [],
-      developer: [],
-      qa: [],
-      delivery_lead: [],
-    });
+    setReviewAgentChats(emptyReviewAgentChats());
     setReviewAgentPendingRequirementUpdate("");
     setShowTemplates(false);
   }
@@ -1145,6 +1415,8 @@ export default function Home() {
 
       const data = await response.json();
       setResult(data);
+      setProjectStatus("Draft");
+      setPackageNeedsRegeneration(false);
       setActiveTab("stories");
       setPackageTab(mode === "quick" ? "design" : "overview");
     } catch (error) {
@@ -1212,6 +1484,8 @@ export default function Home() {
       const data = await response.json();
 
       setResult(data);
+      setProjectStatus("Draft");
+      setPackageNeedsRegeneration(false);
       setPackageTab("overview");
     } catch (error) {
       console.error(error);
@@ -1275,6 +1549,7 @@ export default function Home() {
         ...result,
         agent_review: review,
       });
+      setProjectStatus("Reviewed");
 
       setPackageTab("review");
     } catch (error) {
@@ -1481,18 +1756,31 @@ ${JSON.stringify(activeFeedback, null, 2)}`,
         setReviewAgentPendingRequirementUpdate(normalizedSuggestedUpdate);
       }
 
-      setReviewAgentChats({
+      const finalReviewAgentChats = {
         ...reviewAgentChats,
         [activeReviewAgent]: [
           ...nextAgentChat,
           {
-            role: "agent",
+            role: "agent" as const,
             content:
               answer ||
               `${agentLabel} reviewed this, but no detailed answer was returned. Try asking for a specific requirement change, risk, or implementation recommendation.`,
           },
         ],
-      });
+      };
+
+      setReviewAgentChats(finalReviewAgentChats);
+
+      if (activeProjectId && user?.id) {
+        await supabase
+          .from("delivery_projects")
+          .update({
+            review_agent_chats: finalReviewAgentChats,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", activeProjectId)
+          .eq("user_id", user.id);
+      }
     } catch (error) {
       console.error(error);
       alert(`${agentLabel} chat failed. Check backend logs.`);
@@ -1515,6 +1803,7 @@ ${JSON.stringify(activeFeedback, null, 2)}`,
     setClarificationAnswers("");
     setIntakeAnalysis(null);
     setReviewAgentPendingRequirementUpdate("");
+    setPackageNeedsRegeneration(true);
     setPackageTab("design");
   }
 
@@ -1596,14 +1885,27 @@ if (normalizedData.suggested_requirement_update.trim()) {
   );
 }
 
-setDeliveryLeadChat([
+const finalDeliveryLeadChat = [
   ...nextChat,
   {
-    role: "delivery_lead",
+    role: "delivery_lead" as const,
     content: normalizedData.answer,
     response: normalizedData,
   },
-]);
+];
+
+setDeliveryLeadChat(finalDeliveryLeadChat);
+
+if (activeProjectId && user?.id) {
+  await supabase
+    .from("delivery_projects")
+    .update({
+      delivery_lead_chat: finalDeliveryLeadChat,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", activeProjectId)
+    .eq("user_id", user.id);
+}
     } catch (error) {
       console.error(error);
       alert("Delivery Lead chat failed. Check backend logs.");
@@ -1626,7 +1928,18 @@ setDeliveryLeadChat([
     setClarificationAnswers("");
     setIntakeAnalysis(null);
     setDeliveryLeadPendingRequirementUpdate("");
+    setPackageNeedsRegeneration(true);
     setPackageTab("design");
+  }
+
+  async function regeneratePackageAfterRequirementUpdate() {
+    if (!requirement.trim()) {
+      alert("Add requirement text before regenerating.");
+      return;
+    }
+
+    const mode = result?.generation_mode === "quick" ? "quick" : "full";
+    await generatePackage(mode);
   }
 
   async function copyToClipboard(value: string) {
@@ -2579,6 +2892,43 @@ ${uat.expected_result}
         ) : (
           <>
 
+        {showOnboardingTips && (
+          <section style={styles.onboardingCard}>
+            <div style={styles.cardTitleRow}>
+              <div>
+                <p style={styles.label}>First-time guide</p>
+                <h2 style={styles.cardTitle}>How to use this workspace</h2>
+              </div>
+              <button onClick={dismissOnboardingTips} style={styles.copyButton}>
+                Got it
+              </button>
+            </div>
+
+            <div style={isMobile ? styles.mobileOneColumnGrid : styles.onboardingGrid}>
+              <div style={styles.onboardingStep}>
+                <p style={styles.onboardingStepNumber}>1</p>
+                <p style={styles.onboardingStepTitle}>Paste or template</p>
+                <p style={styles.muted}>Start from rough notes, a document, or a workflow template.</p>
+              </div>
+              <div style={styles.onboardingStep}>
+                <p style={styles.onboardingStepNumber}>2</p>
+                <p style={styles.onboardingStepTitle}>Analyze or generate</p>
+                <p style={styles.muted}>Analyze gaps first, or generate Quick/Full packages directly.</p>
+              </div>
+              <div style={styles.onboardingStep}>
+                <p style={styles.onboardingStepNumber}>3</p>
+                <p style={styles.onboardingStepTitle}>Review and refine</p>
+                <p style={styles.muted}>Use Review and Delivery Lead tabs to improve the requirement.</p>
+              </div>
+              <div style={styles.onboardingStep}>
+                <p style={styles.onboardingStepNumber}>4</p>
+                <p style={styles.onboardingStepTitle}>Save and export</p>
+                <p style={styles.muted}>Auto-save preserves drafts. Manual Save creates a version snapshot.</p>
+              </div>
+            </div>
+          </section>
+        )}
+
         <section style={styles.templateCard}>
           <div style={responsiveTemplateHeader}>
             <div>
@@ -2696,15 +3046,123 @@ ${uat.expected_result}
             </button>
           </div>
 
-          {activeProjectId && (
-            <p style={styles.projectMeta}>
-              Active saved project · {files.length} file{files.length === 1 ? "" : "s"} attached by name
-            </p>
+          <div style={isMobile ? styles.mobileOneColumnGrid : styles.projectUtilityGrid}>
+            <div style={styles.projectField}>
+              <label style={styles.projectLabel}>Project Status</label>
+              <select
+                value={projectStatus}
+                onChange={(e) => setProjectStatus(e.target.value as ProjectStatus)}
+                style={styles.projectSelect}
+              >
+                {PROJECT_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.projectField}>
+              <label style={styles.projectLabel}>Version History</label>
+              <select
+                value={compareVersionId}
+                onChange={(e) => setCompareVersionId(e.target.value)}
+                style={styles.projectSelect}
+              >
+                <option value="">Select a previous version...</option>
+                {projectVersions.map((version) => (
+                  <option key={version.id} value={version.id}>
+                    {version.label} · {new Date(version.created_at).toLocaleString()}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => {
+                if (!compareVersionId) {
+                  alert("Select a previous version first.");
+                  return;
+                }
+                setShowComparePanel(!showComparePanel);
+              }}
+              disabled={!compareVersionId || !result}
+              style={{
+                ...styles.secondaryButton,
+                opacity: compareVersionId && result ? 1 : 0.5,
+                cursor: compareVersionId && result ? "pointer" : "not-allowed",
+              }}
+            >
+              Compare Version
+            </button>
+          </div>
+
+          <p style={styles.projectMeta}>
+            {activeProjectId ? "Active saved project" : "Unsaved workspace"} · Status: {projectStatus} · {files.length} file{files.length === 1 ? "" : "s"} attached by name · {autoSaveState}
+            {lastAutoSavedAt ? ` at ${new Date(lastAutoSavedAt).toLocaleTimeString()}` : ""}
+          </p>
+
+          {showComparePanel && getSelectedCompareVersion() && (
+            <div style={styles.comparePanel}>
+              <div style={styles.cardTitleRow}>
+                <div>
+                  <p style={styles.label}>Compare current package vs previous version</p>
+                  <h3 style={styles.itemTitle}>{getSelectedCompareVersion()?.label}</h3>
+                </div>
+                <button
+                  style={styles.copyButton}
+                  onClick={() => setShowComparePanel(false)}
+                >
+                  Close
+                </button>
+              </div>
+
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Area</th>
+                    <th style={styles.th}>Previous Version</th>
+                    <th style={styles.th}>Current Workspace</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {buildPackageComparison(getSelectedCompareVersion()).map((row) => (
+                    <tr key={row.label}>
+                      <td style={styles.tableName}>{row.label}</td>
+                      <td style={styles.td}>{row.previous}</td>
+                      <td style={styles.td}>{row.current}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
 
 
         {loadingStage && <div style={styles.loadingStage}>{loadingStage}</div>}
+
+        {packageNeedsRegeneration && result && (
+          <div style={styles.regenerationNotice}>
+            <div>
+              <p style={styles.label}>Requirement changed after package generation</p>
+              <p style={styles.bodyText}>
+                Regenerate the package so design, stories, technical notes, QA, and review content match the updated requirement.
+              </p>
+            </div>
+            <button
+              onClick={regeneratePackageAfterRequirementUpdate}
+              disabled={loading}
+              style={{
+                ...styles.button,
+                opacity: loading ? 0.65 : 1,
+                cursor: loading ? "not-allowed" : "pointer",
+              }}
+            >
+              {loading ? "Regenerating..." : "Regenerate Package"}
+            </button>
+          </div>
+        )}
 
         <section style={styles.intakeCard}>
           <div style={responsiveCardHeader}>
@@ -2716,7 +3174,10 @@ ${uat.expected_result}
 
           <textarea
             value={requirement}
-            onChange={(e) => setRequirement(e.target.value)}
+            onChange={(e) => {
+              setRequirement(e.target.value);
+              if (result) setPackageNeedsRegeneration(true);
+            }}
             placeholder="Paste rough requirement notes here..."
             style={styles.textarea}
           />
@@ -6430,6 +6891,75 @@ mermaidCodeBlock: {
     fontWeight: 850,
     cursor: "pointer",
     textAlign: "left",
+  },
+
+  onboardingCard: {
+    background: "rgba(255,255,255,0.96)",
+    border: "1px solid #BFDBFE",
+    borderRadius: "22px",
+    padding: "20px",
+    boxShadow: "0 16px 42px rgba(37, 99, 235, 0.10)",
+    marginBottom: "22px",
+  },
+  onboardingGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: "14px",
+  },
+  onboardingStep: {
+    background: "#F8FAFC",
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    padding: "16px",
+  },
+  onboardingStepNumber: {
+    margin: "0 0 10px",
+    width: "30px",
+    height: "30px",
+    borderRadius: "999px",
+    background: "#DBEAFE",
+    color: "#1D4ED8",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 900,
+  },
+  onboardingStepTitle: {
+    margin: "0 0 6px",
+    color: "#0F172A",
+    fontSize: "15px",
+    fontWeight: 900,
+  },
+  projectUtilityGrid: {
+    display: "grid",
+    gridTemplateColumns: "220px 1fr auto",
+    gap: "14px",
+    alignItems: "end",
+    marginTop: "16px",
+  },
+  comparePanel: {
+    marginTop: "16px",
+    background: "#F8FAFC",
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    padding: "18px",
+  },
+  regenerationNotice: {
+    marginBottom: "20px",
+    padding: "16px",
+    borderRadius: "18px",
+    border: "1px solid #FACC15",
+    background: "#FFFBEB",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "16px",
+    alignItems: "center",
+  },
+  packageSummaryActions: {
+    display: "flex",
+    gap: "12px",
+    flexWrap: "wrap",
+    marginTop: "14px",
   },
 
 };
