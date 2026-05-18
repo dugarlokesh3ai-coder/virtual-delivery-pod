@@ -1,8 +1,9 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional, Any
 import asyncio
+import time
 import traceback
 
 from agents.architect import generate_architecture
@@ -11,15 +12,25 @@ from agents.developer import generate_developer_notes
 from agents.qa import generate_qa_package
 from agents.code_generator import generate_code_for_technical_card
 from utils.document_reader import extract_text_from_file
-from agents.delivery_lead import generate_delivery_lead_review
 from agents.intake_analyzer import analyze_requirement_intake
 from agents.diagram import generate_process_diagram
 from agents.quality_score import generate_quality_score
 from agents.section_regenerator import regenerate_section
 from agents.agent_review import generate_agent_review
-from agents.delivery_lead_chat import chat_with_delivery_lead
 
-app = FastAPI()
+# Delivery Lead review and Delivery Lead chat are separate agents.
+# These fallback imports keep Render from failing if a function name changed during refactors.
+try:
+    from agents.delivery_lead import generate_delivery_lead_review
+except ImportError:
+    from agents.delivery_lead import generate_delivery_lead_chat as generate_delivery_lead_review
+
+try:
+    from agents.delivery_lead_chat import generate_delivery_lead_chat
+except ImportError:
+    from agents.delivery_lead_chat import chat_with_delivery_lead as generate_delivery_lead_chat
+
+app = FastAPI(title="Virtual ServiceNow Delivery Pod API")
 
 
 class CodeRequest(BaseModel):
@@ -35,8 +46,8 @@ class AgentReviewRequest(BaseModel):
 class DeliveryLeadChatRequest(BaseModel):
     message: str
     requirement: str
-    current_package: dict | None = None
-    chat_history: list = []
+    current_package: Optional[dict] = None
+    chat_history: list = Field(default_factory=list)
 
 
 class RegenerateSectionRequest(BaseModel):
@@ -119,16 +130,128 @@ QUALITY_SCORE_FALLBACK = {
     "build_readiness_verdict": "Not assessed",
 }
 
+INTAKE_FALLBACK = {
+    "understanding": "Unable to analyze requirement. Check backend logs.",
+    "can_generate_package": False,
+    "confidence": "Low",
+    "clarifying_questions": [],
+    "assumptions": [],
+    "missing_requirements": [],
+    "recommended_next_step": "Check backend logs and retry.",
+}
 
-async def safe_agent_call(agent_name: str, fallback, func, *args):
+ARCHITECTURE_FALLBACK = {
+    "requirement_summary": "Architecture could not be generated. Check backend logs.",
+    "solution_design": "",
+    "recommended_app_type": "",
+    "tables": [],
+    "workflow_steps": [],
+    "risks": [],
+    "open_questions": ["Architecture agent failed during generation."],
+}
+
+STORY_FALLBACK = {
+    "epic": "",
+    "stories": [],
+    "assumptions": ["Story agent failed during generation. Check backend logs."],
+    "dependencies": [],
+}
+
+AGENT_REVIEW_FALLBACK = {
+    "overall_review_summary": "Agent review could not be generated. Check backend logs.",
+    "architect_review": {
+        "what_looks_good": [],
+        "concerns": [],
+        "recommended_improvements": [],
+        "questions_for_business": [],
+    },
+    "developer_review": {
+        "what_looks_good": [],
+        "concerns": [],
+        "recommended_improvements": [],
+        "questions_for_business": [],
+    },
+    "qa_review": {
+        "what_looks_good": [],
+        "concerns": [],
+        "recommended_improvements": [],
+        "questions_for_business": [],
+    },
+    "delivery_lead_review": {
+        "what_looks_good": [],
+        "concerns": [],
+        "recommended_improvements": [],
+        "questions_for_business": [],
+    },
+    "priority_fixes": [],
+    "final_verdict": "Review unavailable.",
+}
+
+DELIVERY_LEAD_CHAT_FALLBACK = {
+    "answer": "Delivery Lead chat could not respond. Check backend logs.",
+    "delivery_lead_recommendation": "",
+    "artifact_type": "",
+    "artifact_details": {},
+    "suggested_requirement_update": "",
+    "should_update_requirement": False,
+    "impacted_sections": [],
+    "follow_up_questions": [],
+    "recommended_next_action": "Retry after checking backend logs.",
+}
+
+
+def make_diagnostic(agent_name: str, status: str, started_at: float, error: Optional[Exception] = None):
+    diagnostic = {
+        "agent": agent_name,
+        "status": status,
+        "duration_ms": int((time.time() - started_at) * 1000),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+    if error is not None:
+        diagnostic["error"] = str(error)
+
+    return diagnostic
+
+
+async def safe_agent_call(
+    agent_name: str,
+    fallback: Any,
+    func,
+    *args,
+    diagnostics: Optional[list] = None,
+):
+    started_at = time.time()
+
     try:
-        return await asyncio.to_thread(func, *args)
+        output = await asyncio.to_thread(func, *args)
+        if diagnostics is not None:
+            diagnostics.append(make_diagnostic(agent_name, "success", started_at))
+        return output
     except Exception as error:
         print(f"\n========== {agent_name} FAILED ==========")
         print(str(error))
         traceback.print_exc()
         print("========================================\n")
+
+        if diagnostics is not None:
+            diagnostics.append(make_diagnostic(agent_name, "fallback", started_at, error))
+
         return fallback
+
+
+def safe_sync_call(agent_name: str, fallback: Any, func, *args):
+    started_at = time.time()
+
+    try:
+        output = func(*args)
+        return output, make_diagnostic(agent_name, "success", started_at)
+    except Exception as error:
+        print(f"\n========== {agent_name} FAILED ==========")
+        print(str(error))
+        traceback.print_exc()
+        print("========================================\n")
+        return fallback, make_diagnostic(agent_name, "fallback", started_at, error)
 
 
 async def build_combined_requirement(
@@ -141,7 +264,11 @@ async def build_combined_requirement(
         extracted_docs = []
 
         for file in files:
-            text = await extract_text_from_file(file)
+            try:
+                text = await extract_text_from_file(file)
+            except Exception as error:
+                print(f"Document extraction failed for {file.filename}: {error}")
+                text = ""
 
             if text and text.strip():
                 extracted_docs.append(
@@ -165,6 +292,8 @@ Uploaded Document Context:
 
 
 def build_architecture_from_package(current_package: dict):
+    current_package = current_package or {}
+
     return {
         "requirement_summary": current_package.get("requirement_summary", ""),
         "solution_design": current_package.get("solution_design", ""),
@@ -177,6 +306,8 @@ def build_architecture_from_package(current_package: dict):
 
 
 def build_story_output_from_package(current_package: dict):
+    current_package = current_package or {}
+
     return {
         "epic": current_package.get("epic", ""),
         "stories": current_package.get("stories", []),
@@ -185,186 +316,19 @@ def build_story_output_from_package(current_package: dict):
     }
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://virtual-delivery-pod.vercel.app",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.get("/")
-def health_check():
-    return {"status": "backend running"}
-
-
-@app.post("/analyze-requirement")
-async def analyze_requirement(
-    requirement: str = Form(""),
-    files: Optional[List[UploadFile]] = File(None),
+def build_package_response(
+    generation_mode: str,
+    architecture: dict,
+    story_output: dict,
+    delivery_lead_review: dict,
+    process_diagram: Optional[dict],
+    developer_output: Optional[dict],
+    qa_output: Optional[dict],
+    quality_score: Optional[dict],
+    diagnostics: list,
 ):
-    combined_requirement = await build_combined_requirement(requirement, files)
-
-    intake_analysis = await safe_agent_call(
-        "Intake Analyzer Agent",
-        {
-            "understanding": "Unable to analyze requirement. Check backend logs.",
-            "can_generate_package": False,
-            "confidence": "Low",
-            "clarifying_questions": [],
-            "assumptions": [],
-            "missing_requirements": [],
-            "recommended_next_step": "Check backend logs and retry.",
-        },
-        analyze_requirement_intake,
-        combined_requirement,
-    )
-
-    return intake_analysis
-
-
-@app.post("/generate")
-async def generate(
-    requirement: str = Form(""),
-    generation_mode: str = Form("full"),
-    files: Optional[List[UploadFile]] = File(None),
-):
-    combined_requirement = await build_combined_requirement(requirement, files)
-
-    architecture = await safe_agent_call(
-        "Architect Agent",
-        {
-            "requirement_summary": "Architecture could not be generated. Check backend logs.",
-            "solution_design": "",
-            "recommended_app_type": "",
-            "tables": [],
-            "workflow_steps": [],
-            "risks": [],
-            "open_questions": ["Architecture agent failed during generation."],
-        },
-        generate_architecture,
-        combined_requirement,
-    )
-
-    story_output = await safe_agent_call(
-        "Story Agent",
-        {
-            "epic": "",
-            "stories": [],
-            "assumptions": ["Story agent failed during generation. Check backend logs."],
-            "dependencies": [],
-        },
-        generate_stories,
-        combined_requirement,
-        architecture,
-    )
-
-    if generation_mode == "quick":
-        delivery_lead_review = await safe_agent_call(
-            "Delivery Lead Agent",
-            DELIVERY_LEAD_FALLBACK,
-            generate_delivery_lead_review,
-            combined_requirement,
-            architecture,
-            story_output,
-            {},
-            {},
-        )
-
-        quality_score = await safe_agent_call(
-            "Quality Score Agent",
-            QUALITY_SCORE_FALLBACK,
-            generate_quality_score,
-            combined_requirement,
-            architecture,
-            story_output,
-            {},
-            {},
-            delivery_lead_review,
-        )
-
-        return {
-            "generation_mode": "quick",
-            "delivery_lead_review": delivery_lead_review,
-            "process_diagram": None,
-            "requirement_summary": architecture.get("requirement_summary", ""),
-            "solution_design": architecture.get("solution_design", ""),
-            "recommended_app_type": architecture.get("recommended_app_type", ""),
-            "tables": architecture.get("tables", []),
-            "workflow_steps": architecture.get("workflow_steps", []),
-            "risks": architecture.get("risks", []),
-            "open_questions": architecture.get("open_questions", []),
-            "epic": story_output.get("epic", ""),
-            "stories": story_output.get("stories", []),
-            "story_assumptions": story_output.get("assumptions", []),
-            "story_dependencies": story_output.get("dependencies", []),
-            "developer": None,
-            "qa": None,
-            "quality_score": quality_score,
-        }
-
-    developer_task = safe_agent_call(
-        "Developer Agent",
-        DEVELOPER_FALLBACK,
-        generate_developer_notes,
-        combined_requirement,
-        architecture,
-        story_output,
-    )
-
-    diagram_task = safe_agent_call(
-        "Diagram Agent",
-        DIAGRAM_FALLBACK,
-        generate_process_diagram,
-        combined_requirement,
-        architecture,
-        story_output,
-    )
-
-    developer_output, process_diagram = await asyncio.gather(
-        developer_task,
-        diagram_task,
-    )
-
-    qa_output = await safe_agent_call(
-        "QA Agent",
-        QA_FALLBACK,
-        generate_qa_package,
-        combined_requirement,
-        architecture,
-        story_output,
-        developer_output,
-    )
-
-    delivery_lead_review = await safe_agent_call(
-        "Delivery Lead Agent",
-        DELIVERY_LEAD_FALLBACK,
-        generate_delivery_lead_review,
-        combined_requirement,
-        architecture,
-        story_output,
-        developer_output,
-        qa_output,
-    )
-
-    quality_score = await safe_agent_call(
-        "Quality Score Agent",
-        QUALITY_SCORE_FALLBACK,
-        generate_quality_score,
-        combined_requirement,
-        architecture,
-        story_output,
-        developer_output,
-        qa_output,
-        delivery_lead_review,
-    )
-
     return {
-        "generation_mode": "full",
+        "generation_mode": generation_mode,
         "delivery_lead_review": delivery_lead_review,
         "process_diagram": process_diagram,
         "requirement_summary": architecture.get("requirement_summary", ""),
@@ -381,11 +345,198 @@ async def generate(
         "developer": developer_output,
         "qa": qa_output,
         "quality_score": quality_score,
+        "diagnostics": diagnostics,
     }
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://virtual-delivery-pod.vercel.app",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/")
+def health_check():
+    return {"status": "backend running"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.post("/analyze-requirement")
+async def analyze_requirement(
+    requirement: str = Form(""),
+    files: Optional[List[UploadFile]] = File(None),
+):
+    diagnostics = []
+    combined_requirement = await build_combined_requirement(requirement, files)
+
+    intake_analysis = await safe_agent_call(
+        "Intake Analyzer Agent",
+        INTAKE_FALLBACK,
+        analyze_requirement_intake,
+        combined_requirement,
+        diagnostics=diagnostics,
+    )
+
+    if isinstance(intake_analysis, dict):
+        intake_analysis["diagnostics"] = diagnostics
+
+    return intake_analysis
+
+
+@app.post("/generate")
+async def generate(
+    requirement: str = Form(""),
+    generation_mode: str = Form("full"),
+    files: Optional[List[UploadFile]] = File(None),
+):
+    diagnostics = []
+    combined_requirement = await build_combined_requirement(requirement, files)
+    mode = "quick" if generation_mode == "quick" else "full"
+
+    architecture = await safe_agent_call(
+        "Architect Agent",
+        ARCHITECTURE_FALLBACK,
+        generate_architecture,
+        combined_requirement,
+        diagnostics=diagnostics,
+    )
+
+    story_output = await safe_agent_call(
+        "Story Agent",
+        STORY_FALLBACK,
+        generate_stories,
+        combined_requirement,
+        architecture,
+        diagnostics=diagnostics,
+    )
+
+    if mode == "quick":
+        delivery_lead_review = await safe_agent_call(
+            "Delivery Lead Agent",
+            DELIVERY_LEAD_FALLBACK,
+            generate_delivery_lead_review,
+            combined_requirement,
+            architecture,
+            story_output,
+            {},
+            {},
+            diagnostics=diagnostics,
+        )
+
+        quality_score = await safe_agent_call(
+            "Quality Score Agent",
+            QUALITY_SCORE_FALLBACK,
+            generate_quality_score,
+            combined_requirement,
+            architecture,
+            story_output,
+            {},
+            {},
+            delivery_lead_review,
+            diagnostics=diagnostics,
+        )
+
+        return build_package_response(
+            "quick",
+            architecture,
+            story_output,
+            delivery_lead_review,
+            None,
+            None,
+            None,
+            quality_score,
+            diagnostics,
+        )
+
+    developer_task = safe_agent_call(
+        "Developer Agent",
+        DEVELOPER_FALLBACK,
+        generate_developer_notes,
+        combined_requirement,
+        architecture,
+        story_output,
+        diagnostics=diagnostics,
+    )
+
+    diagram_task = safe_agent_call(
+        "Diagram Agent",
+        DIAGRAM_FALLBACK,
+        generate_process_diagram,
+        combined_requirement,
+        architecture,
+        story_output,
+        diagnostics=diagnostics,
+    )
+
+    developer_output, process_diagram = await asyncio.gather(
+        developer_task,
+        diagram_task,
+    )
+
+    qa_output = await safe_agent_call(
+        "QA Agent",
+        QA_FALLBACK,
+        generate_qa_package,
+        combined_requirement,
+        architecture,
+        story_output,
+        developer_output,
+        diagnostics=diagnostics,
+    )
+
+    delivery_lead_review = await safe_agent_call(
+        "Delivery Lead Agent",
+        DELIVERY_LEAD_FALLBACK,
+        generate_delivery_lead_review,
+        combined_requirement,
+        architecture,
+        story_output,
+        developer_output,
+        qa_output,
+        diagnostics=diagnostics,
+    )
+
+    quality_score = await safe_agent_call(
+        "Quality Score Agent",
+        QUALITY_SCORE_FALLBACK,
+        generate_quality_score,
+        combined_requirement,
+        architecture,
+        story_output,
+        developer_output,
+        qa_output,
+        delivery_lead_review,
+        diagnostics=diagnostics,
+    )
+
+    return build_package_response(
+        "full",
+        architecture,
+        story_output,
+        delivery_lead_review,
+        process_diagram,
+        developer_output,
+        qa_output,
+        quality_score,
+        diagnostics,
+    )
 
 
 @app.post("/upgrade-package")
 async def upgrade_package(request: UpgradePackageRequest):
+    diagnostics = []
     requirement = request.requirement
     current_package = request.current_package or {}
 
@@ -399,6 +550,7 @@ async def upgrade_package(request: UpgradePackageRequest):
         requirement,
         architecture,
         story_output,
+        diagnostics=diagnostics,
     )
 
     diagram_task = safe_agent_call(
@@ -408,6 +560,7 @@ async def upgrade_package(request: UpgradePackageRequest):
         requirement,
         architecture,
         story_output,
+        diagnostics=diagnostics,
     )
 
     developer_output, process_diagram = await asyncio.gather(
@@ -423,6 +576,7 @@ async def upgrade_package(request: UpgradePackageRequest):
         architecture,
         story_output,
         developer_output,
+        diagnostics=diagnostics,
     )
 
     delivery_lead_review = await safe_agent_call(
@@ -434,6 +588,7 @@ async def upgrade_package(request: UpgradePackageRequest):
         story_output,
         developer_output,
         qa_output,
+        diagnostics=diagnostics,
     )
 
     quality_score = await safe_agent_call(
@@ -446,6 +601,7 @@ async def upgrade_package(request: UpgradePackageRequest):
         developer_output,
         qa_output,
         delivery_lead_review,
+        diagnostics=diagnostics,
     )
 
     return {
@@ -456,113 +612,80 @@ async def upgrade_package(request: UpgradePackageRequest):
         "developer": developer_output,
         "qa": qa_output,
         "quality_score": quality_score,
+        "diagnostics": diagnostics,
     }
 
 
 @app.post("/agent-review")
 async def agent_review(request: AgentReviewRequest):
+    diagnostics = []
+
     review = await safe_agent_call(
         "Agent Review Board",
-        {
-            "overall_review_summary": "Agent review could not be generated. Check backend logs.",
-            "architect_review": {
-                "what_looks_good": [],
-                "concerns": [],
-                "recommended_improvements": [],
-                "questions_for_business": [],
-            },
-            "developer_review": {
-                "what_looks_good": [],
-                "concerns": [],
-                "recommended_improvements": [],
-                "questions_for_business": [],
-            },
-            "qa_review": {
-                "what_looks_good": [],
-                "concerns": [],
-                "recommended_improvements": [],
-                "questions_for_business": [],
-            },
-            "delivery_lead_review": {
-                "what_looks_good": [],
-                "concerns": [],
-                "recommended_improvements": [],
-                "questions_for_business": [],
-            },
-            "priority_fixes": [],
-            "final_verdict": "Review unavailable.",
-        },
+        AGENT_REVIEW_FALLBACK,
         generate_agent_review,
         request.requirement,
         request.current_package,
+        diagnostics=diagnostics,
     )
+
+    if isinstance(review, dict):
+        review["diagnostics"] = diagnostics
 
     return review
 
 
 @app.post("/delivery_lead_chat")
 async def delivery_lead_chat(request: DeliveryLeadChatRequest):
+    diagnostics = []
+
     response = await safe_agent_call(
         "Delivery Lead Chat",
-        {
-            "answer": "Delivery Lead chat could not respond. Check backend logs.",
-            "delivery_lead_recommendation": "",
-            "artifact_type": "",
-            "artifact_details": {},
-            "suggested_requirement_update": "",
-            "should_update_requirement": False,
-            "impacted_sections": [],
-            "follow_up_questions": [],
-            "recommended_next_action": "Retry after checking backend logs.",
-        },
-        chat_with_delivery_lead,
+        DELIVERY_LEAD_CHAT_FALLBACK,
+        generate_delivery_lead_chat,
         request.message,
         request.requirement,
-        request.current_package,
-        request.chat_history,
+        request.current_package or {},
+        request.chat_history or [],
+        diagnostics=diagnostics,
     )
+
+    if isinstance(response, dict):
+        response["diagnostics"] = diagnostics
 
     return response
 
 
 @app.post("/generate-code")
 def generate_code(request: CodeRequest):
-    try:
-        code_output = generate_code_for_technical_card(
-            request.card,
-            request.full_context,
-        )
-    except Exception as error:
-        print("\n========== Code Generator FAILED ==========")
-        print(str(error))
-        traceback.print_exc()
-        print("===========================================\n")
-        code_output = "Unable to generate code. Check backend logs."
+    code_output, diagnostic = safe_sync_call(
+        "Code Generator",
+        "Unable to generate code. Check backend logs.",
+        generate_code_for_technical_card,
+        request.card,
+        request.full_context,
+    )
 
     return {
         "code": code_output,
+        "diagnostics": [diagnostic],
     }
 
 
 @app.post("/regenerate-section")
 def regenerate_selected_section(request: RegenerateSectionRequest):
-    try:
-        regenerated_output = regenerate_section(
-            request.section,
-            request.requirement,
-            request.current_package,
-            request.user_instruction,
-        )
-    except Exception as error:
-        print("\n========== Section Regenerator FAILED ==========")
-        print(str(error))
-        traceback.print_exc()
-        print("================================================\n")
-        regenerated_output = {
-            "error": "Section regeneration failed. Check backend logs."
-        }
+    regenerated_output, diagnostic = safe_sync_call(
+        "Section Regenerator",
+        {"error": "Section regeneration failed. Check backend logs."},
+        regenerate_section,
+        request.section,
+        request.requirement,
+        request.current_package,
+        request.user_instruction,
+    )
 
     return {
         "section": request.section,
         "output": regenerated_output,
+        "diagnostics": [diagnostic],
     }
