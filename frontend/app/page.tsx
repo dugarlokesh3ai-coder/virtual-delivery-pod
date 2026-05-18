@@ -15,6 +15,7 @@ import {
   WidthType,
   BorderStyle,
 } from "docx";
+import { supabase } from "@/lib/supabaseClient";
 
 type TableItem = {
   table_name: string;
@@ -254,6 +255,7 @@ type SavedProject = {
   clarification_answers: string;
   uploaded_file_names: string[];
   result: DeliveryResult | null;
+  delivery_lead_chat?: DeliveryLeadChatMessage[];
 };
 
 type RequirementTemplate = {
@@ -263,8 +265,6 @@ type RequirementTemplate = {
   description: string;
   requirement: string;
 };
-
-const PROJECT_STORAGE_KEY = "virtual_delivery_pod_saved_projects";
 
 function safeText(value: any): string {
   if (value === null || value === undefined) return "";
@@ -465,18 +465,10 @@ export default function Home() {
     process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
   const [showTemplates, setShowTemplates] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const raw = window.localStorage.getItem(PROJECT_STORAGE_KEY);
-    if (!raw) return;
-
-    try {
-      const parsed = JSON.parse(raw) as SavedProject[];
-      setSavedProjects(parsed);
-    } catch (error) {
-      console.error("Unable to load saved projects", error);
-    }
-  }, []);
+  const [user, setUser] = useState<any>(null);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
     const updateLayout = () => {
@@ -489,10 +481,116 @@ export default function Home() {
     return () => window.removeEventListener("resize", updateLayout);
   }, []);
 
-  function persistProjects(projects: SavedProject[]) {
-    setSavedProjects(projects);
-    window.localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(projects));
+  async function signUp() {
+    if (!authEmail.trim() || !authPassword.trim()) {
+      alert("Enter email and password.");
+      return;
+    }
+
+    setAuthLoading(true);
+
+    const { error } = await supabase.auth.signUp({
+      email: authEmail.trim(),
+      password: authPassword,
+    });
+
+    setAuthLoading(false);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    alert("Signup complete. Check your email if confirmation is enabled.");
   }
+
+  async function signIn() {
+    if (!authEmail.trim() || !authPassword.trim()) {
+      alert("Enter email and password.");
+      return;
+    }
+
+    setAuthLoading(true);
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmail.trim(),
+      password: authPassword,
+    });
+
+    setAuthLoading(false);
+
+    if (error) {
+      alert(error.message);
+    }
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    setUser(null);
+    setSavedProjects([]);
+    clearWorkspace();
+  }
+
+  async function loadSavedProjectsFromDb(currentUserId?: string) {
+    const userId = currentUserId || user?.id;
+    if (!userId) return;
+
+    const { data, error } = await supabase
+      .from("delivery_projects")
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      alert("Unable to load saved projects.");
+      return;
+    }
+
+    const mappedProjects: SavedProject[] = (data || []).map((project: any) => ({
+      id: project.id,
+      project_name: project.project_name,
+      created_at: project.created_at,
+      updated_at: project.updated_at,
+      requirement: project.requirement || "",
+      clarification_answers: project.clarification_answers || "",
+      uploaded_file_names: project.uploaded_file_names || [],
+      result: project.result || null,
+      delivery_lead_chat: project.delivery_lead_chat || [],
+    }));
+
+    setSavedProjects(mappedProjects);
+  }
+
+  useEffect(() => {
+    async function loadUser() {
+      const { data } = await supabase.auth.getUser();
+      setUser(data.user || null);
+
+      if (data.user?.id) {
+        await loadSavedProjectsFromDb(data.user.id);
+      }
+    }
+
+    loadUser();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        const nextUser = session?.user || null;
+        setUser(nextUser);
+
+        if (nextUser?.id) {
+          await loadSavedProjectsFromDb(nextUser.id);
+        } else {
+          setSavedProjects([]);
+        }
+      }
+    );
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   function buildRequirementWithClarifications() {
   return `
@@ -564,36 +662,57 @@ export default function Home() {
     return `project-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
-  function saveProject() {
+  async function saveProject() {
+    if (!user) {
+      alert("Sign in before saving projects.");
+      return;
+    }
+
     if (!projectName.trim()) {
       alert("Enter a project name first.");
       return;
     }
 
-    const now = new Date().toISOString();
-    const existingProject = activeProjectId
-      ? savedProjects.find((project) => project.id === activeProjectId)
-      : null;
-
-    const projectToSave: SavedProject = {
-      id: existingProject?.id || createProjectId(),
+    const payload = {
+      user_id: user.id,
       project_name: projectName.trim(),
-      created_at: existingProject?.created_at || now,
-      updated_at: now,
       requirement,
       clarification_answers: clarificationAnswers,
       uploaded_file_names: files.map((file) => file.name),
       result,
+      delivery_lead_chat: deliveryLeadChat,
+      updated_at: new Date().toISOString(),
     };
 
-    const nextProjects = existingProject
-      ? savedProjects.map((project) =>
-          project.id === existingProject.id ? projectToSave : project
-        )
-      : [projectToSave, ...savedProjects];
+    if (activeProjectId) {
+      const { error } = await supabase
+        .from("delivery_projects")
+        .update(payload)
+        .eq("id", activeProjectId)
+        .eq("user_id", user.id);
 
-    persistProjects(nextProjects);
-    setActiveProjectId(projectToSave.id);
+      if (error) {
+        console.error(error);
+        alert("Unable to update project.");
+        return;
+      }
+    } else {
+      const { data, error } = await supabase
+        .from("delivery_projects")
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) {
+        console.error(error);
+        alert("Unable to save project.");
+        return;
+      }
+
+      setActiveProjectId(data.id);
+    }
+
+    await loadSavedProjectsFromDb(user.id);
     alert("Project saved.");
   }
 
@@ -608,6 +727,8 @@ export default function Home() {
     setActiveTab("stories");
     setPackageTab("overview");
     setRegenerateInstruction("");
+    setDeliveryLeadChat(project.delivery_lead_chat || []);
+    setDeliveryLeadPendingRequirementUpdate("");
   }
 
   function clearWorkspace() {
@@ -659,16 +780,32 @@ export default function Home() {
     clearWorkspace();
   }
 
-  function deleteProject(projectId: string) {
+  async function deleteProject(projectId: string) {
+    if (!user) {
+      alert("Sign in before deleting projects.");
+      return;
+    }
+
     const confirmed = window.confirm("Delete this saved project?");
     if (!confirmed) return;
 
-    const nextProjects = savedProjects.filter((project) => project.id !== projectId);
-    persistProjects(nextProjects);
+    const { error } = await supabase
+      .from("delivery_projects")
+      .delete()
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error(error);
+      alert("Unable to delete project.");
+      return;
+    }
 
     if (activeProjectId === projectId) {
       clearWorkspace();
     }
+
+    await loadSavedProjectsFromDb(user.id);
   }
 
 
@@ -1798,6 +1935,66 @@ ${uat.expected_result}
             </div>
           )}
         </header>
+
+        <section style={styles.projectBar}>
+          <div style={responsiveProjectBarTop}>
+            <div>
+              <p style={styles.label}>Account</p>
+              <h2 style={styles.projectBarTitle}>
+                {user ? "Signed in" : "Sign in to save projects"}
+              </h2>
+              <p style={styles.muted}>
+                {user
+                  ? user.email
+                  : "Create an account to save packages and load them across devices."}
+              </p>
+            </div>
+
+            {user ? (
+              <button onClick={signOut} style={styles.secondaryButton}>
+                Sign Out
+              </button>
+            ) : (
+              <div style={isMobile ? styles.mobileActionRow : styles.authBox}>
+                <input
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  placeholder="Email"
+                  style={styles.projectInput}
+                />
+                <input
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  placeholder="Password"
+                  type="password"
+                  style={styles.projectInput}
+                />
+                <button
+                  onClick={signIn}
+                  disabled={authLoading}
+                  style={{
+                    ...styles.button,
+                    opacity: authLoading ? 0.65 : 1,
+                    cursor: authLoading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {authLoading ? "Working..." : "Sign In"}
+                </button>
+                <button
+                  onClick={signUp}
+                  disabled={authLoading}
+                  style={{
+                    ...styles.secondaryButton,
+                    opacity: authLoading ? 0.65 : 1,
+                    cursor: authLoading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Sign Up
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
 
         <section style={styles.templateCard}>
           <div style={responsiveTemplateHeader}>
@@ -3720,6 +3917,13 @@ projectMeta: {
   color: "#64748B",
   fontSize: "13px",
   fontWeight: 700,
+},
+
+authBox: {
+  display: "grid",
+  gridTemplateColumns: "180px 180px auto auto",
+  gap: "10px",
+  alignItems: "center",
 },
 
   templateCard: {
