@@ -3871,17 +3871,40 @@ ${uat.expected_result}
                       />
 
                       <div style={styles.reviewAgentChatBox}>
-                        <div style={styles.cardTitleRow}>
+                        <div style={styles.reviewAgentChatHeader}>
                           <div>
-                            <p style={styles.label}>Talk to {getReviewAgentLabel(activeReviewAgent)}</p>
+                            <p style={styles.label}>Reviewer Chat</p>
                             <h3 style={styles.itemTitle}>
-                              Ask follow-ups or request requirement changes
+                              Talk directly with {getReviewAgentLabel(activeReviewAgent)}
                             </h3>
+                            <p style={styles.muted}>
+                              Ask for priority fixes, requirement rewrites, implementation guidance,
+                              risks, or what to clarify with business.
+                            </p>
                           </div>
+
                           <Badge>{reviewAgentChats[activeReviewAgent]?.length || 0} messages</Badge>
                         </div>
 
-                        <div style={styles.agentChatHistory}>
+                        <div style={styles.reviewAgentPromptGrid}>
+                          {[
+                            "What should I fix first?",
+                            "Rewrite the requirement for your top concern.",
+                            "What questions should I ask business?",
+                            "What is risky for build handoff?",
+                          ].map((prompt) => (
+                            <button
+                              key={prompt}
+                              type="button"
+                              onClick={() => setReviewAgentMessage(prompt)}
+                              style={styles.reviewAgentPromptButton}
+                            >
+                              {prompt}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div style={styles.agentChatHistoryLarge}>
                           {reviewAgentChats[activeReviewAgent]?.length ? (
                             reviewAgentChats[activeReviewAgent].map((message, index) => (
                               <div
@@ -3897,15 +3920,16 @@ ${uat.expected_result}
                                     ? "You"
                                     : getReviewAgentLabel(activeReviewAgent)}
                                 </p>
-                                <p style={styles.bodyText}>{message.content}</p>
+                                <p style={styles.agentMessageText}>{message.content}</p>
                               </div>
                             ))
                           ) : (
-                            <div style={styles.innerCard}>
+                            <div style={styles.agentChatEmpty}>
+                              <p style={styles.label}>Start with a specific ask</p>
                               <p style={styles.bodyText}>
-                                Ask this reviewer about their concerns, what to fix first, or how to
-                                update the original requirement. Example: “Rewrite the requirement
-                                to address your top data model concern.”
+                                Example: “Developer, rewrite the requirement to address your top
+                                implementation concern.” If the reviewer suggests a requirement update,
+                                you can apply it back to the main requirement.
                               </p>
                             </div>
                           )}
@@ -3928,41 +3952,54 @@ ${uat.expected_result}
                           </div>
                         )}
 
-                        <textarea
-                          value={reviewAgentMessage}
-                          onChange={(e) => setReviewAgentMessage(e.target.value)}
-                          placeholder={`Ask ${getReviewAgentLabel(activeReviewAgent)} what to fix, clarify, or update...`}
-                          style={styles.deliveryLeadTextarea}
-                        />
-
-                        <div style={styles.analysisActions}>
-                          <button
-                            onClick={askReviewAgent}
-                            disabled={reviewAgentThinking || loading}
-                            style={{
-                              ...styles.button,
-                              opacity: reviewAgentThinking || loading ? 0.65 : 1,
-                              cursor:
-                                reviewAgentThinking || loading ? "not-allowed" : "pointer",
+                        <div style={styles.reviewAgentComposer}>
+                          <textarea
+                            value={reviewAgentMessage}
+                            onChange={(e) => setReviewAgentMessage(e.target.value)}
+                            onKeyDown={(e) => {
+                              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                                e.preventDefault();
+                                askReviewAgent();
+                              }
                             }}
-                          >
-                            {reviewAgentThinking
-                              ? "Thinking..."
-                              : `Ask ${getReviewAgentLabel(activeReviewAgent)}`}
-                          </button>
+                            placeholder={`Ask ${getReviewAgentLabel(activeReviewAgent)} to clarify, critique, rewrite, or improve the requirement...`}
+                            style={styles.reviewAgentTextarea}
+                          />
 
-                          <button
-                            onClick={() => {
-                              setReviewAgentChats({
-                                ...reviewAgentChats,
-                                [activeReviewAgent]: [],
-                              });
-                              setReviewAgentPendingRequirementUpdate("");
-                            }}
-                            style={styles.secondaryButton}
-                          >
-                            Clear Agent Chat
-                          </button>
+                          <div style={styles.reviewAgentActions}>
+                            <button
+                              onClick={askReviewAgent}
+                              disabled={reviewAgentThinking || loading}
+                              style={{
+                                ...styles.button,
+                                opacity: reviewAgentThinking || loading ? 0.65 : 1,
+                                cursor:
+                                  reviewAgentThinking || loading ? "not-allowed" : "pointer",
+                              }}
+                            >
+                              {reviewAgentThinking
+                                ? "Thinking..."
+                                : `Ask ${getReviewAgentLabel(activeReviewAgent)}`}
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setReviewAgentChats({
+                                  ...reviewAgentChats,
+                                  [activeReviewAgent]: [],
+                                });
+                                setReviewAgentPendingRequirementUpdate("");
+                              }}
+                              style={styles.secondaryButton}
+                            >
+                              Clear Chat
+                            </button>
+                          </div>
+
+                          <p style={styles.composerHint}>
+                            Press Cmd/Ctrl + Enter to send. Use the reviewer tabs above to switch
+                            between Architect, Developer, QA, and Delivery Lead.
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -6211,8 +6248,34 @@ mermaidCodeBlock: {
   reviewAgentChatBox: {
     background: "#F8FAFC",
     border: "1px solid #CBD5E1",
-    borderRadius: "20px",
-    padding: "18px",
+    borderRadius: "24px",
+    padding: "22px",
+    boxShadow: "0 14px 38px rgba(15, 23, 42, 0.06)",
+  },
+  reviewAgentChatHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "18px",
+    marginBottom: "16px",
+  },
+  reviewAgentPromptGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: "10px",
+    marginBottom: "16px",
+  },
+  reviewAgentPromptButton: {
+    border: "1px solid #CBD5E1",
+    borderRadius: "14px",
+    background: "#FFFFFF",
+    color: "#2563EB",
+    padding: "12px 14px",
+    fontSize: "13px",
+    lineHeight: "1.4",
+    fontWeight: 850,
+    cursor: "pointer",
+    textAlign: "left",
   },
   agentChatHistory: {
     display: "flex",
@@ -6222,19 +6285,81 @@ mermaidCodeBlock: {
     maxHeight: "360px",
     overflowY: "auto",
   },
+  agentChatHistoryLarge: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
+    marginBottom: "16px",
+    minHeight: "220px",
+    maxHeight: "520px",
+    overflowY: "auto",
+    padding: "14px",
+    border: "1px solid #CBD5E1",
+    borderRadius: "20px",
+    background: "#FFFFFF",
+  },
+  agentChatEmpty: {
+    background: "#F8FAFC",
+    border: "1px dashed #94A3B8",
+    borderRadius: "18px",
+    padding: "20px",
+  },
   agentUserMessage: {
     background: "#EFF6FF",
     border: "1px solid #BFDBFE",
     borderRadius: "16px",
-    padding: "14px",
-    marginLeft: "12%",
+    padding: "16px",
+    marginLeft: "14%",
   },
   agentResponseMessage: {
-    background: "#FFFFFF",
+    background: "#F8FAFC",
     border: "1px solid #CBD5E1",
     borderRadius: "16px",
-    padding: "14px",
-    marginRight: "12%",
+    padding: "16px",
+    marginRight: "14%",
+  },
+  agentMessageText: {
+    margin: 0,
+    color: "#334155",
+    fontSize: "15px",
+    lineHeight: "1.8",
+    whiteSpace: "pre-wrap",
+  },
+  reviewAgentComposer: {
+    background: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    borderRadius: "20px",
+    padding: "16px",
+  },
+  reviewAgentTextarea: {
+    width: "100%",
+    minHeight: "180px",
+    resize: "vertical",
+    border: "1px solid #94A3B8",
+    borderRadius: "16px",
+    background: "#FFFFFF",
+    padding: "16px",
+    color: "#0F172A",
+    fontSize: "15px",
+    lineHeight: "1.7",
+    outline: "none",
+    boxShadow: "inset 0 1px 4px rgba(15, 23, 42, 0.08)",
+    boxSizing: "border-box",
+  },
+  reviewAgentActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: "12px",
+    marginTop: "14px",
+    flexWrap: "wrap",
+  },
+  composerHint: {
+    margin: "12px 0 0",
+    color: "#64748B",
+    fontSize: "12px",
+    lineHeight: "1.6",
+    fontWeight: 700,
   },
   requirementUpdateBox: {
     background: "#FFFBEB",
