@@ -1,45 +1,52 @@
-from openai import OpenAI
-from dotenv import load_dotenv
-import os
 import json
+from typing import Any, Dict
 
-load_dotenv()
+from agents._common import _chat_json, _safe_dict
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def generate_stories(requirement: str, architecture: dict):
-    prompt = f"""
-You are a senior ServiceNow Business Systems Analyst.
+FALLBACK_STORY_PROMPT = """
+You are a senior ServiceNow BSA/product owner.
+Create delivery-ready epics and user stories from the requirement and architecture.
+Acceptance criteria must be testable.
+Do not invent integrations or requirements not present in the input.
+Return only valid JSON.
+"""
 
-Create delivery-ready user stories from the business requirement and architecture.
 
-Return ONLY valid JSON.
-Do not include markdown.
-Do not include explanations outside JSON.
-Do not say "certainly".
-Do not say "if you want".
+def _fallback_stories() -> Dict[str, Any]:
+    return {
+        "epic": "Story generation unavailable.",
+        "stories": [],
+        "assumptions": [
+            "Story agent failed or returned invalid JSON."
+        ],
+        "dependencies": [
+            "Review architecture and requirement manually before build."
+        ],
+    }
 
+
+def generate_stories(requirement: str, architecture: dict) -> Dict[str, Any]:
+    user_payload = f"""
 Business Requirement:
 {requirement}
 
 Architecture Context:
 {json.dumps(architecture, indent=2)}
 
-Return this JSON structure exactly:
-
+Return JSON exactly in this structure:
 {{
-  "epic": "Epic title",
+  "epic": "Epic statement",
   "stories": [
     {{
       "title": "Story title",
       "persona": "User persona",
-      "story": "As a [persona], I want [capability], so that [business value].",
+      "story": "As a..., I want..., so that...",
       "acceptance_criteria": [
-        "Given..., when..., then...",
-        "Given..., when..., then..."
+        "Given/When/Then acceptance criterion"
       ],
       "priority": "High / Medium / Low",
-      "notes": "Any business notes or assumptions"
+      "notes": "Implementation or scope notes"
     }}
   ],
   "assumptions": [
@@ -51,29 +58,20 @@ Return this JSON structure exactly:
 }}
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a senior ServiceNow BSA. Return only valid JSON."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.2
+    output = _chat_json(
+        prompt_name="story.txt",
+        fallback_prompt=FALLBACK_STORY_PROMPT,
+        user_payload=user_payload,
+        fallback=_fallback_stories(),
+        temperature=0.15,
     )
 
-    content = response.choices[0].message.content
+    output = _safe_dict(output)
+    fallback = _fallback_stories()
 
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        return {
-            "epic": "Unable to parse story output.",
-            "stories": [],
-            "assumptions": [],
-            "dependencies": []
-        }
+    return {
+        "epic": output.get("epic") or fallback["epic"],
+        "stories": output.get("stories") if isinstance(output.get("stories"), list) else [],
+        "assumptions": output.get("assumptions") if isinstance(output.get("assumptions"), list) else fallback["assumptions"],
+        "dependencies": output.get("dependencies") if isinstance(output.get("dependencies"), list) else fallback["dependencies"],
+    }

@@ -1,13 +1,29 @@
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-PROMPT_DIR = BASE_DIR / "prompts"
 
+def load_prompt(prompt_file_name: str, fallback_prompt: str = "") -> str:
+    """
+    Loads prompts from backend/prompts/<prompt_file_name>.
 
-def load_prompt(prompt_name: str) -> str:
-    prompt_path = PROMPT_DIR / prompt_name
+    Works from:
+    - backend/
+    - project root/
+    - Render deployment working directory
 
-    if not prompt_path.exists():
-        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
+    If the prompt file is missing, returns fallback_prompt so the app does not crash.
+    """
+    possible_paths = [
+        Path("prompts") / prompt_file_name,
+        Path("backend") / "prompts" / prompt_file_name,
+        Path(__file__).resolve().parent.parent / "prompts" / prompt_file_name,
+    ]
 
-    return prompt_path.read_text(encoding="utf-8")
+    for path in possible_paths:
+        try:
+            if path.exists():
+                return path.read_text(encoding="utf-8")
+        except Exception as error:
+            print(f"Unable to read prompt file {path}: {error}")
+
+    print(f"Prompt file not found: {prompt_file_name}. Using fallback prompt.")
+    return fallback_prompt

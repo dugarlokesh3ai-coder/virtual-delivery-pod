@@ -1,61 +1,58 @@
-from openai import OpenAI
-from dotenv import load_dotenv
+import json
 import os
+from typing import Any
+
+from dotenv import load_dotenv
+from openai import OpenAI
+
+from utils.prompt_loader import load_prompt
 
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
 
-def generate_code_for_technical_card(card: dict, full_context: str):
-    prompt = f"""
+FALLBACK_CODE_GENERATOR_PROMPT = """
 You are a senior ServiceNow developer.
-
-Generate implementation guidance and code/configuration details for this selected technical item.
-
-Selected Technical Card:
-{card}
-
-Full Requirement Context:
-{full_context}
-
-Rules:
-- Be practical.
-- Include ServiceNow configuration steps.
-- Include code only where scripting is appropriate.
-- If Flow Designer is better than script, say so.
-- Do not invent integrations.
-- Use copy-paste-ready snippets where useful.
-- For scripts, include comments.
-
-Return in this structure:
-
-Implementation Approach:
-...
-
-Configuration Steps:
-1. ...
-
-Code / Script:
-...
-
-Testing Notes:
-...
+Generate practical implementation guidance for the selected technical card.
+Prefer configuration and Flow Designer before custom scripting.
+When code is useful, provide ServiceNow-oriented examples and explain where they belong.
+Do not invent external integrations.
+Return plain text. Do not return JSON unless explicitly asked.
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a senior ServiceNow developer."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.2,
-    )
 
-    return response.choices[0].message.content
+def generate_code_for_technical_card(card: Any, full_context: str) -> str:
+    prompt = load_prompt("code_generator.txt", FALLBACK_CODE_GENERATOR_PROMPT)
+
+    user_payload = f"""
+Selected Technical Card:
+{json.dumps(card, indent=2)}
+
+Full Package Context:
+{full_context}
+
+Create implementation guidance/code notes for this card.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a senior ServiceNow developer. Return clear implementation guidance.",
+                },
+                {
+                    "role": "user",
+                    "content": f"{prompt}\n\nINPUT CONTEXT:\n{user_payload}",
+                },
+            ],
+            temperature=0.12,
+        )
+
+        return response.choices[0].message.content or "No implementation guidance returned."
+    except Exception as error:
+        print("Code generation failed:", error)
+        return "Unable to generate implementation guidance. Check backend logs."

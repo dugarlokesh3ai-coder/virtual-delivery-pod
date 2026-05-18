@@ -1,39 +1,42 @@
-from openai import OpenAI
-from dotenv import load_dotenv
-import os
-import json
+from typing import Any, Dict
 
-load_dotenv()
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from agents._common import _chat_json, _safe_dict
 
 
-def analyze_requirement_intake(requirement: str):
-    prompt = f"""
-You are the Delivery Lead Agent for a Virtual ServiceNow Delivery Pod.
+FALLBACK_INTAKE_PROMPT = """
+You are a ServiceNow delivery lead analyzing intake quality.
+Identify whether the input is ready to generate a package.
+Return only valid JSON.
+"""
 
-Your job is to analyze a raw business requirement before the full delivery package is generated.
 
-Return ONLY valid JSON.
-Do not include markdown.
-Do not include explanations outside JSON.
-Do not say "certainly".
-Do not say "if you want".
+def _fallback_intake_analysis() -> Dict[str, Any]:
+    return {
+        "understanding": "Intake analysis could not be generated.",
+        "can_generate_package": False,
+        "confidence": "Low",
+        "clarifying_questions": [
+            "Please review the requirement manually and retry analysis."
+        ],
+        "assumptions": [],
+        "missing_requirements": [
+            {
+                "gap": "Intake analyzer failed or returned invalid JSON.",
+                "why_it_matters": "The package may miss critical delivery details."
+            }
+        ],
+        "recommended_next_step": "Retry analysis or generate a package with caution.",
+    }
 
-Analyze:
-- what the business appears to need
-- whether enough information exists to generate a delivery package
-- what is missing
-- what assumptions would be needed
-- what questions should be asked before solutioning
 
+def analyze_requirement_intake(requirement: str) -> Dict[str, Any]:
+    user_payload = f"""
 Business Requirement:
 {requirement}
 
-Return this JSON structure exactly:
-
+Return JSON exactly in this structure:
 {{
-  "understanding": "Clear summary of what the user is asking for.",
+  "understanding": "What the requirement appears to ask for.",
   "can_generate_package": true,
   "confidence": "High / Medium / Low",
   "clarifying_questions": [
@@ -44,40 +47,31 @@ Return this JSON structure exactly:
   ],
   "missing_requirements": [
     {{
-      "gap": "Missing requirement",
-      "why_it_matters": "Why this matters for delivery"
+      "gap": "Missing or weak requirement",
+      "why_it_matters": "Why this matters"
     }}
   ],
-  "recommended_next_step": "Generate with assumptions / Answer questions first"
+  "recommended_next_step": "Recommended next action"
 }}
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a senior ServiceNow Delivery Lead. Return only valid JSON."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.2,
+    output = _chat_json(
+        prompt_name="intake_analyzer.txt",
+        fallback_prompt=FALLBACK_INTAKE_PROMPT,
+        user_payload=user_payload,
+        fallback=_fallback_intake_analysis(),
+        temperature=0.1,
     )
 
-    content = response.choices[0].message.content
+    output = _safe_dict(output)
+    fallback = _fallback_intake_analysis()
 
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        return {
-            "understanding": "Unable to parse intake analysis.",
-            "can_generate_package": False,
-            "confidence": "Low",
-            "clarifying_questions": [],
-            "assumptions": [],
-            "missing_requirements": [],
-            "recommended_next_step": "Review requirement manually"
-        }
+    return {
+        "understanding": output.get("understanding") or fallback["understanding"],
+        "can_generate_package": bool(output.get("can_generate_package", False)),
+        "confidence": output.get("confidence") or fallback["confidence"],
+        "clarifying_questions": output.get("clarifying_questions") if isinstance(output.get("clarifying_questions"), list) else fallback["clarifying_questions"],
+        "assumptions": output.get("assumptions") if isinstance(output.get("assumptions"), list) else [],
+        "missing_requirements": output.get("missing_requirements") if isinstance(output.get("missing_requirements"), list) else fallback["missing_requirements"],
+        "recommended_next_step": output.get("recommended_next_step") or fallback["recommended_next_step"],
+    }

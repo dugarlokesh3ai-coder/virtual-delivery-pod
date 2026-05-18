@@ -1,66 +1,74 @@
-from openai import OpenAI
-from dotenv import load_dotenv
-import os
 import json
+from typing import Any, Dict
 
-load_dotenv()
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from agents._common import _chat_json, _safe_dict
 
 
-def generate_delivery_lead_review(requirement: str, architecture: dict, story_output: dict, developer_output: dict, qa_output: dict):
-    prompt = f"""
-You are the Delivery Lead Agent for a Virtual ServiceNow Delivery Pod.
+FALLBACK_DELIVERY_LEAD_PROMPT = """
+You are a ServiceNow delivery lead.
+Review requirement, architecture, stories, developer notes, and QA output.
+Separate confirmed scope from assumptions and open questions.
+Return only valid JSON.
+"""
 
-Your job is to review the business requirement and the generated delivery package like a senior ServiceNow delivery lead.
 
-Return ONLY valid JSON.
-Do not include markdown.
-Do not include explanations outside JSON.
-Do not say "certainly".
-Do not say "if you want".
+def _fallback_delivery_lead_review() -> Dict[str, Any]:
+    return {
+        "understanding": "Delivery Lead review could not be generated.",
+        "mvp_scope": [],
+        "phase_2_scope": [],
+        "assumptions": [
+            "Delivery Lead agent failed or returned invalid JSON."
+        ],
+        "missing_requirements": [],
+        "clarifying_questions": [
+            "Review the requirement manually before build handoff."
+        ],
+        "recommended_next_steps": [
+            "Retry Delivery Lead review."
+        ],
+    }
 
-Focus on:
-- What the team understood
-- MVP scope
-- Phase 2 / future scope
-- Assumptions
-- Missing or weak requirements
-- Clarifying questions
-- Recommended next steps
 
+def generate_delivery_lead_review(
+    requirement: str,
+    architecture: dict,
+    story_output: dict,
+    developer_output: dict,
+    qa_output: dict,
+) -> Dict[str, Any]:
+    user_payload = f"""
 Business Requirement:
 {requirement}
 
-Architecture Output:
+Architecture Context:
 {json.dumps(architecture, indent=2)}
 
-Story Output:
+Story Context:
 {json.dumps(story_output, indent=2)}
 
-Developer Output:
+Developer Context:
 {json.dumps(developer_output, indent=2)}
 
-QA Output:
+QA Context:
 {json.dumps(qa_output, indent=2)}
 
-Return this JSON structure exactly:
-
+Return JSON exactly in this structure:
 {{
-  "understanding": "Clear summary of what the business appears to need.",
+  "understanding": "Delivery lead understanding of the request.",
   "mvp_scope": [
-    "MVP item 1"
+    "MVP scope item"
   ],
   "phase_2_scope": [
-    "Future item 1"
+    "Phase 2 scope item"
   ],
   "assumptions": [
     "Assumption 1"
   ],
   "missing_requirements": [
     {{
-      "gap": "Missing requirement",
-      "why_it_matters": "Why this matters for delivery"
+      "gap": "Missing or weak requirement",
+      "why_it_matters": "Why it matters"
     }}
   ],
   "clarifying_questions": [
@@ -72,32 +80,23 @@ Return this JSON structure exactly:
 }}
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a senior ServiceNow Delivery Lead. Return only valid JSON."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.2,
+    output = _chat_json(
+        prompt_name="delivery_lead.txt",
+        fallback_prompt=FALLBACK_DELIVERY_LEAD_PROMPT,
+        user_payload=user_payload,
+        fallback=_fallback_delivery_lead_review(),
+        temperature=0.1,
     )
 
-    content = response.choices[0].message.content
+    output = _safe_dict(output)
+    fallback = _fallback_delivery_lead_review()
 
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        return {
-            "understanding": "Unable to parse Delivery Lead review.",
-            "mvp_scope": [],
-            "phase_2_scope": [],
-            "assumptions": [],
-            "missing_requirements": [],
-            "clarifying_questions": [],
-            "recommended_next_steps": []
-        }
+    return {
+        "understanding": output.get("understanding") or fallback["understanding"],
+        "mvp_scope": output.get("mvp_scope") if isinstance(output.get("mvp_scope"), list) else [],
+        "phase_2_scope": output.get("phase_2_scope") if isinstance(output.get("phase_2_scope"), list) else [],
+        "assumptions": output.get("assumptions") if isinstance(output.get("assumptions"), list) else fallback["assumptions"],
+        "missing_requirements": output.get("missing_requirements") if isinstance(output.get("missing_requirements"), list) else [],
+        "clarifying_questions": output.get("clarifying_questions") if isinstance(output.get("clarifying_questions"), list) else fallback["clarifying_questions"],
+        "recommended_next_steps": output.get("recommended_next_steps") if isinstance(output.get("recommended_next_steps"), list) else fallback["recommended_next_steps"],
+    }

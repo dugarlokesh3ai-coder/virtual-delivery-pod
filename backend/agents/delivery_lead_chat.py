@@ -1,88 +1,119 @@
-from openai import OpenAI
-from dotenv import load_dotenv
-import os
 import json
+from typing import Any, Dict, List
 
-from utils.prompt_loader import load_prompt
-
-load_dotenv()
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+from agents._common import _chat_json, _safe_dict, _safe_list
 
 
-def chat_with_delivery_lead(
-    user_message: str,
-    requirement: str,
-    current_package: dict | None,
-    chat_history: list,
-):
-    system_prompt = load_prompt("delivery_lead_chat.txt")
-
-    user_prompt = f"""
-User Message:
-{user_message}
-
-Current Requirement:
-{requirement}
-
-Current Generated Package:
-{json.dumps(current_package or {}, indent=2)}
-
-Prior Delivery Lead Chat:
-{json.dumps(chat_history or [], indent=2)}
-
-Instructions:
-Answer the user's question using the current package first.
-If the user asks for a business rule, notification/email, flow, ACL, table, field, story, or QA detail, return artifact-level details.
-If details are missing from the package, say they are missing and provide a clearly marked suggested draft.
-If the user asks to update the requirement, provide suggested_requirement_update and set should_update_requirement to true.
-
-Return only valid JSON using the required schema.
+FALLBACK_DELIVERY_LEAD_CHAT_PROMPT = """
+You are the Delivery Lead Copilot for a ServiceNow delivery package.
+Answer questions using only the current requirement and package context.
+If asked to update the requirement, return a concise suggested_requirement_update.
+Return only valid JSON.
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-            {
-                "role": "user",
-                "content": user_prompt,
-            },
-        ],
+
+def _fallback_chat_response() -> Dict[str, Any]:
+    return {
+        "answer": "Delivery Lead chat could not generate a response.",
+        "delivery_lead_recommendation": "Retry the question or review package manually.",
+        "artifact_type": "General",
+        "artifact_details": {
+            "name": "",
+            "table": "",
+            "trigger": "",
+            "condition": "",
+            "recipients": [],
+            "subject": "",
+            "body": "",
+            "steps": [],
+            "roles": [],
+            "fields": [],
+            "expected_result": "",
+            "notes": [],
+        },
+        "suggested_requirement_update": "",
+        "should_update_requirement": False,
+        "impacted_sections": [],
+        "follow_up_questions": [],
+        "recommended_next_action": "Retry chat.",
+    }
+
+
+def generate_delivery_lead_chat(
+    message: str,
+    requirement: str,
+    current_package: dict,
+    chat_history: List[dict],
+) -> Dict[str, Any]:
+    user_payload = f"""
+User Message:
+{message}
+
+Business Requirement:
+{requirement}
+
+Current Package:
+{json.dumps(current_package, indent=2)}
+
+Chat History:
+{json.dumps(chat_history, indent=2)}
+
+Return JSON exactly in this structure:
+{{
+  "answer": "Direct answer to the user.",
+  "delivery_lead_recommendation": "Recommended delivery lead action.",
+  "artifact_type": "Business Rule / Flow / Notification / ACL / Story / Requirement Update / General / QA / Table / Field",
+  "artifact_details": {{
+    "name": "",
+    "table": "",
+    "trigger": "",
+    "condition": "",
+    "recipients": [],
+    "subject": "",
+    "body": "",
+    "steps": [],
+    "roles": [],
+    "fields": [],
+    "expected_result": "",
+    "notes": []
+  }},
+  "suggested_requirement_update": "Only populate if user asked to change requirement or if a clear requirement update is needed.",
+  "should_update_requirement": false,
+  "impacted_sections": [
+    "Section name"
+  ],
+  "follow_up_questions": [
+    "Question 1"
+  ],
+  "recommended_next_action": "Next action"
+}}
+"""
+
+    output = _chat_json(
+        prompt_name="delivery_lead_chat.txt",
+        fallback_prompt=FALLBACK_DELIVERY_LEAD_CHAT_PROMPT,
+        user_payload=user_payload,
+        fallback=_fallback_chat_response(),
         temperature=0.15,
     )
 
-    content = response.choices[0].message.content
+    output = _safe_dict(output)
+    fallback = _fallback_chat_response()
+    artifact_details = output.get("artifact_details") if isinstance(output.get("artifact_details"), dict) else fallback["artifact_details"]
 
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        return {
-            "answer": content,
-            "delivery_lead_recommendation": "The Delivery Lead response could not be parsed as structured JSON.",
-            "artifact_type": "General Guidance",
-            "artifact_details": {
-                "name": "",
-                "table": "",
-                "trigger": "",
-                "condition": "",
-                "recipients": [],
-                "subject": "",
-                "body": "",
-                "steps": [],
-                "roles": [],
-                "fields": [],
-                "expected_result": "",
-                "notes": [
-                    "Response parsing failed. Review the raw answer."
-                ],
-            },
-            "suggested_requirement_update": "",
-            "should_update_requirement": False,
-            "impacted_sections": [],
-            "follow_up_questions": [],
-            "recommended_next_action": "No Action",
-        }
+    return {
+        "answer": output.get("answer") or fallback["answer"],
+        "delivery_lead_recommendation": output.get("delivery_lead_recommendation") or "",
+        "artifact_type": output.get("artifact_type") or "General",
+        "artifact_details": artifact_details,
+        "suggested_requirement_update": output.get("suggested_requirement_update") or "",
+        "should_update_requirement": bool(output.get("should_update_requirement", False)),
+        "impacted_sections": output.get("impacted_sections") if isinstance(output.get("impacted_sections"), list) else [],
+        "follow_up_questions": output.get("follow_up_questions") if isinstance(output.get("follow_up_questions"), list) else [],
+        "recommended_next_action": output.get("recommended_next_action") or "",
+    }
+
+
+# Backward-compatible alias if main.py calls delivery_lead_chat instead.
+def delivery_lead_chat(message: str, requirement: str, current_package: dict, chat_history: List[dict]) -> Dict[str, Any]:
+    return generate_delivery_lead_chat(message, requirement, current_package, chat_history)
