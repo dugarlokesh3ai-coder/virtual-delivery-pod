@@ -1959,15 +1959,15 @@ ${uat.expected_result}
                 <input
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
-                  placeholder="Email"
-                  style={styles.projectInput}
+                  placeholder="Email address"
+                  style={styles.authInput}
                 />
                 <input
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                   placeholder="Password"
                   type="password"
-                  style={styles.projectInput}
+                  style={styles.authInput}
                 />
                 <button
                   onClick={signIn}
@@ -1997,13 +1997,119 @@ ${uat.expected_result}
         </header>
 
         {!user ? (
-          <section style={styles.loginOnlyCard}>
-            <p style={styles.label}>Account Required</p>
-            <h2 style={styles.loginOnlyTitle}>Sign in to access your delivery workspace</h2>
-            <p style={styles.loginOnlyText}>
-              Use the sign-in controls in the top-right corner to create packages, save projects,
-              reload previous work, and continue Delivery Lead conversations across devices.
-            </p>
+          <section style={styles.loginHeroShell}>
+            <div
+              style={
+                isMobile
+                  ? {
+                      ...styles.loginHeroCard,
+                      ...styles.mobileOneColumnGrid,
+                      padding: "24px",
+                    }
+                  : styles.loginHeroCard
+              }
+            >
+              <div style={styles.loginHeroContent}>
+                <div style={styles.loginHeroBadge}>AI-powered delivery assistant</div>
+                <h2 style={isMobile ? { ...styles.loginHeroTitle, fontSize: "32px" } : styles.loginHeroTitle}>
+                  Turn rough requirements into delivery-ready outcomes
+                </h2>
+                <p style={styles.loginHeroText}>
+                  Convert business intake into ServiceNow-aligned solution design,
+                  user stories, technical notes, QA artifacts, delivery reviews, and
+                  export-ready packages.
+                </p>
+
+                <div style={styles.loginHeroFeatureList}>
+                  <div style={styles.loginHeroFeature}>
+                    <span style={styles.loginHeroFeatureIcon}>▣</span>
+                    <span>Build solution designs, scoped app guidance, and workflow structure.</span>
+                  </div>
+                  <div style={styles.loginHeroFeature}>
+                    <span style={styles.loginHeroFeatureIcon}>✓</span>
+                    <span>Generate stories, acceptance criteria, QA cases, and UAT coverage.</span>
+                  </div>
+                  <div style={styles.loginHeroFeature}>
+                    <span style={styles.loginHeroFeatureIcon}>AI</span>
+                    <span>Ask the Delivery Lead questions and refine requirements interactively.</span>
+                  </div>
+                  <div style={styles.loginHeroFeature}>
+                    <span style={styles.loginHeroFeatureIcon}>↗</span>
+                    <span>Save projects, reload packages, and continue across devices.</span>
+                  </div>
+                </div>
+
+                <div style={styles.loginHeroSecurityNote}>
+                  <span style={styles.loginHeroShield}>◇</span>
+                  <span>Sign in to keep your delivery packages private and reusable.</span>
+                </div>
+              </div>
+
+              <div
+                style={
+                  isMobile
+                    ? {
+                        ...styles.loginHeroVisual,
+                        minHeight: "520px",
+                        padding: "36px 16px 22px",
+                      }
+                    : styles.loginHeroVisual
+                }
+              >
+                <div style={styles.visualBrowserBar}>
+                  <span style={styles.visualDot}></span>
+                  <span style={styles.visualDot}></span>
+                  <span style={styles.visualDot}></span>
+                </div>
+                <div style={styles.visualWorkspace}>
+                  <div style={styles.visualColumn}>
+                    <p style={styles.visualLabel}>Requirements</p>
+                    <div style={styles.visualCardSmall}></div>
+                    <div style={styles.visualCardSmall}></div>
+                    <div style={styles.visualCardSmall}></div>
+                  </div>
+
+                  <div style={styles.visualAssistantCard}>
+                    <div style={styles.visualSpark}>✦</div>
+                    <p style={styles.visualAssistantTitle}>AI Delivery Lead</p>
+                    <p style={styles.visualAssistantText}>
+                      I analyze the intake and assemble the right delivery artifacts.
+                    </p>
+                  </div>
+
+                  <div style={styles.visualColumn}>
+                    <p style={styles.visualLabel}>Deliverables</p>
+                    <div style={styles.visualDeliverable}>Solution Design</div>
+                    <div style={styles.visualDeliverable}>User Stories</div>
+                    <div style={styles.visualDeliverable}>Technical Notes</div>
+                    <div style={styles.visualDeliverable}>QA Artifacts</div>
+                  </div>
+                </div>
+
+                <div style={styles.visualFlowGrid}>
+                  <div style={styles.visualFlowNode}>Intake</div>
+                  <div style={styles.visualFlowNodePrimary}>AI</div>
+                  <div style={styles.visualFlowNode}>Build</div>
+                  <div style={styles.visualFlowNode}>Review</div>
+                  <div style={styles.visualFlowNodeSuccess}>Deliver</div>
+                </div>
+
+                <div style={styles.visualPackageCard}>
+                  <p style={styles.visualPackageTitle}>Delivery Package</p>
+                  <p style={styles.visualPackageLine}>✓ Solution Design</p>
+                  <p style={styles.visualPackageLine}>✓ Stories</p>
+                  <p style={styles.visualPackageLine}>✓ Technical Notes</p>
+                  <p style={styles.visualPackageLine}>✓ QA Artifacts</p>
+                </div>
+              </div>
+            </div>
+
+            <div style={styles.loginHeroPills}>
+              <span style={styles.loginHeroPill}>AI-Powered</span>
+              <span style={styles.loginHeroPill}>ServiceNow Aligned</span>
+              <span style={styles.loginHeroPill}>Secure by Design</span>
+              <span style={styles.loginHeroPill}>Export Ready</span>
+            </div>
           </section>
         ) : (
           <>
@@ -3826,6 +3932,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "15px",
     fontWeight: 800,
     cursor: "pointer",
+    whiteSpace: "nowrap",
   },
   dangerButton: {
     border: "1px solid #FCA5A5",
@@ -3942,9 +4049,23 @@ authBox: {
 
 authBoxCompact: {
   display: "grid",
-  gridTemplateColumns: "180px 180px auto auto",
+  gridTemplateColumns: "minmax(210px, 1fr) minmax(190px, 1fr) 96px 104px",
   gap: "10px",
   alignItems: "center",
+  minWidth: "690px",
+},
+
+authInput: {
+  width: "100%",
+  border: "1px solid #CBD5E1",
+  borderRadius: "14px",
+  background: "rgba(255,255,255,0.94)",
+  color: "#0F172A",
+  padding: "14px 16px",
+  fontSize: "15px",
+  fontWeight: 700,
+  outline: "none",
+  boxSizing: "border-box",
 },
 
 accountTopRight: {
@@ -3985,32 +4106,303 @@ signedInEmail: {
   fontWeight: 800,
 },
 
-loginOnlyCard: {
-  maxWidth: "720px",
-  margin: "80px auto 0",
+loginHeroShell: {
+  width: "100%",
+  maxWidth: "1220px",
+  margin: "54px auto 0",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: "26px",
+},
+
+loginHeroCard: {
+  width: "100%",
+  display: "grid",
+  gridTemplateColumns: "0.92fr 1.08fr",
+  gap: "34px",
+  alignItems: "center",
   background: "rgba(255,255,255,0.96)",
   border: "1px solid #CBD5E1",
-  borderRadius: "28px",
-  padding: "42px",
-  boxShadow: "0 24px 70px rgba(15, 23, 42, 0.12)",
-  textAlign: "center",
+  borderRadius: "32px",
+  padding: "44px",
+  boxShadow: "0 28px 84px rgba(15, 23, 42, 0.13)",
+  boxSizing: "border-box",
 },
 
-loginOnlyTitle: {
-  margin: "0 0 12px",
-  color: "#0F172A",
-  fontSize: "30px",
-  lineHeight: "1.15",
+loginHeroContent: {
+  display: "flex",
+  flexDirection: "column",
+  gap: "18px",
+},
+
+loginHeroBadge: {
+  alignSelf: "flex-start",
+  borderRadius: "999px",
+  background: "#DBEAFE",
+  color: "#1D4ED8",
+  padding: "8px 12px",
+  fontSize: "12px",
   fontWeight: 900,
-  letterSpacing: "-0.03em",
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
 },
 
-loginOnlyText: {
-  margin: "0 auto",
-  maxWidth: "560px",
+loginHeroTitle: {
+  margin: 0,
+  color: "#0F172A",
+  fontSize: "42px",
+  lineHeight: "1.08",
+  fontWeight: 950,
+  letterSpacing: "-0.05em",
+},
+
+loginHeroText: {
+  margin: 0,
   color: "#475569",
-  fontSize: "16px",
+  fontSize: "17px",
   lineHeight: "1.75",
+},
+
+loginHeroFeatureList: {
+  display: "flex",
+  flexDirection: "column",
+  gap: "14px",
+  marginTop: "4px",
+},
+
+loginHeroFeature: {
+  display: "grid",
+  gridTemplateColumns: "42px 1fr",
+  gap: "14px",
+  alignItems: "center",
+  color: "#334155",
+  fontSize: "15px",
+  lineHeight: "1.65",
+  fontWeight: 650,
+},
+
+loginHeroFeatureIcon: {
+  width: "42px",
+  height: "42px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: "14px",
+  background: "#EEF2FF",
+  color: "#4F46E5",
+  fontWeight: 950,
+  fontSize: "13px",
+},
+
+loginHeroSecurityNote: {
+  marginTop: "8px",
+  paddingTop: "18px",
+  borderTop: "1px solid #E2E8F0",
+  display: "flex",
+  gap: "10px",
+  alignItems: "center",
+  color: "#64748B",
+  fontSize: "14px",
+  fontWeight: 750,
+},
+
+loginHeroShield: {
+  color: "#059669",
+  fontWeight: 950,
+},
+
+loginHeroVisual: {
+  position: "relative",
+  minHeight: "450px",
+  borderRadius: "26px",
+  background: "linear-gradient(135deg, #EFF6FF 0%, #FFFFFF 45%, #F5F3FF 100%)",
+  border: "1px solid #D8E3F8",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
+  overflow: "hidden",
+  padding: "42px 34px 34px",
+},
+
+visualBrowserBar: {
+  position: "absolute",
+  top: "26px",
+  left: "34px",
+  right: "34px",
+  height: "34px",
+  borderRadius: "14px 14px 0 0",
+  background: "#0F172A",
+  display: "flex",
+  alignItems: "center",
+  gap: "7px",
+  padding: "0 14px",
+},
+
+visualDot: {
+  width: "7px",
+  height: "7px",
+  borderRadius: "50%",
+  background: "#CBD5E1",
+},
+
+visualWorkspace: {
+  marginTop: "18px",
+  padding: "52px 22px 20px",
+  borderRadius: "0 0 20px 20px",
+  background: "rgba(255,255,255,0.86)",
+  border: "1px solid #E2E8F0",
+  display: "grid",
+  gridTemplateColumns: "1fr 1.1fr 1fr",
+  gap: "16px",
+},
+
+visualColumn: {
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+},
+
+visualLabel: {
+  margin: "0 0 2px",
+  color: "#475569",
+  fontSize: "12px",
+  fontWeight: 900,
+},
+
+visualCardSmall: {
+  height: "42px",
+  borderRadius: "12px",
+  background: "#F1F5F9",
+  border: "1px solid #E2E8F0",
+},
+
+visualAssistantCard: {
+  borderRadius: "18px",
+  background: "#FFFFFF",
+  border: "1px solid #C7D2FE",
+  padding: "18px",
+  boxShadow: "0 18px 40px rgba(79, 70, 229, 0.12)",
+},
+
+visualSpark: {
+  width: "36px",
+  height: "36px",
+  borderRadius: "14px",
+  background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+  color: "#FFFFFF",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 950,
+  marginBottom: "12px",
+},
+
+visualAssistantTitle: {
+  margin: "0 0 6px",
+  color: "#0F172A",
+  fontWeight: 900,
+  fontSize: "14px",
+},
+
+visualAssistantText: {
+  margin: 0,
+  color: "#64748B",
+  fontSize: "12px",
+  lineHeight: "1.55",
+},
+
+visualDeliverable: {
+  padding: "10px 12px",
+  borderRadius: "12px",
+  background: "#ECFDF5",
+  border: "1px solid #BBF7D0",
+  color: "#166534",
+  fontSize: "12px",
+  fontWeight: 850,
+},
+
+visualFlowGrid: {
+  margin: "22px auto 0",
+  maxWidth: "430px",
+  display: "grid",
+  gridTemplateColumns: "repeat(5, 1fr)",
+  gap: "10px",
+  alignItems: "center",
+},
+
+visualFlowNode: {
+  padding: "12px 8px",
+  borderRadius: "16px",
+  background: "#FFFFFF",
+  border: "1px solid #CBD5E1",
+  color: "#334155",
+  textAlign: "center",
+  fontSize: "12px",
+  fontWeight: 900,
+},
+
+visualFlowNodePrimary: {
+  padding: "14px 8px",
+  borderRadius: "18px",
+  background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+  color: "#FFFFFF",
+  textAlign: "center",
+  fontSize: "14px",
+  fontWeight: 950,
+  boxShadow: "0 16px 32px rgba(37, 99, 235, 0.28)",
+},
+
+visualFlowNodeSuccess: {
+  padding: "12px 8px",
+  borderRadius: "16px",
+  background: "#D1FAE5",
+  border: "1px solid #A7F3D0",
+  color: "#047857",
+  textAlign: "center",
+  fontSize: "12px",
+  fontWeight: 900,
+},
+
+visualPackageCard: {
+  position: "absolute",
+  right: "28px",
+  bottom: "26px",
+  width: "190px",
+  borderRadius: "22px",
+  background: "rgba(255,255,255,0.94)",
+  border: "1px solid #C7D2FE",
+  padding: "18px",
+  boxShadow: "0 22px 50px rgba(15, 23, 42, 0.14)",
+},
+
+visualPackageTitle: {
+  margin: "0 0 10px",
+  color: "#0F172A",
+  fontWeight: 950,
+  fontSize: "15px",
+},
+
+visualPackageLine: {
+  margin: "6px 0",
+  color: "#475569",
+  fontSize: "12px",
+  fontWeight: 800,
+},
+
+loginHeroPills: {
+  display: "flex",
+  flexWrap: "wrap",
+  justifyContent: "center",
+  gap: "12px",
+},
+
+loginHeroPill: {
+  padding: "10px 18px",
+  borderRadius: "999px",
+  background: "rgba(255,255,255,0.9)",
+  border: "1px solid #CBD5E1",
+  color: "#334155",
+  fontSize: "13px",
+  fontWeight: 850,
 },
 
   templateCard: {
