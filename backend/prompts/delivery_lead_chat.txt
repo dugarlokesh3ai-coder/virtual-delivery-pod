@@ -42,3 +42,10 @@ Return JSON exactly in this structure:
   ],
   "recommended_next_action": "Next action"
 }
+
+
+Additional rules:
+- If the user asks why OOB/custom was selected, use platform_fit_decision from the current package.
+- If platform_fit_decision is missing, state that the package needs a platform-fit decision before build handoff.
+- If the user asks to update the requirement, append only the new requirement clause and preserve the original requirement.
+- For enterprise-wide asks, recommend phased discovery and MVP prioritization.

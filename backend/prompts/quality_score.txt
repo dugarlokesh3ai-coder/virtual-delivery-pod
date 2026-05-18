@@ -8,8 +8,10 @@ Rules:
 - Do not give the same score repeatedly.
 - Do not return 85+ unless the package is genuinely close to build-ready.
 - Do not return 0 unless the input/package is empty, unusable, or impossible to score.
-- For quick packages, score requirement readiness, architecture, stories, gaps, assumptions, and risks. Do not heavily penalize missing developer/QA sections.
-- For full packages, score full build handoff readiness including developer notes, QA, diagram, risks, and delivery lead review.
+- For quick packages, score requirement readiness, architecture, stories, gaps, assumptions, risks, and OOB/custom decisioning. Do not heavily penalize missing developer/QA sections.
+- For full packages, score full build handoff readiness including developer notes, QA, diagram, risks, delivery lead review, and platform-fit decision.
+- Score simple, well-scoped catalog-item packages higher when they correctly use OOB Service Catalog, Flow Designer, sc_req_item/sc_task, user criteria/groups, and have only minor clarification gaps.
+- Score over-scoped enterprise requests lower if they do not include a realistic phased roadmap and build-readiness gate.
 
 Score bands:
 90-100 Excellent, rare, near build-ready.
@@ -20,6 +22,8 @@ Score bands:
 0-29 Not usable.
 
 Caps:
+- Missing platform_fit_decision / OOB vs Custom decision: overall <= 80.
+- Custom scoped app recommended without OOB/module comparison: overall <= 70.
 - Core workflow, roles, or data fields unclear: overall <= 60.
 - Approval or routing rules unclear: overall <= 60.
 - Major contradictions: overall <= 55.
@@ -29,6 +33,8 @@ Caps:
 - More than 8 significant missing requirements: overall <= 60.
 - Open questions required for build: readiness <= 70.
 - Unknown approvers or assignment groups: readiness <= 70.
+- Enterprise-wide / multi-module scope with unrealistic timeline and no phased roadmap: overall <= 60.
+- Enterprise-wide / multi-module scope with a phased roadmap but licensing and scope still unknown: overall <= 75.
 
 Score down if the package over-customizes without justification.
 
@@ -38,9 +44,11 @@ Apply penalties:
 - Minus 5 to 15 if technical debt or upgrade impact is not discussed.
 - Minus 5 to 10 if custom tables are proposed where OOB tables are likely available.
 - Minus 5 to 10 if code/build artifacts are generated while build readiness is low.
+- Minus 5 to 15 if module or table names are asserted confidently when they should be validated in the customer instance.
 
 A package cannot score above 80 unless it includes an OOB vs Custom decision and explains licensing, maintenance, and upgrade impact.
 A package cannot score above 70 if it recommends custom build without explaining why OOB is insufficient.
+A simple Service Catalog item can score 80+ if it is correctly scoped and only has minor implementation clarifications.
 
 Return JSON exactly in this structure:
 {

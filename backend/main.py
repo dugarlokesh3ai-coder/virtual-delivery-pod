@@ -140,10 +140,34 @@ INTAKE_FALLBACK = {
     "recommended_next_step": "Check backend logs and retry.",
 }
 
+PLATFORM_FIT_FALLBACK = {
+    "recommended_approach": "Needs architect review.",
+    "oob_options_considered": [],
+    "oob_fit_assessment": "Platform fit decision unavailable. Review OOB/module fit manually before build.",
+    "custom_build_needed": False,
+    "customization_required": [],
+    "technical_debt": [
+        {
+            "item": "Platform fit decision unavailable",
+            "level": "Medium",
+            "impact": "Build team may over-customize or select the wrong ServiceNow pattern.",
+            "mitigation": "Run architect review and confirm OOB/module fit, licensing, and build readiness.",
+        }
+    ],
+    "maintenance_impact": ["Unknown until OOB vs custom approach is confirmed."],
+    "upgrade_impact": ["Unknown until customizations are confirmed."],
+    "licensing_assumptions": ["ServiceNow licensing/module availability must be confirmed."],
+    "pros": [],
+    "cons": ["Architecture output did not include a platform-fit decision."],
+    "final_recommendation": "Do not proceed to build handoff until platform-fit decision is completed.",
+    "build_readiness_verdict": "Needs Discovery",
+}
+
 ARCHITECTURE_FALLBACK = {
     "requirement_summary": "Architecture could not be generated. Check backend logs.",
     "solution_design": "",
     "recommended_app_type": "",
+    "platform_fit_decision": PLATFORM_FIT_FALLBACK,
     "tables": [],
     "workflow_steps": [],
     "risks": [],
@@ -298,6 +322,12 @@ def build_architecture_from_package(current_package: dict):
         "requirement_summary": current_package.get("requirement_summary", ""),
         "solution_design": current_package.get("solution_design", ""),
         "recommended_app_type": current_package.get("recommended_app_type", ""),
+        "platform_fit_decision": (
+            current_package.get("platform_fit_decision")
+            or current_package.get("oob_vs_custom_decision")
+            or current_package.get("service_now_platform_fit")
+            or PLATFORM_FIT_FALLBACK
+        ),
         "tables": current_package.get("tables", []),
         "workflow_steps": current_package.get("workflow_steps", []),
         "risks": current_package.get("risks", []),
@@ -334,6 +364,9 @@ def build_package_response(
         "requirement_summary": architecture.get("requirement_summary", ""),
         "solution_design": architecture.get("solution_design", ""),
         "recommended_app_type": architecture.get("recommended_app_type", ""),
+        "platform_fit_decision": architecture.get("platform_fit_decision") or PLATFORM_FIT_FALLBACK,
+        "oob_vs_custom_decision": architecture.get("platform_fit_decision") or PLATFORM_FIT_FALLBACK,
+        "service_now_platform_fit": architecture.get("platform_fit_decision") or PLATFORM_FIT_FALLBACK,
         "tables": architecture.get("tables", []),
         "workflow_steps": architecture.get("workflow_steps", []),
         "risks": architecture.get("risks", []),

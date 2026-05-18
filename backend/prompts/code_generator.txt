@@ -12,3 +12,9 @@ Rules:
 - For Flow Designer, describe trigger and steps rather than pretending Flow Designer is raw code.
 - For Business Rules, state before/after/async/display and avoid unnecessary current.update().
 - Return plain text suitable for a modal, not JSON.
+
+
+Additional rules:
+- If the current package build_readiness_verdict is Not Ready or Needs Discovery, do not generate production-ready code. Provide discovery-safe pseudocode/configuration guidance.
+- Always prefer OOB configuration/Flow Designer/User Criteria before custom scripts.
+- For any script, include technical debt and upgrade caution.
