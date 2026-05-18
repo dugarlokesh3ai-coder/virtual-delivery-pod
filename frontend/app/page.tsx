@@ -239,6 +239,15 @@ type ReviewAgentChatMessage = {
 type ProjectStatus = "Draft" | "Reviewed" | "Ready" | "Blocked";
 type WorkspacePanel = "none" | "templates" | "saved" | "versions" | "guide";
 
+type AppDiagnostic = {
+  id: string;
+  timestamp: string;
+  area: string;
+  status: "success" | "warning" | "error" | "info";
+  message: string;
+  detail?: string;
+};
+
 type ProjectVersion = {
   id: string;
   created_at: string;
@@ -606,6 +615,8 @@ export default function Home() {
   const [showOnboardingTips, setShowOnboardingTips] = useState(false);
   const showSavedProjectsPanel = workspacePanel === "saved";
   const showVersionHistoryPanel = workspacePanel === "versions";
+  const [diagnostics, setDiagnostics] = useState<AppDiagnostic[]>([]);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   useEffect(() => {
     const updateLayout = () => {
@@ -716,7 +727,15 @@ export default function Home() {
 
     if (error) {
       console.error(error);
-      alert("Unable to load saved projects.");
+      addDiagnostic({
+        area: "Saved projects",
+        status: "error",
+        message: "Unable to load saved projects.",
+        detail: error.message,
+      });
+      alert(
+        "Unable to load saved projects. Open System Diagnostics for details.",
+      );
       return;
     }
 
@@ -801,6 +820,37 @@ export default function Home() {
     return "Workspace menu";
   }
 
+  function getErrorMessage(error: any) {
+    if (!error) return "Unknown error";
+    if (typeof error === "string") return error;
+    if (error.message) return String(error.message);
+
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+
+  function addDiagnostic(event: Omit<AppDiagnostic, "id" | "timestamp">) {
+    const nextEvent: AppDiagnostic = {
+      ...event,
+      id: createProjectId(),
+      timestamp: new Date().toISOString(),
+    };
+
+    setDiagnostics((previous) => [nextEvent, ...previous].slice(0, 12));
+
+    if (event.status === "error" || event.status === "warning") {
+      setShowDiagnostics(true);
+    }
+  }
+
+  function clearDiagnostics() {
+    setDiagnostics([]);
+    setShowDiagnostics(false);
+  }
+
   useEffect(() => {
     if (!user) return;
 
@@ -866,7 +916,13 @@ export default function Home() {
       setResult(null);
     } catch (error) {
       console.error(error);
-      alert("Analyze failed. Check your backend terminal.");
+      addDiagnostic({
+        area: "Requirement analysis",
+        status: "error",
+        message: "Analyze Requirement failed.",
+        detail: getErrorMessage(error),
+      });
+      alert("Analyze failed. Open System Diagnostics for details.");
     } finally {
       setAnalyzing(false);
       setLoadingStage("");
@@ -1253,7 +1309,9 @@ ${update}`;
             );
 
           if (insertError) {
-            throw new Error(`Unable to save new project copy: ${insertError.message}`);
+            throw new Error(
+              `Unable to save new project copy: ${insertError.message}`,
+            );
           }
 
           savedRecord = insertedData;
@@ -1325,7 +1383,9 @@ ${update}`;
       }
 
       if (!savedRecord) {
-        throw new Error("Project was not saved. No database record was returned.");
+        throw new Error(
+          "Project was not saved. No database record was returned.",
+        );
       }
 
       const savedProject: SavedProject = mapDbProject(savedRecord);
@@ -1351,6 +1411,13 @@ ${update}`;
       });
 
       setAutoSaveState(wasUpdating ? "Project updated" : "Project saved");
+      addDiagnostic({
+        area: "Project save",
+        status: "success",
+        message: wasUpdating
+          ? "Project updated and previous state snapshotted."
+          : "Project saved successfully.",
+      });
 
       loadSavedProjectsFromDb(user.id).catch((error) =>
         console.error("Refresh saved projects failed", error),
@@ -1362,7 +1429,16 @@ ${update}`;
     } catch (error: any) {
       console.error("Project save/update failed", error);
       setAutoSaveState("Save failed");
-      alert(error?.message || "Project save/update failed. Check browser console and Supabase logs.");
+      addDiagnostic({
+        area: "Project save",
+        status: "error",
+        message: "Project save/update failed.",
+        detail: getErrorMessage(error),
+      });
+      alert(
+        error?.message ||
+          "Project save/update failed. Open System Diagnostics for details.",
+      );
     } finally {
       setProjectSaving(false);
     }
@@ -1552,6 +1628,8 @@ ${update}`;
         : "Reading requirement and uploaded documents...",
     );
 
+    const startedAt = Date.now();
+
     const stageTimers =
       mode === "quick"
         ? [
@@ -1625,6 +1703,12 @@ ${update}`;
           response.status,
           errorText,
         );
+        addDiagnostic({
+          area: `${mode === "quick" ? "Quick" : "Full"} package generation`,
+          status: "error",
+          message: `Backend returned ${response.status} for /generate.`,
+          detail: errorText.slice(0, 2000),
+        });
         throw new Error(
           `Backend request failed: ${response.status} ${errorText}`,
         );
@@ -1636,12 +1720,23 @@ ${update}`;
       setPackageNeedsRegeneration(false);
       setActiveTab("stories");
       setPackageTab(mode === "quick" ? "design" : "overview");
+      addDiagnostic({
+        area: `${mode === "quick" ? "Quick" : "Full"} package generation`,
+        status: "success",
+        message: `${mode === "quick" ? "Quick" : "Full"} package generated in ${Math.round((Date.now() - startedAt) / 1000)}s.`,
+      });
       return true;
     } catch (error) {
       console.error(error);
+      addDiagnostic({
+        area: `${mode === "quick" ? "Quick" : "Full"} package generation`,
+        status: "error",
+        message: "Package generation failed.",
+        detail: getErrorMessage(error),
+      });
       if (!options?.suppressAlert) {
         alert(
-          "Package generation failed. Check Render/backend logs for the exact error.",
+          "Package generation failed. Open System Diagnostics and Render/backend logs for details.",
         );
       }
       return false;
@@ -1712,7 +1807,13 @@ ${update}`;
       setPackageTab("overview");
     } catch (error) {
       console.error(error);
-      alert("Upgrade failed. Check your backend logs.");
+      addDiagnostic({
+        area: "Upgrade package",
+        status: "error",
+        message: "Upgrade to full package failed.",
+        detail: getErrorMessage(error),
+      });
+      alert("Upgrade failed. Open System Diagnostics and backend logs.");
     } finally {
       stageTimers.forEach((timer) => clearTimeout(timer));
       setLoading(false);
@@ -1783,7 +1884,13 @@ ${update}`;
       setPackageTab("review");
     } catch (error) {
       console.error(error);
-      alert("Agent review failed. Check backend logs.");
+      addDiagnostic({
+        area: "Agent review",
+        status: "error",
+        message: "Agent review failed.",
+        detail: getErrorMessage(error),
+      });
+      alert("Agent review failed. Open System Diagnostics and backend logs.");
     } finally {
       stageTimers.forEach((timer) => clearTimeout(timer));
       setLoading(false);
@@ -2238,8 +2345,14 @@ ${JSON.stringify(activeFeedback, null, 2)}`,
       }
     }
 
+    addDiagnostic({
+      area: "Regenerate package",
+      status: "error",
+      message: "Regeneration failed after requirement update.",
+      detail: `Attempted ${mode} regeneration from updated requirement.`,
+    });
     alert(
-      "Regeneration failed. Check Render/backend logs for the exact error.",
+      "Regeneration failed. Open System Diagnostics and Render/backend logs for details.",
     );
   }
 
@@ -3727,6 +3840,60 @@ ${uat.expected_result}
 
             {loadingStage && (
               <div style={styles.loadingStage}>{loadingStage}</div>
+            )}
+
+            {diagnostics.length > 0 && (
+              <section style={styles.diagnosticsPanel}>
+                <div style={styles.cardTitleRow}>
+                  <div>
+                    <p style={styles.label}>System Diagnostics</p>
+                    <h2 style={styles.cardTitle}>Last operation status</h2>
+                  </div>
+                  <div style={styles.headerActions}>
+                    <button
+                      onClick={() => setShowDiagnostics(!showDiagnostics)}
+                      style={styles.copyButton}
+                    >
+                      {showDiagnostics ? "Hide Details" : "Show Details"}
+                    </button>
+                    <button
+                      onClick={clearDiagnostics}
+                      style={styles.copyButton}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div style={styles.diagnosticSummary}>
+                  <Badge>{diagnostics[0].status}</Badge>
+                  <span style={styles.bodyText}>
+                    {diagnostics[0].area}: {diagnostics[0].message}
+                  </span>
+                </div>
+
+                {showDiagnostics && (
+                  <div style={styles.stack}>
+                    {diagnostics.map((event) => (
+                      <div key={event.id} style={styles.diagnosticEvent}>
+                        <div style={styles.rowBetween}>
+                          <p style={styles.itemTitle}>{event.area}</p>
+                          <Badge>{event.status}</Badge>
+                        </div>
+                        <p style={styles.bodyText}>{event.message}</p>
+                        {event.detail && (
+                          <pre style={styles.smallCodeBlock}>
+                            {event.detail}
+                          </pre>
+                        )}
+                        <p style={styles.muted}>
+                          {new Date(event.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             )}
 
             {packageNeedsRegeneration && result && (
