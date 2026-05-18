@@ -485,55 +485,84 @@ export default function Home() {
   }, []);
 
   async function signUp() {
-    if (!authEmail.trim() || !authPassword.trim()) {
+    const email = authEmail.trim();
+    const password = authPassword;
+
+    if (!email || !password.trim()) {
       alert("Enter email and password.");
       return;
     }
 
     setAuthLoading(true);
 
-    const { error } = await supabase.auth.signUp({
-      email: authEmail.trim(),
-      password: authPassword,
-    });
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
 
-    setAuthLoading(false);
+      if (error) {
+        alert(error.message);
+        return;
+      }
 
-    if (error) {
-      alert(error.message);
-      return;
+      setAuthEmail("");
+      setAuthPassword("");
+      alert("Signup complete. Check your email if confirmation is enabled.");
+    } catch (error) {
+      console.error("Signup failed", error);
+      alert("Signup failed. Check Supabase configuration.");
+    } finally {
+      setAuthLoading(false);
     }
-
-    setAuthPassword("");
-    alert("Signup complete. Check your email if confirmation is enabled.");
   }
 
   async function signIn() {
-    if (!authEmail.trim() || !authPassword.trim()) {
+    const email = authEmail.trim();
+    const password = authPassword;
+
+    if (!email || !password.trim()) {
       alert("Enter email and password.");
       return;
     }
 
     setAuthLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: authEmail.trim(),
-      password: authPassword,
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    setAuthLoading(false);
+      if (error) {
+        alert(error.message);
+        return;
+      }
 
-    if (error) {
-      alert(error.message);
-      return;
+      const nextUser = data.user || null;
+      setUser(nextUser);
+
+      if (nextUser?.id) {
+        await loadSavedProjectsFromDb(nextUser.id);
+      }
+
+      setAuthEmail("");
+      setAuthPassword("");
+    } catch (error) {
+      console.error("Sign in failed", error);
+      alert("Sign in failed. Check Supabase configuration.");
+    } finally {
+      setAuthLoading(false);
     }
-
-    setAuthEmail("");
-    setAuthPassword("");
   }
 
   async function signOut() {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Sign out failed", error);
+    }
+
     setUser(null);
     setAuthEmail("");
     setAuthPassword("");
@@ -1966,12 +1995,18 @@ ${uat.expected_result}
                 <input
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") signIn();
+                  }}
                   placeholder="Email address"
                   style={styles.authInput}
                 />
                 <input
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") signIn();
+                  }}
                   placeholder="Password"
                   type="password"
                   style={styles.authInput}
