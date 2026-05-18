@@ -880,9 +880,46 @@ export default function Home() {
     };
   }
 
+  function buildVersionFromSavedProject(project: SavedProject, label: string): ProjectVersion {
+    return {
+      id: createProjectId(),
+      created_at: new Date().toISOString(),
+      label,
+      requirement: project.requirement || "",
+      clarification_answers: project.clarification_answers || "",
+      result: project.result || null,
+      project_status: project.project_status || "Draft",
+    };
+  }
+
   function getUpdatedVersions(label: string) {
     const nextVersion = buildProjectVersion(label);
     return [nextVersion, ...projectVersions].slice(0, 15);
+  }
+
+  function mergeRequirementUpdate(currentText: string, updateText: string) {
+    const current = currentText.trim();
+    let update = updateText.trim();
+
+    if (!update) return currentText;
+    if (!current) return update;
+
+    update = update
+      .replace(/^add the following clause to the requirement:\s*/i, "")
+      .replace(/^add following clause to the requirement:\s*/i, "")
+      .replace(/^update the requirement to include:\s*/i, "")
+      .replace(/^suggested requirement update:\s*/i, "")
+      .trim();
+
+    update = update.replace(/^[“"]|[”"]$/g, "").trim();
+
+    if (!update) return currentText;
+    if (current.toLowerCase().includes(update.toLowerCase())) return currentText;
+
+    return `${current}
+
+Additional clarification / requirement update:
+${update}`;
   }
 
   function countReviewAgentMessages(
@@ -949,10 +986,16 @@ export default function Home() {
     if (!hasWorkspaceContent) return null;
 
     const resolvedProjectName = projectName.trim() || buildDefaultProjectName();
-    const payload = buildProjectPayload(resolvedProjectName, {
+    const payload: any = buildProjectPayload(resolvedProjectName, {
       autosave,
       includeVersion: false,
     });
+
+    // Auto-save should preserve version history. Do not let a stale client-side
+    // projectVersions array overwrite database snapshots.
+    if (activeProjectId) {
+      delete payload.versions;
+    }
 
     try {
       if (activeProjectId) {
@@ -1064,31 +1107,25 @@ export default function Home() {
     const resolvedProjectName = projectName.trim() || buildDefaultProjectName();
     setProjectSaving(true);
 
-    const basePayload = buildProjectPayload(resolvedProjectName, {
-      includeVersion: true,
-      versionLabel: activeProjectId ? "Manual project update" : "Initial project save",
-    });
-
     try {
       let savedRecord: any = null;
       const wasUpdating = !!activeProjectId;
 
       if (activeProjectId) {
-        const { data, error } = await supabase
+        const { data: existingRecord, error: existingError } = await supabase
           .from("delivery_projects")
-          .update(basePayload)
+          .select("*")
           .eq("id", activeProjectId)
           .eq("user_id", user.id)
-          .select("*")
           .maybeSingle();
 
-        if (error) {
-          console.error("Unable to update project", error);
-          alert(`Unable to update project: ${error.message}`);
+        if (existingError) {
+          console.error("Unable to read existing project before update", existingError);
+          alert(`Unable to read existing project before update: ${existingError.message}`);
           return;
         }
 
-        if (!data) {
+        if (!existingRecord) {
           const createNewCopy = window.confirm(
             "This saved project could not be found for your account. Create a new saved copy instead?"
           );
@@ -1100,10 +1137,15 @@ export default function Home() {
             return;
           }
 
+          const insertPayload = buildProjectPayload(resolvedProjectName, {
+            includeVersion: true,
+            versionLabel: "Initial project save",
+          });
+
           const { data: insertedData, error: insertError } = await supabase
             .from("delivery_projects")
             .insert({
-              ...basePayload,
+              ...insertPayload,
               user_id: user.id,
             })
             .select("*")
@@ -1117,13 +1159,49 @@ export default function Home() {
 
           savedRecord = insertedData;
         } else {
+          const existingProject = mapDbProject(existingRecord);
+          const existingVersions = Array.isArray(existingProject.versions)
+            ? existingProject.versions
+            : [];
+
+          const previousSnapshot = buildVersionFromSavedProject(
+            existingProject,
+            `Before update · ${new Date().toLocaleString()}`
+          );
+
+          const updatePayload = buildProjectPayload(resolvedProjectName, {
+            includeVersion: false,
+          });
+
+          updatePayload.versions = [previousSnapshot, ...existingVersions].slice(0, 15);
+          updatePayload.last_autosaved_at = lastAutoSavedAt;
+
+          const { data, error } = await supabase
+            .from("delivery_projects")
+            .update(updatePayload)
+            .eq("id", activeProjectId)
+            .eq("user_id", user.id)
+            .select("*")
+            .maybeSingle();
+
+          if (error) {
+            console.error("Unable to update project", error);
+            alert(`Unable to update project: ${error.message}`);
+            return;
+          }
+
           savedRecord = data;
         }
       } else {
+        const insertPayload = buildProjectPayload(resolvedProjectName, {
+          includeVersion: true,
+          versionLabel: "Initial project save",
+        });
+
         const { data, error } = await supabase
           .from("delivery_projects")
           .insert({
-            ...basePayload,
+            ...insertPayload,
             user_id: user.id,
           })
           .select("*")
@@ -1166,7 +1244,7 @@ export default function Home() {
       });
 
       await loadSavedProjectsFromDb(user.id);
-      alert(wasUpdating ? "Project updated." : "Project saved.");
+      alert(wasUpdating ? "Project updated. Previous saved state was added to Version History." : "Project saved.");
     } catch (error) {
       console.error("Project save/update failed", error);
       alert("Project save/update failed. Check browser console and Supabase logs.");
@@ -1794,12 +1872,12 @@ ${JSON.stringify(activeFeedback, null, 2)}`,
     if (!updateText.trim()) return;
 
     const confirmed = window.confirm(
-      `Apply this ${getReviewAgentLabel(activeReviewAgent)} update to the main requirement box?`
+      `Append this ${getReviewAgentLabel(activeReviewAgent)} update to the main requirement box?`
     );
 
     if (!confirmed) return;
 
-    setRequirement(updateText);
+    setRequirement((currentText) => mergeRequirementUpdate(currentText, updateText));
     setClarificationAnswers("");
     setIntakeAnalysis(null);
     setReviewAgentPendingRequirementUpdate("");
@@ -1919,12 +1997,12 @@ if (activeProjectId && user?.id) {
     if (!updateText.trim()) return;
 
     const confirmed = window.confirm(
-      "Apply this Delivery Lead update to the main requirement box?"
+      "Append this Delivery Lead update to the main requirement box?"
     );
 
     if (!confirmed) return;
 
-    setRequirement(updateText);
+    setRequirement((currentText) => mergeRequirementUpdate(currentText, updateText));
     setClarificationAnswers("");
     setIntakeAnalysis(null);
     setDeliveryLeadPendingRequirementUpdate("");
