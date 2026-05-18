@@ -237,7 +237,13 @@ type ReviewAgentChatMessage = {
 };
 
 type ProjectStatus = "Draft" | "Reviewed" | "Ready" | "Blocked";
-type WorkspacePanel = "none" | "templates" | "saved" | "versions" | "guide";
+type WorkspacePanel =
+  | "none"
+  | "templates"
+  | "saved"
+  | "versions"
+  | "diagnostics"
+  | "guide";
 
 type AppDiagnostic = {
   id: string;
@@ -616,6 +622,7 @@ export default function Home() {
   const [showOnboardingTips, setShowOnboardingTips] = useState(false);
   const showSavedProjectsPanel = workspacePanel === "saved";
   const showVersionHistoryPanel = workspacePanel === "versions";
+  const showDiagnosticsPanel = workspacePanel === "diagnostics";
   const [diagnostics, setDiagnostics] = useState<AppDiagnostic[]>([]);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
@@ -703,17 +710,34 @@ export default function Home() {
   }
 
   async function signOut() {
+    if (authLoading) return;
+
+    setAuthLoading(true);
+
     try {
-      await supabase.auth.signOut();
+      await withDbTimeout(supabase.auth.signOut({ scope: "local" }), "Sign out", 12000);
+      addDiagnostic({
+        area: "Authentication",
+        status: "success",
+        message: "Signed out successfully.",
+      });
     } catch (error) {
       console.error("Sign out failed", error);
+      addDiagnostic({
+        area: "Authentication",
+        status: "error",
+        message: "Sign out failed.",
+        detail: getErrorMessage(error),
+      });
+      alert("Sign out failed. Open Workspace menu > Diagnostics for details.");
+    } finally {
+      setUser(null);
+      setAuthEmail("");
+      setAuthPassword("");
+      setSavedProjects([]);
+      clearWorkspace();
+      setAuthLoading(false);
     }
-
-    setUser(null);
-    setAuthEmail("");
-    setAuthPassword("");
-    setSavedProjects([]);
-    clearWorkspace();
   }
 
   async function loadSavedProjectsFromDb(currentUserId?: string) {
@@ -817,6 +841,7 @@ export default function Home() {
     if (panel === "saved") return `Saved Projects (${savedProjects.length})`;
     if (panel === "versions")
       return `Version History (${projectVersions.length})`;
+    if (panel === "diagnostics") return `Diagnostics (${diagnostics.length})`;
     if (panel === "guide") return "Guide";
     return "Workspace menu";
   }
@@ -841,10 +866,6 @@ export default function Home() {
     };
 
     setDiagnostics((previous) => [nextEvent, ...previous].slice(0, 12));
-
-    if (event.status === "error" || event.status === "warning") {
-      setShowDiagnostics(true);
-    }
   }
 
   function clearDiagnostics() {
@@ -3164,8 +3185,16 @@ ${uat.expected_result}
                   <span style={styles.signedInText}>Signed in</span>
                   <span style={styles.signedInEmail}>{user.email}</span>
                 </div>
-                <button onClick={signOut} style={styles.secondaryButton}>
-                  Sign Out
+                <button
+                  onClick={signOut}
+                  disabled={authLoading}
+                  style={{
+                    ...styles.secondaryButton,
+                    opacity: authLoading ? 0.65 : 1,
+                    cursor: authLoading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {authLoading ? "Signing out..." : "Sign Out"}
                 </button>
               </div>
             ) : (
@@ -3447,6 +3476,9 @@ ${uat.expected_result}
                   </option>
                   <option value="versions">
                     Version History ({projectVersions.length})
+                  </option>
+                  <option value="diagnostics">
+                    Diagnostics ({diagnostics.length})
                   </option>
                   <option value="guide">Guide</option>
                 </select>
@@ -3747,6 +3779,79 @@ ${uat.expected_result}
               </section>
             )}
 
+            {showDiagnosticsPanel && (
+              <section style={styles.compactPanel}>
+                <div style={styles.cardTitleRow}>
+                  <div>
+                    <p style={styles.label}>System Diagnostics</p>
+                    <h2 style={styles.cardTitle}>Operation history</h2>
+                    <p style={styles.muted}>
+                      Hidden by default. Use this only when troubleshooting API,
+                      save, upload, or generation issues.
+                    </p>
+                  </div>
+                  <div style={styles.headerActions}>
+                    <button
+                      onClick={() => setShowDiagnostics(!showDiagnostics)}
+                      style={styles.copyButton}
+                    >
+                      {showDiagnostics ? "Collapse Details" : "Expand Details"}
+                    </button>
+                    <button
+                      onClick={clearDiagnostics}
+                      style={styles.copyButton}
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={() => setWorkspacePanel("none")}
+                      style={styles.copyButton}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+
+                {diagnostics.length ? (
+                  <div style={styles.stack}>
+                    <div style={styles.diagnosticSummary}>
+                      <Badge>{diagnostics[0].status}</Badge>
+                      <span style={styles.bodyText}>
+                        {diagnostics[0].area}: {diagnostics[0].message}
+                      </span>
+                    </div>
+
+                    {showDiagnostics && (
+                      <div style={styles.stack}>
+                        {diagnostics.map((event) => (
+                          <div key={event.id} style={styles.diagnosticEvent}>
+                            <div style={styles.rowBetween}>
+                              <p style={styles.itemTitle}>{event.area}</p>
+                              <Badge>{event.status}</Badge>
+                            </div>
+                            <p style={styles.bodyText}>{event.message}</p>
+                            {event.detail && (
+                              <pre style={styles.smallCodeBlock}>
+                                {event.detail}
+                              </pre>
+                            )}
+                            <p style={styles.muted}>
+                              {new Date(event.timestamp).toLocaleString()}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p style={styles.muted}>
+                    No diagnostics recorded yet. Errors and key operation
+                    results will appear here after they happen.
+                  </p>
+                )}
+              </section>
+            )}
+
             <section style={styles.statusBanner}>
               <div>
                 <p style={styles.label}>Project Status</p>
@@ -3851,59 +3956,7 @@ ${uat.expected_result}
               <div style={styles.loadingStage}>{loadingStage}</div>
             )}
 
-            {diagnostics.length > 0 && (
-              <section style={styles.diagnosticsPanel}>
-                <div style={styles.cardTitleRow}>
-                  <div>
-                    <p style={styles.label}>System Diagnostics</p>
-                    <h2 style={styles.cardTitle}>Last operation status</h2>
-                  </div>
-                  <div style={styles.headerActions}>
-                    <button
-                      onClick={() => setShowDiagnostics(!showDiagnostics)}
-                      style={styles.copyButton}
-                    >
-                      {showDiagnostics ? "Hide Details" : "Show Details"}
-                    </button>
-                    <button
-                      onClick={clearDiagnostics}
-                      style={styles.copyButton}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </div>
 
-                <div style={styles.diagnosticSummary}>
-                  <Badge>{diagnostics[0].status}</Badge>
-                  <span style={styles.bodyText}>
-                    {diagnostics[0].area}: {diagnostics[0].message}
-                  </span>
-                </div>
-
-                {showDiagnostics && (
-                  <div style={styles.stack}>
-                    {diagnostics.map((event) => (
-                      <div key={event.id} style={styles.diagnosticEvent}>
-                        <div style={styles.rowBetween}>
-                          <p style={styles.itemTitle}>{event.area}</p>
-                          <Badge>{event.status}</Badge>
-                        </div>
-                        <p style={styles.bodyText}>{event.message}</p>
-                        {event.detail && (
-                          <pre style={styles.smallCodeBlock}>
-                            {event.detail}
-                          </pre>
-                        )}
-                        <p style={styles.muted}>
-                          {new Date(event.timestamp).toLocaleString()}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
 
             {packageNeedsRegeneration && result && (
               <div style={styles.regenerationNotice}>
