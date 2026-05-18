@@ -237,6 +237,7 @@ type ReviewAgentChatMessage = {
 };
 
 type ProjectStatus = "Draft" | "Reviewed" | "Ready" | "Blocked";
+type WorkspacePanel = "none" | "templates" | "saved" | "versions" | "guide";
 
 type ProjectVersion = {
   id: string;
@@ -255,7 +256,10 @@ const PROJECT_STATUS_OPTIONS: ProjectStatus[] = [
   "Blocked",
 ];
 
-function emptyReviewAgentChats(): Record<ReviewAgentKey, ReviewAgentChatMessage[]> {
+function emptyReviewAgentChats(): Record<
+  ReviewAgentKey,
+  ReviewAgentChatMessage[]
+> {
   return {
     architect: [],
     developer: [],
@@ -264,7 +268,9 @@ function emptyReviewAgentChats(): Record<ReviewAgentKey, ReviewAgentChatMessage[
   };
 }
 
-function normalizeReviewAgentChats(value: any): Record<ReviewAgentKey, ReviewAgentChatMessage[]> {
+function normalizeReviewAgentChats(
+  value: any,
+): Record<ReviewAgentKey, ReviewAgentChatMessage[]> {
   const empty = emptyReviewAgentChats();
 
   if (!value || typeof value !== "object") {
@@ -275,15 +281,25 @@ function normalizeReviewAgentChats(value: any): Record<ReviewAgentKey, ReviewAge
     architect: Array.isArray(value.architect) ? value.architect : [],
     developer: Array.isArray(value.developer) ? value.developer : [],
     qa: Array.isArray(value.qa) ? value.qa : [],
-    delivery_lead: Array.isArray(value.delivery_lead) ? value.delivery_lead : [],
+    delivery_lead: Array.isArray(value.delivery_lead)
+      ? value.delivery_lead
+      : [],
   };
 }
 
-const REVIEW_AGENT_TABS: { id: ReviewAgentKey; label: string; title: string }[] = [
+const REVIEW_AGENT_TABS: {
+  id: ReviewAgentKey;
+  label: string;
+  title: string;
+}[] = [
   { id: "architect", label: "Architect", title: "Architect Review" },
   { id: "developer", label: "Developer", title: "Developer Review" },
   { id: "qa", label: "QA", title: "QA Review" },
-  { id: "delivery_lead", label: "Delivery Lead", title: "Delivery Lead Review" },
+  {
+    id: "delivery_lead",
+    label: "Delivery Lead",
+    title: "Delivery Lead Review",
+  },
 ];
 
 type ActiveTab = "stories" | "technical" | "qa";
@@ -335,7 +351,8 @@ type RequirementTemplate = {
 function safeText(value: any): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
 
   try {
     return JSON.stringify(value, null, 2);
@@ -365,7 +382,6 @@ function scoreText(value: any) {
 function hasUsableQualityScore(score: QualityScore | null | undefined) {
   return !!score && isValidScore(score.overall_score);
 }
-
 
 const REQUIREMENT_TEMPLATES: RequirementTemplate[] = [
   {
@@ -521,8 +537,9 @@ export default function Home() {
   const [files, setFiles] = useState<File[]>([]);
   const [loadingStage, setLoadingStage] = useState("");
 
-  const [intakeAnalysis, setIntakeAnalysis] =
-    useState<IntakeAnalysis | null>(null);
+  const [intakeAnalysis, setIntakeAnalysis] = useState<IntakeAnalysis | null>(
+    null,
+  );
   const [analyzing, setAnalyzing] = useState(false);
   const [clarificationAnswers, setClarificationAnswers] = useState("");
 
@@ -535,15 +552,22 @@ export default function Home() {
   const [regeneratingSection, setRegeneratingSection] = useState("");
 
   const [deliveryLeadMessage, setDeliveryLeadMessage] = useState("");
-  const [deliveryLeadChat, setDeliveryLeadChat] = useState<DeliveryLeadChatMessage[]>([]);
+  const [deliveryLeadChat, setDeliveryLeadChat] = useState<
+    DeliveryLeadChatMessage[]
+  >([]);
   const [deliveryLeadThinking, setDeliveryLeadThinking] = useState(false);
-  const [deliveryLeadPendingRequirementUpdate, setDeliveryLeadPendingRequirementUpdate] =
-    useState("");
-  const [activeGenerationMode, setActiveGenerationMode] =
-    useState<"quick" | "full" | null>(null);
+  const [
+    deliveryLeadPendingRequirementUpdate,
+    setDeliveryLeadPendingRequirementUpdate,
+  ] = useState("");
+  const [activeGenerationMode, setActiveGenerationMode] = useState<
+    "quick" | "full" | null
+  >(null);
   const [floatingChatOpen, setFloatingChatOpen] = useState(false);
   const [siteAssistantMessage, setSiteAssistantMessage] = useState("");
-  const [siteAssistantChat, setSiteAssistantChat] = useState<SiteAssistantMessage[]>([]);
+  const [siteAssistantChat, setSiteAssistantChat] = useState<
+    SiteAssistantMessage[]
+  >([]);
   const [siteAssistantThinking, setSiteAssistantThinking] = useState(false);
   const [activeReviewAgent, setActiveReviewAgent] =
     useState<ReviewAgentKey>("architect");
@@ -552,8 +576,10 @@ export default function Home() {
   const [reviewAgentChats, setReviewAgentChats] = useState<
     Record<ReviewAgentKey, ReviewAgentChatMessage[]>
   >(emptyReviewAgentChats());
-  const [reviewAgentPendingRequirementUpdate, setReviewAgentPendingRequirementUpdate] =
-    useState("");
+  const [
+    reviewAgentPendingRequirementUpdate,
+    setReviewAgentPendingRequirementUpdate,
+  ] = useState("");
 
   const [projectName, setProjectName] = useState("");
   const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
@@ -561,7 +587,8 @@ export default function Home() {
 
   const API_BASE_URL =
     process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-  const [showTemplates, setShowTemplates] = useState(false);
+  const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanel>("none");
+  const showTemplates = workspacePanel === "templates";
   const [isMobile, setIsMobile] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [authEmail, setAuthEmail] = useState("");
@@ -572,12 +599,13 @@ export default function Home() {
   const [projectVersions, setProjectVersions] = useState<ProjectVersion[]>([]);
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string | null>(null);
   const [autoSaveState, setAutoSaveState] = useState("Auto-save idle");
-  const [packageNeedsRegeneration, setPackageNeedsRegeneration] = useState(false);
+  const [packageNeedsRegeneration, setPackageNeedsRegeneration] =
+    useState(false);
   const [compareVersionId, setCompareVersionId] = useState("");
   const [showComparePanel, setShowComparePanel] = useState(false);
   const [showOnboardingTips, setShowOnboardingTips] = useState(false);
-  const [showSavedProjectsPanel, setShowSavedProjectsPanel] = useState(false);
-  const [showVersionHistoryPanel, setShowVersionHistoryPanel] = useState(false);
+  const showSavedProjectsPanel = workspacePanel === "saved";
+  const showVersionHistoryPanel = workspacePanel === "versions";
 
   useEffect(() => {
     const updateLayout = () => {
@@ -733,7 +761,7 @@ export default function Home() {
         } else {
           setSavedProjects([]);
         }
-      }
+      },
     );
 
     return () => {
@@ -742,13 +770,35 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const seen = window.localStorage.getItem("virtual_delivery_pod_seen_onboarding");
+    const seen = window.localStorage.getItem(
+      "virtual_delivery_pod_seen_onboarding",
+    );
     setShowOnboardingTips(!seen);
   }, []);
 
   function dismissOnboardingTips() {
     window.localStorage.setItem("virtual_delivery_pod_seen_onboarding", "true");
     setShowOnboardingTips(false);
+  }
+
+  function openWorkspacePanel(panel: WorkspacePanel) {
+    if (panel === "guide") {
+      setShowOnboardingTips(true);
+      setWorkspacePanel("none");
+      return;
+    }
+
+    setWorkspacePanel(panel);
+    setShowComparePanel(false);
+  }
+
+  function getWorkspacePanelLabel(panel: WorkspacePanel) {
+    if (panel === "templates") return "Templates";
+    if (panel === "saved") return `Saved Projects (${savedProjects.length})`;
+    if (panel === "versions")
+      return `Version History (${projectVersions.length})`;
+    if (panel === "guide") return "Guide";
+    return "Workspace menu";
   }
 
   useEffect(() => {
@@ -776,7 +826,7 @@ export default function Home() {
   ]);
 
   function buildRequirementWithClarifications() {
-  return `
+    return `
   Original Requirement:
   ${requirement}
 
@@ -824,20 +874,20 @@ export default function Home() {
   }
 
   function getScoreColor(score: number | null | undefined) {
-      if (!isValidScore(score)) return "#64748B";
-      if (score >= 85) return "#15803D";
-      if (score >= 70) return "#2563EB";
-      if (score >= 50) return "#B45309";
-      return "#B91C1C";
-    }
+    if (!isValidScore(score)) return "#64748B";
+    if (score >= 85) return "#15803D";
+    if (score >= 70) return "#2563EB";
+    if (score >= 50) return "#B45309";
+    return "#B91C1C";
+  }
 
-    function getScoreBackground(score: number | null | undefined) {
-      if (!isValidScore(score)) return "#F1F5F9";
-      if (score >= 85) return "#DCFCE7";
-      if (score >= 70) return "#DBEAFE";
-      if (score >= 50) return "#FEF3C7";
-      return "#FEE2E2";
-    }
+  function getScoreBackground(score: number | null | undefined) {
+    if (!isValidScore(score)) return "#F1F5F9";
+    if (score >= 85) return "#DCFCE7";
+    if (score >= 70) return "#DBEAFE";
+    if (score >= 50) return "#FEF3C7";
+    return "#FEE2E2";
+  }
 
   function createProjectId() {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -882,7 +932,10 @@ export default function Home() {
     };
   }
 
-  function buildVersionFromSavedProject(project: SavedProject, label: string): ProjectVersion {
+  function buildVersionFromSavedProject(
+    project: SavedProject,
+    label: string,
+  ): ProjectVersion {
     return {
       id: createProjectId(),
       created_at: new Date().toISOString(),
@@ -916,7 +969,8 @@ export default function Home() {
     update = update.replace(/^[“"]|[”"]$/g, "").trim();
 
     if (!update) return currentText;
-    if (current.toLowerCase().includes(update.toLowerCase())) return currentText;
+    if (current.toLowerCase().includes(update.toLowerCase()))
+      return currentText;
 
     return `${current}
 
@@ -925,17 +979,21 @@ ${update}`;
   }
 
   function countReviewAgentMessages(
-    chats: Record<ReviewAgentKey, ReviewAgentChatMessage[]> = reviewAgentChats
+    chats: Record<ReviewAgentKey, ReviewAgentChatMessage[]> = reviewAgentChats,
   ) {
     return Object.values(chats).reduce(
       (total, messages) => total + messages.length,
-      0
+      0,
     );
   }
 
   function buildProjectPayload(
     resolvedProjectName: string,
-    options?: { includeVersion?: boolean; versionLabel?: string; autosave?: boolean }
+    options?: {
+      includeVersion?: boolean;
+      versionLabel?: string;
+      autosave?: boolean;
+    },
   ) {
     const nextVersions = options?.includeVersion
       ? getUpdatedVersions(options.versionLabel || "Manual save")
@@ -951,7 +1009,9 @@ ${update}`;
       review_agent_chats: reviewAgentChats || emptyReviewAgentChats(),
       project_status: projectStatus,
       versions: nextVersions,
-      last_autosaved_at: options?.autosave ? new Date().toISOString() : lastAutoSavedAt,
+      last_autosaved_at: options?.autosave
+        ? new Date().toISOString()
+        : lastAutoSavedAt,
       updated_at: new Date().toISOString(),
     };
   }
@@ -967,14 +1027,18 @@ ${update}`;
       uploaded_file_names: savedRecord.uploaded_file_names || [],
       result: savedRecord.result || null,
       delivery_lead_chat: savedRecord.delivery_lead_chat || [],
-      review_agent_chats: normalizeReviewAgentChats(savedRecord.review_agent_chats),
+      review_agent_chats: normalizeReviewAgentChats(
+        savedRecord.review_agent_chats,
+      ),
       project_status: savedRecord.project_status || "Draft",
       versions: savedRecord.versions || [],
       last_autosaved_at: savedRecord.last_autosaved_at || null,
     };
   }
 
-  async function persistProjectDraft({ autosave = false }: { autosave?: boolean } = {}) {
+  async function persistProjectDraft({
+    autosave = false,
+  }: { autosave?: boolean } = {}) {
     if (!user || projectSaving || loading || analyzing) return null;
 
     const hasWorkspaceContent =
@@ -1015,8 +1079,8 @@ ${update}`;
         const mapped = mapDbProject(data);
         setSavedProjects((previousProjects) =>
           previousProjects.map((project) =>
-            project.id === mapped.id ? mapped : project
-          )
+            project.id === mapped.id ? mapped : project,
+          ),
         );
         setLastAutoSavedAt(mapped.last_autosaved_at || null);
         if (autosave) setAutoSaveState("Auto-saved");
@@ -1044,14 +1108,18 @@ ${update}`;
     } catch (error) {
       console.error("Auto-save failed", error);
       if (autosave) {
-        setAutoSaveState("Auto-save failed. Run the database migration and retry.");
+        setAutoSaveState(
+          "Auto-save failed. Run the database migration and retry.",
+        );
       }
       return null;
     }
   }
 
   function getSelectedCompareVersion() {
-    return projectVersions.find((version) => version.id === compareVersionId) || null;
+    return (
+      projectVersions.find((version) => version.id === compareVersionId) || null
+    );
   }
 
   function buildPackageComparison(version: ProjectVersion | null) {
@@ -1122,14 +1190,19 @@ ${update}`;
           .maybeSingle();
 
         if (existingError) {
-          console.error("Unable to read existing project before update", existingError);
-          alert(`Unable to read existing project before update: ${existingError.message}`);
+          console.error(
+            "Unable to read existing project before update",
+            existingError,
+          );
+          alert(
+            `Unable to read existing project before update: ${existingError.message}`,
+          );
           return;
         }
 
         if (!existingRecord) {
           const createNewCopy = window.confirm(
-            "This saved project could not be found for your account. Create a new saved copy instead?"
+            "This saved project could not be found for your account. Create a new saved copy instead?",
           );
 
           setActiveProjectId(null);
@@ -1168,14 +1241,17 @@ ${update}`;
 
           const previousSnapshot = buildVersionFromSavedProject(
             existingProject,
-            `Before update · ${new Date().toLocaleString()}`
+            `Before update · ${new Date().toLocaleString()}`,
           );
 
           const updatePayload = buildProjectPayload(resolvedProjectName, {
             includeVersion: false,
           });
 
-          updatePayload.versions = [previousSnapshot, ...existingVersions].slice(0, 15);
+          updatePayload.versions = [
+            previousSnapshot,
+            ...existingVersions,
+          ].slice(0, 15);
           updatePayload.last_autosaved_at = lastAutoSavedAt;
 
           const { data, error } = await supabase
@@ -1233,12 +1309,12 @@ ${update}`;
 
       setSavedProjects((previousProjects) => {
         const existingIndex = previousProjects.findIndex(
-          (project) => project.id === savedProject.id
+          (project) => project.id === savedProject.id,
         );
 
         if (existingIndex >= 0) {
           return previousProjects.map((project) =>
-            project.id === savedProject.id ? savedProject : project
+            project.id === savedProject.id ? savedProject : project,
           );
         }
 
@@ -1246,10 +1322,16 @@ ${update}`;
       });
 
       await loadSavedProjectsFromDb(user.id);
-      alert(wasUpdating ? "Project updated. Previous saved state was added to Version History." : "Project saved.");
+      alert(
+        wasUpdating
+          ? "Project updated. Previous saved state was added to Version History."
+          : "Project saved.",
+      );
     } catch (error) {
       console.error("Project save/update failed", error);
-      alert("Project save/update failed. Check browser console and Supabase logs.");
+      alert(
+        "Project save/update failed. Check browser console and Supabase logs.",
+      );
     } finally {
       setProjectSaving(false);
     }
@@ -1271,7 +1353,9 @@ ${update}`;
     setProjectStatus(project.project_status || "Draft");
     setProjectVersions(project.versions || []);
     setLastAutoSavedAt(project.last_autosaved_at || null);
-    setAutoSaveState(project.last_autosaved_at ? "Loaded saved autosave" : "Auto-save idle");
+    setAutoSaveState(
+      project.last_autosaved_at ? "Loaded saved autosave" : "Auto-save idle",
+    );
     setPackageNeedsRegeneration(false);
     setCompareVersionId("");
     setShowComparePanel(false);
@@ -1323,8 +1407,7 @@ ${update}`;
     setPackageNeedsRegeneration(false);
     setCompareVersionId("");
     setShowComparePanel(false);
-    setShowSavedProjectsPanel(false);
-    setShowVersionHistoryPanel(false);
+    setWorkspacePanel("none");
   }
 
   function newProject() {
@@ -1338,7 +1421,7 @@ ${update}`;
 
     if (hasWorkspaceContent) {
       const confirmNew = window.confirm(
-        "Start a new project? Unsaved changes in the current workspace will be cleared."
+        "Start a new project? Unsaved changes in the current workspace will be cleared.",
       );
 
       if (!confirmNew) return;
@@ -1375,7 +1458,6 @@ ${update}`;
     await loadSavedProjectsFromDb(user.id);
   }
 
-
   function applyTemplate(template: RequirementTemplate) {
     const hasExistingWork =
       !!requirement.trim() ||
@@ -1386,7 +1468,7 @@ ${update}`;
 
     if (hasExistingWork) {
       const confirmed = window.confirm(
-        "Apply this template? It will replace the current requirement text and clear current analysis/output."
+        "Apply this template? It will replace the current requirement text and clear current analysis/output.",
       );
 
       if (!confirmed) return;
@@ -1419,10 +1501,13 @@ ${update}`;
     setReviewAgentThinking(false);
     setReviewAgentChats(emptyReviewAgentChats());
     setReviewAgentPendingRequirementUpdate("");
-    setShowTemplates(false);
+    setWorkspacePanel("none");
   }
 
-  async function generatePackage(mode: "quick" | "full" = "full") {
+  async function generatePackage(
+    mode: "quick" | "full" = "full",
+    options?: { suppressAlert?: boolean },
+  ) {
     if (!requirement.trim() && files.length === 0) {
       alert("Paste a business process or upload a document first.");
       return;
@@ -1433,46 +1518,57 @@ ${update}`;
     setLoadingStage(
       mode === "quick"
         ? "Generating quick delivery package..."
-        : "Reading requirement and uploaded documents..."
+        : "Reading requirement and uploaded documents...",
     );
 
     const stageTimers =
       mode === "quick"
         ? [
             setTimeout(
-              () => setLoadingStage("Architect is creating quick solution design..."),
-              900
+              () =>
+                setLoadingStage(
+                  "Architect is creating quick solution design...",
+                ),
+              900,
             ),
             setTimeout(
               () => setLoadingStage("BSA is creating core stories..."),
-              2400
+              2400,
             ),
             setTimeout(
-              () => setLoadingStage("Delivery Lead is assembling quick package..."),
-              4200
+              () =>
+                setLoadingStage("Delivery Lead is assembling quick package..."),
+              4200,
             ),
           ]
         : [
             setTimeout(
               () => setLoadingStage("Architect is creating solution design..."),
-              900
+              900,
             ),
             setTimeout(
               () =>
-                setLoadingStage("BSA is writing stories and acceptance criteria..."),
-              2600
+                setLoadingStage(
+                  "BSA is writing stories and acceptance criteria...",
+                ),
+              2600,
             ),
             setTimeout(
-              () => setLoadingStage("Developer is preparing technical notes..."),
-              5200
+              () =>
+                setLoadingStage("Developer is preparing technical notes..."),
+              5200,
             ),
             setTimeout(
-              () => setLoadingStage("QA is building test cases and UAT scenarios..."),
-              7800
+              () =>
+                setLoadingStage(
+                  "QA is building test cases and UAT scenarios...",
+                ),
+              7800,
             ),
             setTimeout(
-              () => setLoadingStage("Delivery Lead is assembling final package..."),
-              10400
+              () =>
+                setLoadingStage("Delivery Lead is assembling final package..."),
+              10400,
             ),
           ];
 
@@ -1492,7 +1588,15 @@ ${update}`;
       });
 
       if (!response.ok) {
-        throw new Error("Backend request failed");
+        const errorText = await response.text();
+        console.error(
+          "Package generation failed response:",
+          response.status,
+          errorText,
+        );
+        throw new Error(
+          `Backend request failed: ${response.status} ${errorText}`,
+        );
       }
 
       const data = await response.json();
@@ -1501,9 +1605,15 @@ ${update}`;
       setPackageNeedsRegeneration(false);
       setActiveTab("stories");
       setPackageTab(mode === "quick" ? "design" : "overview");
+      return true;
     } catch (error) {
       console.error(error);
-      alert("Something failed. Check your backend terminal.");
+      if (!options?.suppressAlert) {
+        alert(
+          "Package generation failed. Check Render/backend logs for the exact error.",
+        );
+      }
+      return false;
     } finally {
       stageTimers.forEach((timer) => clearTimeout(timer));
       setLoading(false);
@@ -1529,19 +1639,19 @@ ${update}`;
     const stageTimers = [
       setTimeout(
         () => setLoadingStage("Developer is preparing technical notes..."),
-        900
+        900,
       ),
       setTimeout(
         () => setLoadingStage("Creating process/state flow diagram..."),
-        2200
+        2200,
       ),
       setTimeout(
         () => setLoadingStage("QA is building test cases and UAT scenarios..."),
-        4200
+        4200,
       ),
       setTimeout(
         () => setLoadingStage("Quality gate is scoring the full package..."),
-        6800
+        6800,
       ),
     ];
 
@@ -1591,19 +1701,21 @@ ${update}`;
     const stageTimers = [
       setTimeout(
         () => setLoadingStage("Architect is reviewing solution design..."),
-        900
+        900,
       ),
       setTimeout(
-        () => setLoadingStage("Developer is reviewing implementation detail..."),
-        2400
+        () =>
+          setLoadingStage("Developer is reviewing implementation detail..."),
+        2400,
       ),
       setTimeout(
         () => setLoadingStage("QA is reviewing test coverage..."),
-        4200
+        4200,
       ),
       setTimeout(
-        () => setLoadingStage("Delivery Lead is reviewing delivery readiness..."),
-        6200
+        () =>
+          setLoadingStage("Delivery Lead is reviewing delivery readiness..."),
+        6200,
       ),
     ];
 
@@ -1621,7 +1733,11 @@ ${update}`;
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("Agent review failed response:", response.status, errorText);
+        console.error(
+          "Agent review failed response:",
+          response.status,
+          errorText,
+        );
         throw new Error(`Agent review failed: ${response.status}`);
       }
 
@@ -1665,39 +1781,83 @@ ${update}`;
 
     const uploadAnswer = `You can paste rough notes directly or upload supporting documents. The current MVP supports .txt, .pdf, and .docx files. Avoid scanned or image-only PDFs because text extraction may not work well.`;
 
-    if (normalizedQuestion.includes("quick") || normalizedQuestion.includes("full") || normalizedQuestion.includes("generation")) {
+    if (
+      normalizedQuestion.includes("quick") ||
+      normalizedQuestion.includes("full") ||
+      normalizedQuestion.includes("generation")
+    ) {
       return quickFullAnswer;
     }
 
-    if (normalizedQuestion.includes("template") || normalizedQuestion.includes("example")) {
+    if (
+      normalizedQuestion.includes("template") ||
+      normalizedQuestion.includes("example")
+    ) {
       return templateAnswer;
     }
 
-    if (normalizedQuestion.includes("save") || normalizedQuestion.includes("reload") || normalizedQuestion.includes("project") || normalizedQuestion.includes("database")) {
+    if (
+      normalizedQuestion.includes("save") ||
+      normalizedQuestion.includes("reload") ||
+      normalizedQuestion.includes("project") ||
+      normalizedQuestion.includes("database")
+    ) {
       return saveAnswer;
     }
 
-    if (normalizedQuestion.includes("export") || normalizedQuestion.includes("docx") || normalizedQuestion.includes("markdown") || normalizedQuestion.includes("download")) {
+    if (
+      normalizedQuestion.includes("export") ||
+      normalizedQuestion.includes("docx") ||
+      normalizedQuestion.includes("markdown") ||
+      normalizedQuestion.includes("download")
+    ) {
       return exportAnswer;
     }
 
-    if (normalizedQuestion.includes("technical") || normalizedQuestion.includes("code") || normalizedQuestion.includes("business rule") || normalizedQuestion.includes("flow") || normalizedQuestion.includes("acl")) {
+    if (
+      normalizedQuestion.includes("technical") ||
+      normalizedQuestion.includes("code") ||
+      normalizedQuestion.includes("business rule") ||
+      normalizedQuestion.includes("flow") ||
+      normalizedQuestion.includes("acl")
+    ) {
       return technicalAnswer;
     }
 
-    if (normalizedQuestion.includes("delivery lead") || normalizedQuestion.includes("requirement update") || normalizedQuestion.includes("missing") || normalizedQuestion.includes("scope") || normalizedQuestion.includes("risk")) {
+    if (
+      normalizedQuestion.includes("delivery lead") ||
+      normalizedQuestion.includes("requirement update") ||
+      normalizedQuestion.includes("missing") ||
+      normalizedQuestion.includes("scope") ||
+      normalizedQuestion.includes("risk")
+    ) {
       return deliveryLeadAnswer;
     }
 
-    if (normalizedQuestion.includes("review") || normalizedQuestion.includes("score") || normalizedQuestion.includes("quality")) {
+    if (
+      normalizedQuestion.includes("review") ||
+      normalizedQuestion.includes("score") ||
+      normalizedQuestion.includes("quality")
+    ) {
       return reviewAnswer;
     }
 
-    if (normalizedQuestion.includes("upload") || normalizedQuestion.includes("document") || normalizedQuestion.includes("pdf") || normalizedQuestion.includes("docx") || normalizedQuestion.includes("file")) {
+    if (
+      normalizedQuestion.includes("upload") ||
+      normalizedQuestion.includes("document") ||
+      normalizedQuestion.includes("pdf") ||
+      normalizedQuestion.includes("docx") ||
+      normalizedQuestion.includes("file")
+    ) {
       return uploadAnswer;
     }
 
-    if (normalizedQuestion.includes("how") || normalizedQuestion.includes("use") || normalizedQuestion.includes("start") || normalizedQuestion.includes("help")) {
+    if (
+      normalizedQuestion.includes("how") ||
+      normalizedQuestion.includes("use") ||
+      normalizedQuestion.includes("start") ||
+      normalizedQuestion.includes("help")
+    ) {
       return workflowAnswer;
     }
 
@@ -1735,8 +1895,9 @@ ${update}`;
     }, 250);
   }
 
-
-  function getReviewFeedback(agent: ReviewAgentKey): AgentReviewerFeedback | null {
+  function getReviewFeedback(
+    agent: ReviewAgentKey,
+  ): AgentReviewerFeedback | null {
     if (!result?.agent_review) return null;
 
     if (agent === "architect") return result.agent_review.architect_review;
@@ -1772,7 +1933,9 @@ ${update}`;
 
   async function askReviewAgent() {
     if (!reviewAgentMessage.trim()) {
-      alert(`Ask the ${getReviewAgentLabel(activeReviewAgent)} a question first.`);
+      alert(
+        `Ask the ${getReviewAgentLabel(activeReviewAgent)} a question first.`,
+      );
       return;
     }
 
@@ -1831,9 +1994,13 @@ ${JSON.stringify(activeFeedback, null, 2)}`,
       }
 
       const rawData: DeliveryLeadChatResponse = await response.json();
-      const answer = safeText(rawData.answer || rawData.delivery_lead_recommendation);
+      const answer = safeText(
+        rawData.answer || rawData.delivery_lead_recommendation,
+      );
 
-      const normalizedSuggestedUpdate = safeText(rawData.suggested_requirement_update);
+      const normalizedSuggestedUpdate = safeText(
+        rawData.suggested_requirement_update,
+      );
       if (normalizedSuggestedUpdate.trim()) {
         setReviewAgentPendingRequirementUpdate(normalizedSuggestedUpdate);
       }
@@ -1876,12 +2043,14 @@ ${JSON.stringify(activeFeedback, null, 2)}`,
     if (!updateText.trim()) return;
 
     const confirmed = window.confirm(
-      `Append this ${getReviewAgentLabel(activeReviewAgent)} update to the main requirement box?`
+      `Append this ${getReviewAgentLabel(activeReviewAgent)} update to the main requirement box?`,
     );
 
     if (!confirmed) return;
 
-    setRequirement((currentText) => mergeRequirementUpdate(currentText, updateText));
+    setRequirement((currentText) =>
+      mergeRequirementUpdate(currentText, updateText),
+    );
     setClarificationAnswers("");
     setIntakeAnalysis(null);
     setReviewAgentPendingRequirementUpdate("");
@@ -1932,62 +2101,62 @@ ${JSON.stringify(activeFeedback, null, 2)}`,
 
       const rawData: DeliveryLeadChatResponse = await response.json();
 
-const normalizedData: DeliveryLeadChatResponse = {
-  ...rawData,
-  answer: safeText(rawData.answer),
-  delivery_lead_recommendation: safeText(
-    rawData.delivery_lead_recommendation
-  ),
-  artifact_type: safeText(rawData.artifact_type),
-  suggested_requirement_update: safeText(
-    rawData.suggested_requirement_update
-  ),
-  recommended_next_action: safeText(rawData.recommended_next_action),
-  impacted_sections: safeList(rawData.impacted_sections),
-  follow_up_questions: safeList(rawData.follow_up_questions),
-  artifact_details: {
-    name: safeText(rawData.artifact_details?.name),
-    table: safeText(rawData.artifact_details?.table),
-    trigger: safeText(rawData.artifact_details?.trigger),
-    condition: safeText(rawData.artifact_details?.condition),
-    recipients: safeList(rawData.artifact_details?.recipients),
-    subject: safeText(rawData.artifact_details?.subject),
-    body: safeText(rawData.artifact_details?.body),
-    steps: safeList(rawData.artifact_details?.steps),
-    roles: safeList(rawData.artifact_details?.roles),
-    fields: safeList(rawData.artifact_details?.fields),
-    expected_result: safeText(rawData.artifact_details?.expected_result),
-    notes: safeList(rawData.artifact_details?.notes),
-  },
-};
+      const normalizedData: DeliveryLeadChatResponse = {
+        ...rawData,
+        answer: safeText(rawData.answer),
+        delivery_lead_recommendation: safeText(
+          rawData.delivery_lead_recommendation,
+        ),
+        artifact_type: safeText(rawData.artifact_type),
+        suggested_requirement_update: safeText(
+          rawData.suggested_requirement_update,
+        ),
+        recommended_next_action: safeText(rawData.recommended_next_action),
+        impacted_sections: safeList(rawData.impacted_sections),
+        follow_up_questions: safeList(rawData.follow_up_questions),
+        artifact_details: {
+          name: safeText(rawData.artifact_details?.name),
+          table: safeText(rawData.artifact_details?.table),
+          trigger: safeText(rawData.artifact_details?.trigger),
+          condition: safeText(rawData.artifact_details?.condition),
+          recipients: safeList(rawData.artifact_details?.recipients),
+          subject: safeText(rawData.artifact_details?.subject),
+          body: safeText(rawData.artifact_details?.body),
+          steps: safeList(rawData.artifact_details?.steps),
+          roles: safeList(rawData.artifact_details?.roles),
+          fields: safeList(rawData.artifact_details?.fields),
+          expected_result: safeText(rawData.artifact_details?.expected_result),
+          notes: safeList(rawData.artifact_details?.notes),
+        },
+      };
 
-if (normalizedData.suggested_requirement_update.trim()) {
-  setDeliveryLeadPendingRequirementUpdate(
-    normalizedData.suggested_requirement_update
-  );
-}
+      if (normalizedData.suggested_requirement_update.trim()) {
+        setDeliveryLeadPendingRequirementUpdate(
+          normalizedData.suggested_requirement_update,
+        );
+      }
 
-const finalDeliveryLeadChat = [
-  ...nextChat,
-  {
-    role: "delivery_lead" as const,
-    content: normalizedData.answer,
-    response: normalizedData,
-  },
-];
+      const finalDeliveryLeadChat = [
+        ...nextChat,
+        {
+          role: "delivery_lead" as const,
+          content: normalizedData.answer,
+          response: normalizedData,
+        },
+      ];
 
-setDeliveryLeadChat(finalDeliveryLeadChat);
+      setDeliveryLeadChat(finalDeliveryLeadChat);
 
-if (activeProjectId && user?.id) {
-  await supabase
-    .from("delivery_projects")
-    .update({
-      delivery_lead_chat: finalDeliveryLeadChat,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", activeProjectId)
-    .eq("user_id", user.id);
-}
+      if (activeProjectId && user?.id) {
+        await supabase
+          .from("delivery_projects")
+          .update({
+            delivery_lead_chat: finalDeliveryLeadChat,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", activeProjectId)
+          .eq("user_id", user.id);
+      }
     } catch (error) {
       console.error(error);
       alert("Delivery Lead chat failed. Check backend logs.");
@@ -2001,12 +2170,14 @@ if (activeProjectId && user?.id) {
     if (!updateText.trim()) return;
 
     const confirmed = window.confirm(
-      "Append this Delivery Lead update to the main requirement box?"
+      "Append this Delivery Lead update to the main requirement box?",
     );
 
     if (!confirmed) return;
 
-    setRequirement((currentText) => mergeRequirementUpdate(currentText, updateText));
+    setRequirement((currentText) =>
+      mergeRequirementUpdate(currentText, updateText),
+    );
     setClarificationAnswers("");
     setIntakeAnalysis(null);
     setDeliveryLeadPendingRequirementUpdate("");
@@ -2021,7 +2192,24 @@ if (activeProjectId && user?.id) {
     }
 
     const mode = result?.generation_mode === "quick" ? "quick" : "full";
-    await generatePackage(mode);
+    const success = await generatePackage(mode, { suppressAlert: true });
+
+    if (success) return;
+
+    if (mode === "full") {
+      const retryQuick = window.confirm(
+        "Full package regeneration failed. Generate a Quick Package from the updated requirement instead?",
+      );
+
+      if (retryQuick) {
+        await generatePackage("quick");
+        return;
+      }
+    }
+
+    alert(
+      "Regeneration failed. Check Render/backend logs for the exact error.",
+    );
   }
 
   async function copyToClipboard(value: string) {
@@ -2054,14 +2242,12 @@ ${data.delivery_lead_review?.clarifying_questions
 ${data.delivery_lead_review?.missing_requirements
   ?.map(
     (item) =>
-      `- **Gap:** ${item.gap}\n  - **Why it matters:** ${item.why_it_matters}`
+      `- **Gap:** ${item.gap}\n  - **Why it matters:** ${item.why_it_matters}`,
   )
   .join("\n")}
 
 ### Assumptions
-${data.delivery_lead_review?.assumptions
-  ?.map((item) => `- ${item}`)
-  .join("\n")}
+${data.delivery_lead_review?.assumptions?.map((item) => `- ${item}`).join("\n")}
 
 ### Recommended Next Steps
 ${data.delivery_lead_review?.recommended_next_steps
@@ -2141,7 +2327,7 @@ ${s.story}
 
 **Acceptance Criteria:**
 ${s.acceptance_criteria?.map((a) => `- ${a}`).join("\n")}
-`
+`,
   )
   .join("\n")}
 
@@ -2162,7 +2348,7 @@ ${data.developer?.flow_designer_notes
 Trigger: ${f.trigger}
 
 ${f.steps?.map((s, i) => `${i + 1}. ${s}`).join("\n")}
-`
+`,
   )
   .join("\n")}
 
@@ -2171,7 +2357,7 @@ ${data.developer?.business_rules
   ?.map(
     (b) => `- **${b.name}** (${b.when})
   - Condition: ${b.condition}
-  - Purpose: ${b.purpose}`
+  - Purpose: ${b.purpose}`,
   )
   .join("\n")}
 
@@ -2192,7 +2378,7 @@ ${tc.steps?.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
 Expected Result:
 ${tc.expected_result}
-`
+`,
   )
   .join("\n")}
 
@@ -2207,7 +2393,7 @@ ${uat.steps?.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
 Expected Result:
 ${uat.expected_result}
-`
+`,
   )
   .join("\n")}
 `;
@@ -2255,7 +2441,7 @@ ${uat.expected_result}
     } catch (error) {
       console.error(error);
       setSelectedCode(
-        "Unable to generate code. Check that the backend /generate-code endpoint is running."
+        "Unable to generate code. Check that the backend /generate-code endpoint is running.",
       );
     } finally {
       setCodeLoading(false);
@@ -2271,7 +2457,7 @@ ${uat.expected_result}
         result,
       },
       null,
-      2
+      2,
     );
   }
 
@@ -2322,9 +2508,11 @@ ${uat.expected_result}
       if (section === "solution_design") {
         setResult({
           ...result,
-          requirement_summary: output.requirement_summary || result.requirement_summary,
+          requirement_summary:
+            output.requirement_summary || result.requirement_summary,
           solution_design: output.solution_design || result.solution_design,
-          recommended_app_type: output.recommended_app_type || result.recommended_app_type,
+          recommended_app_type:
+            output.recommended_app_type || result.recommended_app_type,
           tables: output.tables || result.tables,
           workflow_steps: output.workflow_steps || result.workflow_steps,
           risks: output.risks || result.risks,
@@ -2367,7 +2555,6 @@ ${uat.expected_result}
       setLoadingStage("");
     }
   }
-
 
   function docHeading(text: string, level: any = HeadingLevel.HEADING_1) {
     return new Paragraph({
@@ -2429,7 +2616,7 @@ ${uat.expected_result}
                     color: "CBD5E1",
                   },
                 },
-              })
+              }),
           ),
         }),
         ...rows.map(
@@ -2461,9 +2648,9 @@ ${uat.expected_result}
                         color: "E2E8F0",
                       },
                     },
-                  })
+                  }),
               ),
-            })
+            }),
         ),
       ],
     });
@@ -2479,7 +2666,7 @@ ${uat.expected_result}
         text: "Virtual ServiceNow Delivery Package",
         heading: HeadingLevel.TITLE,
         spacing: { after: 300 },
-      })
+      }),
     );
 
     children.push(docHeading("Delivery Lead Review"));
@@ -2488,20 +2675,22 @@ ${uat.expected_result}
 
     children.push(docHeading("MVP Scope", HeadingLevel.HEADING_2));
     result.delivery_lead_review?.mvp_scope?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
     children.push(docHeading("Phase 2 Scope", HeadingLevel.HEADING_2));
     result.delivery_lead_review?.phase_2_scope?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
     children.push(docHeading("Clarifying Questions", HeadingLevel.HEADING_2));
     result.delivery_lead_review?.clarifying_questions?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
-    children.push(docHeading("Missing / Weak Requirements", HeadingLevel.HEADING_2));
+    children.push(
+      docHeading("Missing / Weak Requirements", HeadingLevel.HEADING_2),
+    );
     result.delivery_lead_review?.missing_requirements?.forEach((item) => {
       children.push(docBullet(`Gap: ${item.gap}`));
       children.push(docParagraph(`Why it matters: ${item.why_it_matters}`));
@@ -2509,47 +2698,61 @@ ${uat.expected_result}
 
     children.push(docHeading("Assumptions", HeadingLevel.HEADING_2));
     result.delivery_lead_review?.assumptions?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
     children.push(docHeading("Recommended Next Steps", HeadingLevel.HEADING_2));
     result.delivery_lead_review?.recommended_next_steps?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
-    children.push(docHeading(result.generation_mode === "quick" ? "Quick Readiness Score" : "Delivery Quality Score"));
     children.push(
-      docParagraph(`Overall Score: ${scoreText(result.quality_score?.overall_score)}`)
+      docHeading(
+        result.generation_mode === "quick"
+          ? "Quick Readiness Score"
+          : "Delivery Quality Score",
+      ),
     );
     children.push(
       docParagraph(
-        `Completeness Score: ${scoreText(result.quality_score?.completeness_score)}`
-      )
-    );
-    children.push(
-      docParagraph(`Risk Score: ${scoreText(result.quality_score?.risk_score)}`)
+        `Overall Score: ${scoreText(result.quality_score?.overall_score)}`,
+      ),
     );
     children.push(
       docParagraph(
-        `Readiness Score: ${scoreText(result.quality_score?.readiness_score)}`
-      )
+        `Completeness Score: ${scoreText(result.quality_score?.completeness_score)}`,
+      ),
     );
-    children.push(docParagraph(`Rating: ${result.quality_score?.rating || "Score unavailable"}`));
+    children.push(
+      docParagraph(
+        `Risk Score: ${scoreText(result.quality_score?.risk_score)}`,
+      ),
+    );
+    children.push(
+      docParagraph(
+        `Readiness Score: ${scoreText(result.quality_score?.readiness_score)}`,
+      ),
+    );
+    children.push(
+      docParagraph(
+        `Rating: ${result.quality_score?.rating || "Score unavailable"}`,
+      ),
+    );
     children.push(docParagraph(result.quality_score?.summary));
 
     children.push(docHeading("Strengths", HeadingLevel.HEADING_2));
     result.quality_score?.strengths?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
     children.push(docHeading("Weaknesses", HeadingLevel.HEADING_2));
     result.quality_score?.weaknesses?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
     children.push(docHeading("Recommended Fixes", HeadingLevel.HEADING_2));
     result.quality_score?.recommended_fixes?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
     children.push(docHeading("Process / State Flow Diagram"));
@@ -2559,7 +2762,7 @@ ${uat.expected_result}
     children.push(docParagraph(result.process_diagram?.mermaid_code));
     children.push(docHeading("Diagram Notes", HeadingLevel.HEADING_2));
     result.process_diagram?.diagram_notes?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
     children.push(docHeading("Requirement Summary"));
@@ -2579,8 +2782,8 @@ ${uat.expected_result}
           table.table_name,
           table.type,
           table.purpose,
-        ]) || []
-      )
+        ]) || [],
+      ),
     );
 
     children.push(docHeading("Workflow Steps"));
@@ -2593,7 +2796,9 @@ ${uat.expected_result}
     });
 
     children.push(docHeading("Open Questions"));
-    result.open_questions?.forEach((question) => children.push(docBullet(question)));
+    result.open_questions?.forEach((question) =>
+      children.push(docBullet(question)),
+    );
 
     children.push(docHeading("Stories"));
     if (result.epic) {
@@ -2607,7 +2812,7 @@ ${uat.expected_result}
       children.push(docParagraph(`Priority: ${story.priority}`));
       children.push(docHeading("Acceptance Criteria", HeadingLevel.HEADING_3));
       story.acceptance_criteria?.forEach((criteria) =>
-        children.push(docBullet(criteria))
+        children.push(docBullet(criteria)),
       );
       if (story.notes) {
         children.push(docParagraph(`Notes: ${story.notes}`));
@@ -2639,16 +2844,18 @@ ${uat.expected_result}
     });
 
     children.push(docHeading("ACL Notes", HeadingLevel.HEADING_2));
-    result.developer?.acl_notes?.forEach((item) => children.push(docBullet(item)));
+    result.developer?.acl_notes?.forEach((item) =>
+      children.push(docBullet(item)),
+    );
 
     children.push(docHeading("Notification Notes", HeadingLevel.HEADING_2));
     result.developer?.notification_notes?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
     children.push(docHeading("Deployment Notes", HeadingLevel.HEADING_2));
     result.developer?.deployment_notes?.forEach((item) =>
-      children.push(docBullet(item))
+      children.push(docBullet(item)),
     );
 
     children.push(docHeading("QA"));
@@ -2656,12 +2863,14 @@ ${uat.expected_result}
 
     children.push(docHeading("Test Scenarios", HeadingLevel.HEADING_2));
     result.qa?.test_scenarios?.forEach((scenario) =>
-      children.push(docBullet(scenario))
+      children.push(docBullet(scenario)),
     );
 
     children.push(docHeading("Test Cases", HeadingLevel.HEADING_2));
     result.qa?.test_cases?.forEach((test) => {
-      children.push(docHeading(`${test.id}: ${test.title}`, HeadingLevel.HEADING_3));
+      children.push(
+        docHeading(`${test.id}: ${test.title}`, HeadingLevel.HEADING_3),
+      );
       children.push(docParagraph(`Type: ${test.type}`));
       children.push(docParagraph(`Priority: ${test.priority}`));
       children.push(docHeading("Preconditions", HeadingLevel.HEADING_4));
@@ -2673,7 +2882,9 @@ ${uat.expected_result}
 
     children.push(docHeading("UAT Cases", HeadingLevel.HEADING_2));
     result.qa?.uat_cases?.forEach((uat) => {
-      children.push(docHeading(`${uat.id}: ${uat.title}`, HeadingLevel.HEADING_3));
+      children.push(
+        docHeading(`${uat.id}: ${uat.title}`, HeadingLevel.HEADING_3),
+      );
       children.push(docParagraph(`Persona: ${uat.persona}`));
       uat.steps?.forEach((step) => children.push(docBullet(step)));
       children.push(docParagraph(`Expected Result: ${uat.expected_result}`));
@@ -2681,14 +2892,18 @@ ${uat.expected_result}
 
     children.push(docHeading("Edge Cases", HeadingLevel.HEADING_2));
     result.qa?.edge_cases?.forEach((edgeCase) =>
-      children.push(docBullet(edgeCase))
+      children.push(docBullet(edgeCase)),
     );
 
     children.push(docHeading("Test Data Needs", HeadingLevel.HEADING_2));
-    result.qa?.test_data_needs?.forEach((item) => children.push(docBullet(item)));
+    result.qa?.test_data_needs?.forEach((item) =>
+      children.push(docBullet(item)),
+    );
 
     children.push(docHeading("Regression Areas", HeadingLevel.HEADING_2));
-    result.qa?.regression_areas?.forEach((item) => children.push(docBullet(item)));
+    result.qa?.regression_areas?.forEach((item) =>
+      children.push(docBullet(item)),
+    );
 
     const doc = new Document({
       sections: [
@@ -2701,7 +2916,6 @@ ${uat.expected_result}
     const blob = await Packer.toBlob(doc);
     saveAs(blob, "servicenow-delivery-package.docx");
   }
-
 
   const responsiveContainer = isMobile
     ? { ...styles.container, ...styles.mobileContainer }
@@ -2764,7 +2978,8 @@ ${uat.expected_result}
     : styles.scoreGrid;
 
   const hasScore = hasUsableQualityScore(result?.quality_score);
-  const packageScoreLabel = result?.generation_mode === "quick" ? "Readiness" : "Quality";
+  const packageScoreLabel =
+    result?.generation_mode === "quick" ? "Readiness" : "Quality";
   const packageScoreTitle =
     result?.generation_mode === "quick"
       ? "Quick Readiness Score"
@@ -2785,20 +3000,12 @@ ${uat.expected_result}
           </div>
 
           <div style={responsiveHeaderActions}>
-            {result && user && (
-              <>
-                <button onClick={exportMarkdown} style={styles.secondaryButton}>
-                  Export Markdown
-                </button>
-
-                <button onClick={exportDocx} style={styles.secondaryButton}>
-                  Export DOCX
-                </button>
-              </>
-            )}
-
             {user ? (
-              <div style={isMobile ? styles.mobileActionRow : styles.accountTopRight}>
+              <div
+                style={
+                  isMobile ? styles.mobileActionRow : styles.accountTopRight
+                }
+              >
                 <div style={styles.signedInPill}>
                   <span style={styles.signedInDot}></span>
                   <span style={styles.signedInText}>Signed in</span>
@@ -2809,7 +3016,11 @@ ${uat.expected_result}
                 </button>
               </div>
             ) : (
-              <div style={isMobile ? styles.mobileActionRow : styles.authBoxCompact}>
+              <div
+                style={
+                  isMobile ? styles.mobileActionRow : styles.authBoxCompact
+                }
+              >
                 <input
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
@@ -2870,38 +3081,60 @@ ${uat.expected_result}
               }
             >
               <div style={styles.loginHeroContent}>
-                <div style={styles.loginHeroBadge}>AI-powered delivery assistant</div>
-                <h2 style={isMobile ? { ...styles.loginHeroTitle, fontSize: "32px" } : styles.loginHeroTitle}>
+                <div style={styles.loginHeroBadge}>
+                  AI-powered delivery assistant
+                </div>
+                <h2
+                  style={
+                    isMobile
+                      ? { ...styles.loginHeroTitle, fontSize: "32px" }
+                      : styles.loginHeroTitle
+                  }
+                >
                   Turn rough requirements into delivery-ready outcomes
                 </h2>
                 <p style={styles.loginHeroText}>
-                  Convert business intake into ServiceNow-aligned solution design,
-                  user stories, technical notes, QA artifacts, delivery reviews, and
-                  export-ready packages.
+                  Convert business intake into ServiceNow-aligned solution
+                  design, user stories, technical notes, QA artifacts, delivery
+                  reviews, and export-ready packages.
                 </p>
 
                 <div style={styles.loginHeroFeatureList}>
                   <div style={styles.loginHeroFeature}>
                     <span style={styles.loginHeroFeatureIcon}>▣</span>
-                    <span>Build solution designs, scoped app guidance, and workflow structure.</span>
+                    <span>
+                      Build solution designs, scoped app guidance, and workflow
+                      structure.
+                    </span>
                   </div>
                   <div style={styles.loginHeroFeature}>
                     <span style={styles.loginHeroFeatureIcon}>✓</span>
-                    <span>Generate stories, acceptance criteria, QA cases, and UAT coverage.</span>
+                    <span>
+                      Generate stories, acceptance criteria, QA cases, and UAT
+                      coverage.
+                    </span>
                   </div>
                   <div style={styles.loginHeroFeature}>
                     <span style={styles.loginHeroFeatureIcon}>AI</span>
-                    <span>Ask the Delivery Lead questions and refine requirements interactively.</span>
+                    <span>
+                      Ask the Delivery Lead questions and refine requirements
+                      interactively.
+                    </span>
                   </div>
                   <div style={styles.loginHeroFeature}>
                     <span style={styles.loginHeroFeatureIcon}>↗</span>
-                    <span>Save projects, reload packages, and continue across devices.</span>
+                    <span>
+                      Save projects, reload packages, and continue across
+                      devices.
+                    </span>
                   </div>
                 </div>
 
                 <div style={styles.loginHeroSecurityNote}>
                   <span style={styles.loginHeroShield}>◇</span>
-                  <span>Sign in to keep your delivery packages private and reusable.</span>
+                  <span>
+                    Sign in to keep your delivery packages private and reusable.
+                  </span>
                 </div>
               </div>
 
@@ -2933,7 +3166,8 @@ ${uat.expected_result}
                     <div style={styles.visualSpark}>✦</div>
                     <p style={styles.visualAssistantTitle}>AI Delivery Lead</p>
                     <p style={styles.visualAssistantText}>
-                      I analyze the intake and assemble the right delivery artifacts.
+                      I analyze the intake and assemble the right delivery
+                      artifacts.
                     </p>
                   </div>
 
@@ -2973,1703 +3207,829 @@ ${uat.expected_result}
           </section>
         ) : (
           <>
-
-        {showOnboardingTips && (
-          <section style={styles.onboardingCard}>
-            <div style={styles.cardTitleRow}>
-              <div>
-                <p style={styles.label}>First-time guide</p>
-                <h2 style={styles.cardTitle}>How to use this workspace</h2>
-              </div>
-              <button onClick={dismissOnboardingTips} style={styles.copyButton}>
-                Got it
-              </button>
-            </div>
-
-            <div style={isMobile ? styles.mobileOneColumnGrid : styles.onboardingGrid}>
-              <div style={styles.onboardingStep}>
-                <p style={styles.onboardingStepNumber}>1</p>
-                <p style={styles.onboardingStepTitle}>Paste or template</p>
-                <p style={styles.muted}>Start from rough notes, a document, or a workflow template.</p>
-              </div>
-              <div style={styles.onboardingStep}>
-                <p style={styles.onboardingStepNumber}>2</p>
-                <p style={styles.onboardingStepTitle}>Analyze or generate</p>
-                <p style={styles.muted}>Analyze gaps first, or generate Quick/Full packages directly.</p>
-              </div>
-              <div style={styles.onboardingStep}>
-                <p style={styles.onboardingStepNumber}>3</p>
-                <p style={styles.onboardingStepTitle}>Review and refine</p>
-                <p style={styles.muted}>Use Review and Delivery Lead tabs to improve the requirement.</p>
-              </div>
-              <div style={styles.onboardingStep}>
-                <p style={styles.onboardingStepNumber}>4</p>
-                <p style={styles.onboardingStepTitle}>Save and export</p>
-                <p style={styles.muted}>Auto-save preserves drafts. Manual Save creates a version snapshot.</p>
-              </div>
-            </div>
-          </section>
-        )}
-
-        <section style={styles.workspaceCommandBar}>
-          <div>
-            <p style={styles.label}>Workspace Controls</p>
-            <h2 style={styles.commandBarTitle}>Manage templates, saved work, and versions</h2>
-          </div>
-
-          <div style={isMobile ? styles.mobileActionRow : styles.commandBarActions}>
-            <button
-              onClick={() => setShowTemplates(!showTemplates)}
-              style={showTemplates ? styles.activeUtilityButton : styles.secondaryButton}
-            >
-              Templates
-            </button>
-            <button
-              onClick={() => setShowSavedProjectsPanel(!showSavedProjectsPanel)}
-              style={showSavedProjectsPanel ? styles.activeUtilityButton : styles.secondaryButton}
-            >
-              Saved Projects ({savedProjects.length})
-            </button>
-            <button
-              onClick={() => setShowVersionHistoryPanel(!showVersionHistoryPanel)}
-              style={showVersionHistoryPanel ? styles.activeUtilityButton : styles.secondaryButton}
-            >
-              Version History ({projectVersions.length})
-            </button>
-            <button
-              onClick={() => setShowOnboardingTips(true)}
-              style={styles.secondaryButton}
-            >
-              Guide
-            </button>
-          </div>
-        </section>
-
-        {showTemplates && (
-          <section style={styles.compactPanel}>
-            <div style={responsiveTemplateHeader}>
-              <div>
-                <p style={styles.label}>Template Library</p>
-                <h2 style={styles.templateTitle}>Start from a common ServiceNow workflow</h2>
-                <p style={styles.muted}>
-                  Pick a template to preload a strong sample requirement. You can edit it before analysis.
-                </p>
-              </div>
-
-              <button
-                onClick={() => setShowTemplates(false)}
-                style={styles.copyButton}
-              >
-                Close
-              </button>
-            </div>
-
-            <div style={responsiveTemplateGrid}>
-              {REQUIREMENT_TEMPLATES.map((template) => (
-                <button
-                  key={template.id}
-                  onClick={() => applyTemplate(template)}
-                  style={styles.templateTile}
-                >
-                  <div style={styles.templateTileTop}>
-                    <p style={styles.templateName}>{template.name}</p>
-                    <span style={styles.templateCategory}>{template.category}</span>
+            {showOnboardingTips && (
+              <section style={styles.onboardingCard}>
+                <div style={styles.cardTitleRow}>
+                  <div>
+                    <p style={styles.label}>First-time guide</p>
+                    <h2 style={styles.cardTitle}>How to use this workspace</h2>
                   </div>
-
-                  <p style={styles.templateDescription}>{template.description}</p>
-
-                  <p style={styles.templateUse}>Use template →</p>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {showSavedProjectsPanel && (
-          <section style={styles.compactPanel}>
-            <div style={styles.cardTitleRow}>
-              <div>
-                <p style={styles.label}>Saved Projects</p>
-                <h2 style={styles.cardTitle}>Load or delete saved delivery packages</h2>
-              </div>
-              <button onClick={() => setShowSavedProjectsPanel(false)} style={styles.copyButton}>
-                Close
-              </button>
-            </div>
-
-            {savedProjects.length ? (
-              <div style={isMobile ? styles.mobileOneColumnGrid : styles.savedProjectGrid}>
-                {savedProjects.map((project) => (
-                  <div
-                    key={project.id}
-                    style={
-                      project.id === activeProjectId
-                        ? { ...styles.savedProjectCard, ...styles.savedProjectCardActive }
-                        : styles.savedProjectCard
-                    }
-                  >
-                    <button
-                      onClick={() => {
-                        loadProject(project);
-                        setShowSavedProjectsPanel(false);
-                      }}
-                      style={styles.savedProjectLoadButton}
-                    >
-                      <div style={styles.rowBetween}>
-                        <h3 style={styles.itemTitle}>{project.project_name}</h3>
-                        <Badge>{project.project_status || "Draft"}</Badge>
-                      </div>
-                      <p style={styles.muted}>
-                        Updated {new Date(project.updated_at).toLocaleString()}
-                      </p>
-                      <p style={styles.projectMeta}>
-                        {project.result?.generation_mode || "No package"} · {scoreText(project.result?.quality_score?.overall_score)} · {(project.versions || []).length} version{(project.versions || []).length === 1 ? "" : "s"}
-                      </p>
-                    </button>
-
-                    <button
-                      onClick={() => deleteProject(project.id)}
-                      style={styles.dangerButton}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p style={styles.muted}>No saved projects yet. Create or generate a package, then click Save Project.</p>
-            )}
-          </section>
-        )}
-
-        {showVersionHistoryPanel && (
-          <section style={styles.compactPanel}>
-            <div style={styles.cardTitleRow}>
-              <div>
-                <p style={styles.label}>Version History</p>
-                <h2 style={styles.cardTitle}>Compare current package with previous saved states</h2>
-              </div>
-              <button onClick={() => setShowVersionHistoryPanel(false)} style={styles.copyButton}>
-                Close
-              </button>
-            </div>
-
-            {projectVersions.length ? (
-              <div style={styles.stack}>
-                <div style={isMobile ? styles.mobileOneColumnGrid : styles.versionControlRow}>
-                  <div style={styles.projectField}>
-                    <label style={styles.projectLabel}>Previous Version</label>
-                    <select
-                      value={compareVersionId}
-                      onChange={(e) => setCompareVersionId(e.target.value)}
-                      style={styles.projectSelect}
-                    >
-                      <option value="">Select a previous version...</option>
-                      {projectVersions.map((version) => (
-                        <option key={version.id} value={version.id}>
-                          {version.label} · {new Date(version.created_at).toLocaleString()}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
                   <button
-                    onClick={() => {
-                      if (!compareVersionId) {
-                        alert("Select a previous version first.");
-                        return;
-                      }
-                      setShowComparePanel(!showComparePanel);
-                    }}
-                    disabled={!compareVersionId || !result}
-                    style={{
-                      ...styles.secondaryButton,
-                      opacity: compareVersionId && result ? 1 : 0.5,
-                      cursor: compareVersionId && result ? "pointer" : "not-allowed",
-                    }}
+                    onClick={dismissOnboardingTips}
+                    style={styles.copyButton}
                   >
-                    Compare Version
+                    Got it
                   </button>
                 </div>
 
-                <div style={styles.versionList}>
-                  {projectVersions.map((version) => (
+                <div
+                  style={
+                    isMobile
+                      ? styles.mobileOneColumnGrid
+                      : styles.onboardingGrid
+                  }
+                >
+                  <div style={styles.onboardingStep}>
+                    <p style={styles.onboardingStepNumber}>1</p>
+                    <p style={styles.onboardingStepTitle}>Paste or template</p>
+                    <p style={styles.muted}>
+                      Start from rough notes, a document, or a workflow
+                      template.
+                    </p>
+                  </div>
+                  <div style={styles.onboardingStep}>
+                    <p style={styles.onboardingStepNumber}>2</p>
+                    <p style={styles.onboardingStepTitle}>
+                      Analyze or generate
+                    </p>
+                    <p style={styles.muted}>
+                      Analyze gaps first, or generate Quick/Full packages
+                      directly.
+                    </p>
+                  </div>
+                  <div style={styles.onboardingStep}>
+                    <p style={styles.onboardingStepNumber}>3</p>
+                    <p style={styles.onboardingStepTitle}>Review and refine</p>
+                    <p style={styles.muted}>
+                      Use Review and Delivery Lead tabs to improve the
+                      requirement.
+                    </p>
+                  </div>
+                  <div style={styles.onboardingStep}>
+                    <p style={styles.onboardingStepNumber}>4</p>
+                    <p style={styles.onboardingStepTitle}>Save and export</p>
+                    <p style={styles.muted}>
+                      Auto-save preserves drafts. Manual Save creates a version
+                      snapshot.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            <section style={styles.workspaceCommandBar}>
+              <div>
+                <p style={styles.label}>Workspace Controls</p>
+                <h2 style={styles.commandBarTitle}>
+                  Manage templates, saved work, and versions
+                </h2>
+              </div>
+
+              <div
+                style={
+                  isMobile ? styles.mobileActionRow : styles.commandBarActions
+                }
+              >
+                <select
+                  value={workspacePanel}
+                  onChange={(e) =>
+                    openWorkspacePanel(e.target.value as WorkspacePanel)
+                  }
+                  style={styles.workspaceSelect}
+                >
+                  <option value="none">Workspace menu</option>
+                  <option value="templates">Templates</option>
+                  <option value="saved">
+                    Saved Projects ({savedProjects.length})
+                  </option>
+                  <option value="versions">
+                    Version History ({projectVersions.length})
+                  </option>
+                  <option value="guide">Guide</option>
+                </select>
+
+                {workspacePanel !== "none" && (
+                  <button
+                    onClick={() => setWorkspacePanel("none")}
+                    style={styles.secondaryButton}
+                  >
+                    Close Panel
+                  </button>
+                )}
+              </div>
+            </section>
+
+            {showTemplates && (
+              <section style={styles.compactPanel}>
+                <div style={responsiveTemplateHeader}>
+                  <div>
+                    <p style={styles.label}>Template Library</p>
+                    <h2 style={styles.templateTitle}>
+                      Start from a common ServiceNow workflow
+                    </h2>
+                    <p style={styles.muted}>
+                      Pick a template to preload a strong sample requirement.
+                      You can edit it before analysis.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => setWorkspacePanel("none")}
+                    style={styles.copyButton}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div style={responsiveTemplateGrid}>
+                  {REQUIREMENT_TEMPLATES.map((template) => (
                     <button
-                      key={version.id}
-                      onClick={() => {
-                        setCompareVersionId(version.id);
-                        setShowComparePanel(true);
-                      }}
-                      style={
-                        version.id === compareVersionId
-                          ? { ...styles.versionRow, ...styles.versionRowActive }
-                          : styles.versionRow
-                      }
+                      key={template.id}
+                      onClick={() => applyTemplate(template)}
+                      style={styles.templateTile}
                     >
-                      <div>
-                        <p style={styles.itemTitle}>{version.label}</p>
-                        <p style={styles.muted}>{new Date(version.created_at).toLocaleString()}</p>
+                      <div style={styles.templateTileTop}>
+                        <p style={styles.templateName}>{template.name}</p>
+                        <span style={styles.templateCategory}>
+                          {template.category}
+                        </span>
                       </div>
-                      <div style={styles.versionMetaGroup}>
-                        <Badge>{version.project_status}</Badge>
-                        <span style={styles.versionMeta}>{version.result?.generation_mode || "No package"}</span>
-                        <span style={styles.versionMeta}>{scoreText(version.result?.quality_score?.overall_score)}</span>
-                      </div>
+
+                      <p style={styles.templateDescription}>
+                        {template.description}
+                      </p>
+
+                      <p style={styles.templateUse}>Use template →</p>
                     </button>
                   ))}
                 </div>
-
-                {showComparePanel && getSelectedCompareVersion() && (
-                  <div style={styles.comparePanel}>
-                    <div style={styles.cardTitleRow}>
-                      <div>
-                        <p style={styles.label}>Compare current package vs previous version</p>
-                        <h3 style={styles.itemTitle}>{getSelectedCompareVersion()?.label}</h3>
-                      </div>
-                      <button
-                        style={styles.copyButton}
-                        onClick={() => setShowComparePanel(false)}
-                      >
-                        Close Compare
-                      </button>
-                    </div>
-
-                    <table style={styles.table}>
-                      <thead>
-                        <tr>
-                          <th style={styles.th}>Area</th>
-                          <th style={styles.th}>Previous Version</th>
-                          <th style={styles.th}>Current Workspace</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {buildPackageComparison(getSelectedCompareVersion()).map((row) => (
-                          <tr key={row.label}>
-                            <td style={styles.tableName}>{row.label}</td>
-                            <td style={styles.td}>{row.previous}</td>
-                            <td style={styles.td}>{row.current}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p style={styles.muted}>No versions yet. Manual Save/Update creates version snapshots.</p>
+              </section>
             )}
-          </section>
-        )}
 
-        <section style={styles.statusBanner}>
-          <div>
-            <p style={styles.label}>Project Status</p>
-            <h2 style={styles.statusTitle}>{projectStatus}</h2>
-            <p style={styles.projectMeta}>
-              {activeProjectId ? "Active saved project" : "Unsaved workspace"} · {files.length} file{files.length === 1 ? "" : "s"} attached by name · {autoSaveState}
-              {lastAutoSavedAt ? ` at ${new Date(lastAutoSavedAt).toLocaleTimeString()}` : ""}
-            </p>
-          </div>
-
-          <div style={isMobile ? styles.mobileStatusFlow : styles.statusFlow}>
-            {PROJECT_STATUS_OPTIONS.map((status) => (
-              <button
-                key={status}
-                onClick={() => setProjectStatus(status)}
-                style={
-                  projectStatus === status
-                    ? styles.statusStepActive
-                    : styles.statusStep
-                }
-              >
-                {status}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section style={styles.projectBar}>
-          <div style={responsiveProjectBarTop}>
-            <div>
-              <p style={styles.label}>Project Workspace</p>
-              <h2 style={styles.projectBarTitle}>Name and save the current package</h2>
-            </div>
-
-            <div style={responsiveProjectActions}>
-              <button onClick={newProject} style={styles.secondaryButton}>
-                New / Clear
-              </button>
-
-              <button
-                onClick={saveProject}
-                disabled={projectSaving}
-                style={{
-                  ...styles.button,
-                  opacity: projectSaving ? 0.65 : 1,
-                  cursor: projectSaving ? "not-allowed" : "pointer",
-                }}
-              >
-                {projectSaving
-                  ? "Saving..."
-                  : activeProjectId
-                    ? "Update Project"
-                    : "Save Project"}
-              </button>
-            </div>
-          </div>
-
-          <div style={isMobile ? styles.mobileOneColumnGrid : styles.simpleProjectControls}>
-            <div style={styles.projectField}>
-              <label style={styles.projectLabel}>Current Project</label>
-              <input
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                placeholder="Optional. Name this delivery package..."
-                style={styles.projectInput}
-              />
-            </div>
-
-            <button
-              onClick={() => {
-                if (activeProjectId) deleteProject(activeProjectId);
-              }}
-              disabled={!activeProjectId}
-              style={{
-                ...styles.deleteButton,
-                opacity: activeProjectId ? 1 : 0.45,
-                cursor: activeProjectId ? "pointer" : "not-allowed",
-              }}
-            >
-              Delete
-            </button>
-          </div>
-        </section>
-
-        {loadingStage && <div style={styles.loadingStage}>{loadingStage}</div>}
-
-        {packageNeedsRegeneration && result && (
-          <div style={styles.regenerationNotice}>
-            <div>
-              <p style={styles.label}>Requirement changed after package generation</p>
-              <p style={styles.bodyText}>
-                Regenerate the package so design, stories, technical notes, QA, and review content match the updated requirement.
-              </p>
-            </div>
-            <button
-              onClick={regeneratePackageAfterRequirementUpdate}
-              disabled={loading}
-              style={{
-                ...styles.button,
-                opacity: loading ? 0.65 : 1,
-                cursor: loading ? "not-allowed" : "pointer",
-              }}
-            >
-              {loading ? "Regenerating..." : "Regenerate Package"}
-            </button>
-          </div>
-        )}
-
-        <section style={styles.intakeCard}>
-          <div style={responsiveCardHeader}>
-            <h2 style={styles.sectionTitle}>Requirement Intake</h2>
-            <span style={styles.muted}>
-              Text or docs → delivery-ready package
-            </span>
-          </div>
-
-          <textarea
-            value={requirement}
-            onChange={(e) => {
-              setRequirement(e.target.value);
-              if (result) setPackageNeedsRegeneration(true);
-            }}
-            placeholder="Paste rough requirement notes here..."
-            style={styles.textarea}
-          />
-
-          <div style={responsiveUploadArea}>
-            <div>
-              <p style={styles.uploadTitle}>Upload supporting documents</p>
-              <p style={styles.muted}>
-                Supported for MVP: .txt, .pdf, .docx. Avoid scanned/image-only
-                PDFs for now.
-              </p>
-            </div>
-
-            <input
-              type="file"
-              multiple
-              accept=".txt,.pdf,.docx"
-              onChange={(e) => setFiles(Array.from(e.target.files || []))}
-              style={styles.fileInput}
-            />
-          </div>
-
-          {files.length > 0 && (
-            <div style={styles.fileList}>
-              {files.map((file, index) => (
-                <div key={index} style={styles.fileChip}>
-                  {file.name}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div style={responsiveTextareaFooter}>
-            <span>
-              Paste rough notes. It does not need to be perfectly formatted.
-            </span>
-            <span>
-              {requirement.length} characters · {files.length} file
-              {files.length === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          <div style={isMobile ? { ...styles.intakeActions, ...styles.mobileActionRow } : styles.intakeActions}>
-            <button
-              onClick={analyzeRequirement}
-              disabled={analyzing || loading}
-              style={{
-                ...styles.secondaryButton,
-                opacity: analyzing || loading ? 0.65 : 1,
-                cursor: analyzing || loading ? "not-allowed" : "pointer",
-              }}
-            >
-              {analyzing ? "Analyzing..." : "Analyze Requirement"}
-            </button>
-
-            <button
-              onClick={() => generatePackage("quick")}
-              disabled={loading || analyzing}
-              style={{
-                ...styles.secondaryButton,
-                opacity: loading || analyzing ? 0.65 : 1,
-                cursor: loading || analyzing ? "not-allowed" : "pointer",
-              }}
-            >
-              {activeGenerationMode === "quick" ? "Generating Quick..." : "Quick Package"}
-            </button>
-
-            <button
-              onClick={() => generatePackage("full")}
-              disabled={loading || analyzing}
-              style={{
-                ...styles.button,
-                opacity: loading || analyzing ? 0.65 : 1,
-                cursor: loading || analyzing ? "not-allowed" : "pointer",
-              }}
-            >
-              {activeGenerationMode === "full" ? "Generating Full..." : "Full Detailed Package"}
-            </button>
-          </div>
-        </section>
-
-        {intakeAnalysis && (
-          <section style={styles.intakeAnalysisCard}>
-            <div style={styles.cardTitleRow}>
-              <div>
-                <p style={styles.label}>Delivery Lead Intake Review</p>
-                <h2 style={styles.cardTitle}>Requirement Readiness</h2>
-              </div>
-
-              <Badge>{intakeAnalysis.confidence} Confidence</Badge>
-            </div>
-
-            <div style={styles.stack}>
-              <div style={styles.innerCard}>
-                <p style={styles.label}>Understanding</p>
-                <p style={styles.bodyText}>{intakeAnalysis.understanding}</p>
-              </div>
-
-              <div style={responsiveTwoGrid}>
-                <div style={styles.innerCard}>
-                  <p style={styles.label}>Clarifying Questions</p>
-                  {intakeAnalysis.clarifying_questions?.length ? (
-                    <ul style={styles.list}>
-                      {intakeAnalysis.clarifying_questions.map(
-                        (question, index) => (
-                          <li key={index}>{question}</li>
-                        )
-                      )}
-                    </ul>
-                  ) : (
-                    <p style={styles.muted}>No major questions identified.</p>
-                  )}
+            {showSavedProjectsPanel && (
+              <section style={styles.compactPanel}>
+                <div style={styles.cardTitleRow}>
+                  <div>
+                    <p style={styles.label}>Saved Projects</p>
+                    <h2 style={styles.cardTitle}>
+                      Load or delete saved delivery packages
+                    </h2>
+                  </div>
+                  <button
+                    onClick={() => setWorkspacePanel("none")}
+                    style={styles.copyButton}
+                  >
+                    Close
+                  </button>
                 </div>
 
-                <div style={styles.innerCard}>
-                  <p style={styles.label}>Assumptions</p>
-                  {intakeAnalysis.assumptions?.length ? (
-                    <ul style={styles.list}>
-                      {intakeAnalysis.assumptions.map((assumption, index) => (
-                        <li key={index}>{assumption}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p style={styles.muted}>No assumptions identified.</p>
-                  )}
-                </div>
-              </div>
+                {savedProjects.length ? (
+                  <div
+                    style={
+                      isMobile
+                        ? styles.mobileOneColumnGrid
+                        : styles.savedProjectGrid
+                    }
+                  >
+                    {savedProjects.map((project) => (
+                      <div
+                        key={project.id}
+                        style={
+                          project.id === activeProjectId
+                            ? {
+                                ...styles.savedProjectCard,
+                                ...styles.savedProjectCardActive,
+                              }
+                            : styles.savedProjectCard
+                        }
+                      >
+                        <button
+                          onClick={() => {
+                            loadProject(project);
+                            setWorkspacePanel("none");
+                          }}
+                          style={styles.savedProjectLoadButton}
+                        >
+                          <div style={styles.rowBetween}>
+                            <h3 style={styles.itemTitle}>
+                              {project.project_name}
+                            </h3>
+                            <Badge>{project.project_status || "Draft"}</Badge>
+                          </div>
+                          <p style={styles.muted}>
+                            Updated{" "}
+                            {new Date(project.updated_at).toLocaleString()}
+                          </p>
+                          <p style={styles.projectMeta}>
+                            {project.result?.generation_mode || "No package"} ·{" "}
+                            {scoreText(
+                              project.result?.quality_score?.overall_score,
+                            )}{" "}
+                            · {(project.versions || []).length} version
+                            {(project.versions || []).length === 1 ? "" : "s"}
+                          </p>
+                        </button>
 
-              {intakeAnalysis.missing_requirements?.length > 0 && (
-                <div style={styles.innerCard}>
-                  <p style={styles.label}>Missing / Weak Requirements</p>
-                  <div style={styles.stack}>
-                    {intakeAnalysis.missing_requirements.map((item, index) => (
-                      <div key={index} style={styles.riskBox}>
-                        <p style={styles.riskTitle}>{item.gap}</p>
-                        <p style={styles.bodyText}>
-                          <strong>Why it matters:</strong>{" "}
-                          {item.why_it_matters}
-                        </p>
+                        <button
+                          onClick={() => deleteProject(project.id)}
+                          style={styles.dangerButton}
+                        >
+                          Delete
+                        </button>
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <p style={styles.muted}>
+                    No saved projects yet. Create or generate a package, then
+                    click Save Project.
+                  </p>
+                )}
+              </section>
+            )}
+
+            {showVersionHistoryPanel && (
+              <section style={styles.compactPanel}>
+                <div style={styles.cardTitleRow}>
+                  <div>
+                    <p style={styles.label}>Version History</p>
+                    <h2 style={styles.cardTitle}>
+                      Compare current package with previous saved states
+                    </h2>
+                  </div>
+                  <button
+                    onClick={() => setWorkspacePanel("none")}
+                    style={styles.copyButton}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                {projectVersions.length ? (
+                  <div style={styles.stack}>
+                    <div
+                      style={
+                        isMobile
+                          ? styles.mobileOneColumnGrid
+                          : styles.versionControlRow
+                      }
+                    >
+                      <div style={styles.projectField}>
+                        <label style={styles.projectLabel}>
+                          Previous Version
+                        </label>
+                        <select
+                          value={compareVersionId}
+                          onChange={(e) => setCompareVersionId(e.target.value)}
+                          style={styles.projectSelect}
+                        >
+                          <option value="">Select a previous version...</option>
+                          {projectVersions.map((version) => (
+                            <option key={version.id} value={version.id}>
+                              {version.label} ·{" "}
+                              {new Date(version.created_at).toLocaleString()}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          if (!compareVersionId) {
+                            alert("Select a previous version first.");
+                            return;
+                          }
+                          setShowComparePanel(!showComparePanel);
+                        }}
+                        disabled={!compareVersionId || !result}
+                        style={{
+                          ...styles.secondaryButton,
+                          opacity: compareVersionId && result ? 1 : 0.5,
+                          cursor:
+                            compareVersionId && result
+                              ? "pointer"
+                              : "not-allowed",
+                        }}
+                      >
+                        Compare Version
+                      </button>
+                    </div>
+
+                    <div style={styles.versionList}>
+                      {projectVersions.map((version) => (
+                        <button
+                          key={version.id}
+                          onClick={() => {
+                            setCompareVersionId(version.id);
+                            setShowComparePanel(true);
+                          }}
+                          style={
+                            version.id === compareVersionId
+                              ? {
+                                  ...styles.versionRow,
+                                  ...styles.versionRowActive,
+                                }
+                              : styles.versionRow
+                          }
+                        >
+                          <div>
+                            <p style={styles.itemTitle}>{version.label}</p>
+                            <p style={styles.muted}>
+                              {new Date(version.created_at).toLocaleString()}
+                            </p>
+                          </div>
+                          <div style={styles.versionMetaGroup}>
+                            <Badge>{version.project_status}</Badge>
+                            <span style={styles.versionMeta}>
+                              {version.result?.generation_mode || "No package"}
+                            </span>
+                            <span style={styles.versionMeta}>
+                              {scoreText(
+                                version.result?.quality_score?.overall_score,
+                              )}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    {showComparePanel && getSelectedCompareVersion() && (
+                      <div style={styles.comparePanel}>
+                        <div style={styles.cardTitleRow}>
+                          <div>
+                            <p style={styles.label}>
+                              Compare current package vs previous version
+                            </p>
+                            <h3 style={styles.itemTitle}>
+                              {getSelectedCompareVersion()?.label}
+                            </h3>
+                          </div>
+                          <button
+                            style={styles.copyButton}
+                            onClick={() => setShowComparePanel(false)}
+                          >
+                            Close Compare
+                          </button>
+                        </div>
+
+                        <table style={styles.table}>
+                          <thead>
+                            <tr>
+                              <th style={styles.th}>Area</th>
+                              <th style={styles.th}>Previous Version</th>
+                              <th style={styles.th}>Current Workspace</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {buildPackageComparison(
+                              getSelectedCompareVersion(),
+                            ).map((row) => (
+                              <tr key={row.label}>
+                                <td style={styles.tableName}>{row.label}</td>
+                                <td style={styles.td}>{row.previous}</td>
+                                <td style={styles.td}>{row.current}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p style={styles.muted}>
+                    No versions yet. Manual Save/Update creates version
+                    snapshots.
+                  </p>
+                )}
+              </section>
+            )}
+
+            <section style={styles.statusBanner}>
+              <div>
+                <p style={styles.label}>Project Status</p>
+                <h2 style={styles.statusTitle}>{projectStatus}</h2>
+                <p style={styles.projectMeta}>
+                  {activeProjectId
+                    ? "Active saved project"
+                    : "Unsaved workspace"}{" "}
+                  · {files.length} file{files.length === 1 ? "" : "s"} attached
+                  by name · {autoSaveState}
+                  {lastAutoSavedAt
+                    ? ` at ${new Date(lastAutoSavedAt).toLocaleTimeString()}`
+                    : ""}
+                </p>
+              </div>
+
+              <div
+                style={isMobile ? styles.mobileStatusFlow : styles.statusFlow}
+              >
+                {PROJECT_STATUS_OPTIONS.map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setProjectStatus(status)}
+                    style={
+                      projectStatus === status
+                        ? styles.statusStepActive
+                        : styles.statusStep
+                    }
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section style={styles.projectBar}>
+              <div style={responsiveProjectBarTop}>
+                <div>
+                  <p style={styles.label}>Project Workspace</p>
+                  <h2 style={styles.projectBarTitle}>
+                    Name and save the current package
+                  </h2>
+                </div>
+
+                <div style={responsiveProjectActions}>
+                  <button onClick={newProject} style={styles.secondaryButton}>
+                    New / Clear
+                  </button>
+
+                  <button
+                    onClick={saveProject}
+                    disabled={projectSaving}
+                    style={{
+                      ...styles.button,
+                      opacity: projectSaving ? 0.65 : 1,
+                      cursor: projectSaving ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {projectSaving
+                      ? "Saving..."
+                      : activeProjectId
+                        ? "Update Project"
+                        : "Save Project"}
+                  </button>
+                </div>
+              </div>
+
+              <div
+                style={
+                  isMobile
+                    ? styles.mobileOneColumnGrid
+                    : styles.simpleProjectControls
+                }
+              >
+                <div style={styles.projectField}>
+                  <label style={styles.projectLabel}>Current Project</label>
+                  <input
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                    placeholder="Optional. Name this delivery package..."
+                    style={styles.projectInput}
+                  />
+                </div>
+
+                <button
+                  onClick={() => {
+                    if (activeProjectId) deleteProject(activeProjectId);
+                  }}
+                  disabled={!activeProjectId}
+                  style={{
+                    ...styles.deleteButton,
+                    opacity: activeProjectId ? 1 : 0.45,
+                    cursor: activeProjectId ? "pointer" : "not-allowed",
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </section>
+
+            {loadingStage && (
+              <div style={styles.loadingStage}>{loadingStage}</div>
+            )}
+
+            {packageNeedsRegeneration && result && (
+              <div style={styles.regenerationNotice}>
+                <div>
+                  <p style={styles.label}>
+                    Requirement changed after package generation
+                  </p>
+                  <p style={styles.bodyText}>
+                    Regenerate the package so design, stories, technical notes,
+                    QA, and review content match the updated requirement.
+                  </p>
+                </div>
+                <button
+                  onClick={regeneratePackageAfterRequirementUpdate}
+                  disabled={loading}
+                  style={{
+                    ...styles.button,
+                    opacity: loading ? 0.65 : 1,
+                    cursor: loading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {loading ? "Regenerating..." : "Regenerate Package"}
+                </button>
+              </div>
+            )}
+
+            <section style={styles.intakeCard}>
+              <div style={responsiveCardHeader}>
+                <h2 style={styles.sectionTitle}>Requirement Intake</h2>
+                <span style={styles.muted}>
+                  Text or docs → delivery-ready package
+                </span>
+              </div>
+
+              <textarea
+                value={requirement}
+                onChange={(e) => {
+                  setRequirement(e.target.value);
+                  if (result) setPackageNeedsRegeneration(true);
+                }}
+                placeholder="Paste rough requirement notes here..."
+                style={styles.textarea}
+              />
+
+              <div style={responsiveUploadArea}>
+                <div>
+                  <p style={styles.uploadTitle}>Upload supporting documents</p>
+                  <p style={styles.muted}>
+                    Supported for MVP: .txt, .pdf, .docx. Avoid
+                    scanned/image-only PDFs for now.
+                  </p>
+                </div>
+
+                <input
+                  type="file"
+                  multiple
+                  accept=".txt,.pdf,.docx"
+                  onChange={(e) => setFiles(Array.from(e.target.files || []))}
+                  style={styles.fileInput}
+                />
+              </div>
+
+              {files.length > 0 && (
+                <div style={styles.fileList}>
+                  {files.map((file, index) => (
+                    <div key={index} style={styles.fileChip}>
+                      {file.name}
+                    </div>
+                  ))}
                 </div>
               )}
 
-              <div style={styles.innerCard}>
-                <p style={styles.label}>Answer Questions / Add Clarifications</p>
-                <textarea
-                  value={clarificationAnswers}
-                  onChange={(e) => setClarificationAnswers(e.target.value)}
-                  placeholder="Answer the clarifying questions here. Then click Reanalyze with Answers or Generate Package with Answers..."
-                  style={{
-                    width: "100%",
-                    minHeight: "240px",
-                    resize: "vertical",
-                    border: "1px solid #94A3B8",
-                    borderRadius: "16px",
-                    background: "#FFFFFF",
-                    padding: "16px",
-                    color: "#0F172A",
-                    fontSize: "15px",
-                    lineHeight: "1.7",
-                    outline: "none",
-                    boxShadow: "inset 0 1px 4px rgba(15, 23, 42, 0.08)",
-                    boxSizing: "border-box",
-                  }}
-                />
-
-                <div style={styles.analysisActions}>
-                  <button
-                    onClick={analyzeRequirement}
-                    disabled={analyzing || loading}
-                    style={{
-                      ...styles.secondaryButton,
-                      opacity: analyzing || loading ? 0.65 : 1,
-                      cursor: analyzing || loading ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {analyzing ? "Reanalyzing..." : "Reanalyze with Answers"}
-                  </button>
-
-                  <button
-                    onClick={() => generatePackage("quick")}
-                    disabled={loading || analyzing}
-                    style={{
-                      ...styles.secondaryButton,
-                      opacity: loading || analyzing ? 0.65 : 1,
-                      cursor: loading || analyzing ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {activeGenerationMode === "quick" ? "Generating Quick..." : "Quick Package with Answers"}
-                  </button>
-
-                  <button
-                    onClick={() => generatePackage("full")}
-                    disabled={loading || analyzing}
-                    style={{
-                      ...styles.button,
-                      opacity: loading || analyzing ? 0.65 : 1,
-                      cursor: loading || analyzing ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {activeGenerationMode === "full" ? "Generating Full..." : "Full Detailed Package with Answers"}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setIntakeAnalysis(null);
-                      setClarificationAnswers("");
-                    }}
-                    style={styles.secondaryButton}
-                  >
-                    Edit Requirement
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {!result && (
-          <section style={styles.emptyCard}>
-            <h2 style={styles.sectionTitle}>No package generated yet</h2>
-            <p style={styles.bodyText}>
-              Add a requirement or upload documents, then click Analyze
-              Requirement or Generate Package.
-            </p>
-          </section>
-        )}
-
-        {result && (
-          <section style={styles.packageWorkspace}>
-            <div style={styles.packageSummaryCard}>
-              <div>
-                <p style={styles.label}>Generated Package</p>
-                <h2 style={styles.packageTitle}>
-                  {projectName || "Current Delivery Package"}
-                </h2>
-                <p style={styles.muted}>
-                  Use the section tabs to review, refine, and export the package without scrolling through the full output.
-                </p>
-                {(!result.developer || !result.qa || !result.quality_score) && (
-                  <div style={{ marginTop: "14px" }}>
-                    <button
-                      onClick={upgradeQuickPackageToFull}
-                      disabled={loading}
-                      style={{
-                        ...styles.button,
-                        opacity: loading ? 0.65 : 1,
-                        cursor: loading ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      {loading ? "Upgrading..." : "Upgrade to Full Detailed Package"}
-                    </button>
-                  </div>
-                )}
+              <div style={responsiveTextareaFooter}>
+                <span>
+                  Paste rough notes. It does not need to be perfectly formatted.
+                </span>
+                <span>
+                  {requirement.length} characters · {files.length} file
+                  {files.length === 1 ? "" : "s"}
+                </span>
               </div>
 
-              <div style={{ marginTop: "12px" }}>
-                  <button
-                    onClick={runAgentReview}
-                    disabled={loading}
-                    style={{
-                      ...styles.secondaryButton,
-                      opacity: loading ? 0.65 : 1,
-                      cursor: loading ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {loading ? "Reviewing..." : "Run Agent Review"}
-                  </button>
-                </div>
-
-              <div style={isMobile ? styles.mobileSnapshotGrid : styles.snapshotGrid}>
-                <div style={styles.snapshotMetric}>
-                  <p style={styles.label}>{packageScoreLabel}</p>
-                  <p style={styles.snapshotNumber}>
-                    {displayScore(result.quality_score?.overall_score)}
-                  </p>
-                  <p style={styles.snapshotText}>
-                    {hasScore ? "/ 100" : result.generation_mode === "quick" ? "not scored yet" : "unavailable"}
-                  </p>
-                </div>
-                <div style={styles.snapshotMetric}>
-                  <p style={styles.label}>Stories</p>
-                  <p style={styles.snapshotNumber}>{result.stories?.length || 0}</p>
-                  <p style={styles.snapshotText}>generated</p>
-                </div>
-                <div style={styles.snapshotMetric}>
-                  <p style={styles.label}>Test Cases</p>
-                  <p style={styles.snapshotNumber}>
-                    {result.generation_mode === "quick" ? "—" : result.qa?.test_cases?.length || 0}
-                  </p>
-                  <p style={styles.snapshotText}>
-                    {result.generation_mode === "quick" ? "full package only" : "QA cases"}
-                  </p>
-                </div>
-                <div style={styles.snapshotMetric}>
-                  <p style={styles.label}>Tech Objects</p>
-                  <p style={styles.snapshotNumber}>
-                    {result.generation_mode === "quick" ? "—" : result.developer?.service_now_objects?.length || 0}
-                  </p>
-                  <p style={styles.snapshotText}>
-                    {result.generation_mode === "quick" ? "full package only" : "objects"}
-                  </p>
-                </div>
-                <div style={styles.snapshotMetric}>
-                  <p style={styles.label}>Open Questions</p>
-                  <p style={styles.snapshotNumber}>{result.open_questions?.length || 0}</p>
-                  <p style={styles.snapshotText}>items</p>
-                </div>
-              </div>
-            </div>
-
-            <div style={isMobile ? styles.mobilePackageNav : styles.packageNav}>
-              {PACKAGE_TABS.map((tab) => (
+              <div
+                style={
+                  isMobile
+                    ? { ...styles.intakeActions, ...styles.mobileActionRow }
+                    : styles.intakeActions
+                }
+              >
                 <button
-                  key={tab.id}
-                  onClick={() => setPackageTab(tab.id)}
-                  style={
-                    packageTab === tab.id
-                      ? styles.activePackageTab
-                      : styles.inactivePackageTab
-                  }
+                  onClick={analyzeRequirement}
+                  disabled={analyzing || loading}
+                  style={{
+                    ...styles.secondaryButton,
+                    opacity: analyzing || loading ? 0.65 : 1,
+                    cursor: analyzing || loading ? "not-allowed" : "pointer",
+                  }}
                 >
-                  {tab.label}
+                  {analyzing ? "Analyzing..." : "Analyze Requirement"}
                 </button>
-              ))}
-            </div>
 
-            {packageTab === "overview" && (
-              <div style={styles.results}>
-                <Card
-                  title="Delivery Lead Review"
-                  copyValue={JSON.stringify(result.delivery_lead_review, null, 2)}
-                  onCopy={copyToClipboard}
+                <button
+                  onClick={() => generatePackage("quick")}
+                  disabled={loading || analyzing}
+                  style={{
+                    ...styles.secondaryButton,
+                    opacity: loading || analyzing ? 0.65 : 1,
+                    cursor: loading || analyzing ? "not-allowed" : "pointer",
+                  }}
                 >
-                  {result.delivery_lead_review ? (
-                    <div style={styles.stack}>
-                      <div style={styles.innerCard}>
-                        <p style={styles.label}>Understanding</p>
-                        <p style={styles.bodyText}>
-                          {result.delivery_lead_review.understanding}
-                        </p>
-                      </div>
+                  {activeGenerationMode === "quick"
+                    ? "Generating Quick..."
+                    : "Quick Package"}
+                </button>
 
-                      <div style={responsiveTwoGrid}>
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>MVP Scope</p>
-                          <ul style={styles.list}>
-                            {result.delivery_lead_review.mvp_scope?.map((item, index) => (
-                              <li key={index}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Phase 2 Scope</p>
-                          <ul style={styles.list}>
-                            {result.delivery_lead_review.phase_2_scope?.map((item, index) => (
-                              <li key={index}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-
-                      <div style={responsiveTwoGrid}>
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Clarifying Questions</p>
-                          <ul style={styles.list}>
-                            {result.delivery_lead_review.clarifying_questions?.map((question, index) => (
-                              <li key={index}>{question}</li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Recommended Next Steps</p>
-                          <ul style={styles.list}>
-                            {result.delivery_lead_review.recommended_next_steps?.map((step, index) => (
-                              <li key={index}>{step}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-
-                      {result.delivery_lead_review.missing_requirements?.length > 0 && (
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Missing / Weak Requirements</p>
-                          <div style={styles.stack}>
-                            {result.delivery_lead_review.missing_requirements.map((item, index) => (
-                              <div key={index} style={styles.riskBox}>
-                                <p style={styles.riskTitle}>{item.gap}</p>
-                                <p style={styles.bodyText}>
-                                  <strong>Why it matters:</strong> {item.why_it_matters}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {result.delivery_lead_review.assumptions?.length > 0 && (
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Assumptions</p>
-                          <ul style={styles.list}>
-                            {result.delivery_lead_review.assumptions.map((item, index) => (
-                              <li key={index}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      <RegeneratePanel
-                        section="delivery_lead_review"
-                        instruction={regenerateInstruction}
-                        setInstruction={setRegenerateInstruction}
-                        regeneratingSection={regeneratingSection}
-                        onRegenerate={regenerateSection}
-                      />
-                    </div>
-                  ) : (
-                    <p style={styles.muted}>No Delivery Lead review generated.</p>
-                  )}
-                </Card>
-
-                <Card
-                  title={packageScoreTitle}
-                  copyValue={JSON.stringify(result.quality_score, null, 2)}
-                  onCopy={copyToClipboard}
+                <button
+                  onClick={() => generatePackage("full")}
+                  disabled={loading || analyzing}
+                  style={{
+                    ...styles.button,
+                    opacity: loading || analyzing ? 0.65 : 1,
+                    cursor: loading || analyzing ? "not-allowed" : "pointer",
+                  }}
                 >
-                  {result.quality_score ? (
-                    <div style={styles.stack}>
-                      {!hasUsableQualityScore(result.quality_score) && (
-                        <div style={styles.riskBox}>
-                          <p style={styles.riskTitle}>Score unavailable</p>
-                          <p style={styles.bodyText}>
-                            {result.quality_score.summary ||
-                              "The backend did not return a usable score. Regenerate the score or check the quality score agent."}
-                          </p>
-                        </div>
-                      )}
-
-                      <div style={responsiveScoreGrid}>
-                        <ScoreBox
-                          label="Overall"
-                          score={result.quality_score.overall_score}
-                          color={getScoreColor(result.quality_score.overall_score)}
-                          background={getScoreBackground(result.quality_score.overall_score)}
-                        />
-                        <ScoreBox
-                          label="Completeness"
-                          score={result.quality_score.completeness_score}
-                          color={getScoreColor(result.quality_score.completeness_score)}
-                          background={getScoreBackground(result.quality_score.completeness_score)}
-                        />
-                        <ScoreBox
-                          label="Risk"
-                          score={result.quality_score.risk_score}
-                          color={getScoreColor(result.quality_score.risk_score)}
-                          background={getScoreBackground(result.quality_score.risk_score)}
-                        />
-                        <ScoreBox
-                          label="Readiness"
-                          score={result.quality_score.readiness_score}
-                          color={getScoreColor(result.quality_score.readiness_score)}
-                          background={getScoreBackground(result.quality_score.readiness_score)}
-                        />
-                      </div>
-
-                      <div style={styles.innerCard}>
-                        <p style={styles.label}>Rating</p>
-                        <p style={styles.accentText}>{result.quality_score.rating}</p>
-                        <p style={styles.bodyText}>{result.quality_score.summary}</p>
-                      </div>
-
-                      {result.quality_score.build_readiness_verdict && (
-  <div style={styles.innerCard}>
-    <p style={styles.label}>Build Readiness Verdict</p>
-    <p style={styles.accentText}>
-      {result.quality_score.build_readiness_verdict}
-    </p>
-  </div>
-)}
-
-    {result.quality_score.score_rationale && (
-      <div style={styles.innerCard}>
-        <p style={styles.label}>Score Rationale</p>
-        <p style={styles.bodyText}>
-          <strong>Completeness:</strong>{" "}
-          {result.quality_score.score_rationale.completeness}
-        </p>
-        <p style={styles.bodyText}>
-          <strong>Risk:</strong> {result.quality_score.score_rationale.risk}
-        </p>
-        <p style={styles.bodyText}>
-          <strong>Readiness:</strong>{" "}
-          {result.quality_score.score_rationale.readiness}
-        </p>
-      </div>
-    )}
-
-    {result.quality_score.score_caps_applied?.length ? (
-      <div style={styles.riskBox}>
-        <p style={styles.riskTitle}>Score Caps / Penalties Applied</p>
-        <ul style={styles.list}>
-          {result.quality_score.score_caps_applied.map((item, index) => (
-            <li key={index}>{item}</li>
-          ))}
-        </ul>
-      </div>
-    ) : null}
-
-                      <div style={responsiveTwoGrid}>
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Strengths</p>
-                          <ul style={styles.list}>
-                            {result.quality_score.strengths?.map((item, index) => (
-                              <li key={index}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Weaknesses</p>
-                          <ul style={styles.list}>
-                            {result.quality_score.weaknesses?.map((item, index) => (
-                              <li key={index}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-
-                      <div style={styles.innerCard}>
-                        <p style={styles.label}>Recommended Fixes</p>
-                        <ul style={styles.list}>
-                          {result.quality_score.recommended_fixes?.map((item, index) => (
-                            <li key={index}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <RegeneratePanel
-                        section="quality_score"
-                        instruction={regenerateInstruction}
-                        setInstruction={setRegenerateInstruction}
-                        regeneratingSection={regeneratingSection}
-                        onRegenerate={regenerateSection}
-                      />
-                    </div>
-                  ) : (
-                    <p style={styles.muted}>No quality score generated.</p>
-                  )}
-                </Card>
-
-                <Card
-                  title="Process / State Flow Diagram"
-                  copyValue={result.process_diagram?.mermaid_code || ""}
-                  onCopy={copyToClipboard}
-                >
-                  {result.process_diagram ? (
-                    <div style={styles.stack}>
-                      <div style={styles.innerCard}>
-                        <p style={styles.label}>{result.process_diagram.title}</p>
-                        <p style={styles.bodyText}>{result.process_diagram.summary}</p>
-                      </div>
-
-                      <div style={styles.diagramShell}>
-                        <MermaidDiagram chart={result.process_diagram.mermaid_code} />
-                      </div>
-
-                      <details style={styles.detailsBox}>
-                        <summary style={styles.detailsSummary}>View Mermaid Code</summary>
-                        <pre style={styles.mermaidCodeBlock}>{result.process_diagram.mermaid_code}</pre>
-                      </details>
-
-                      {result.process_diagram.diagram_notes?.length > 0 && (
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Diagram Notes</p>
-                          <ul style={styles.list}>
-                            {result.process_diagram.diagram_notes.map((note, index) => (
-                              <li key={index}>{note}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      <RegeneratePanel
-                        section="process_diagram"
-                        instruction={regenerateInstruction}
-                        setInstruction={setRegenerateInstruction}
-                        regeneratingSection={regeneratingSection}
-                        onRegenerate={regenerateSection}
-                      />
-                    </div>
-                  ) : (
-                    <p style={styles.muted}>No diagram generated.</p>
-                  )}
-                </Card>
+                  {activeGenerationMode === "full"
+                    ? "Generating Full..."
+                    : "Full Detailed Package"}
+                </button>
               </div>
-            )}
+            </section>
 
-            {packageTab === "design" && (
-              <div style={styles.results}>
-                <div style={responsiveTopGrid}>
-                  <Card
-                    title="Requirement Summary"
-                    span={2}
-                    copyValue={result.requirement_summary}
-                    onCopy={copyToClipboard}
-                  >
-                    <p style={styles.bodyText}>{result.requirement_summary}</p>
-                  </Card>
-
-                  <Card
-                    title="Recommended App Type"
-                    copyValue={result.recommended_app_type}
-                    onCopy={copyToClipboard}
-                  >
-                    <p style={styles.accentText}>{result.recommended_app_type}</p>
-                    <p style={styles.muted}>Use this as the delivery architecture direction before refining stories and technical notes.</p>
-                  </Card>
-                </div>
-
-                <Card
-                  title="Open Questions / Build Gaps"
-                  copyValue={result.open_questions?.join("\n")}
-                  onCopy={copyToClipboard}
-                >
-                  {result.open_questions?.length ? (
-                    <div style={responsiveTwoGrid}>
-                      {result.open_questions.map((question, index) => (
-                        <div key={index} style={styles.questionCard}>
-                          <p style={styles.questionNumber}>Question {index + 1}</p>
-                          <p style={styles.bodyText}>{question}</p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p style={styles.muted}>No open questions identified.</p>
-                  )}
-                </Card>
-
-                <Card
-                  title="Solution Design"
-                  copyValue={result.solution_design}
-                  onCopy={copyToClipboard}
-                >
-                  <div style={styles.stack}>
-                    <p style={styles.bodyText}>{result.solution_design}</p>
-                    <RegeneratePanel
-                      section="solution_design"
-                      instruction={regenerateInstruction}
-                      setInstruction={setRegenerateInstruction}
-                      regeneratingSection={regeneratingSection}
-                      onRegenerate={regenerateSection}
-                    />
+            {intakeAnalysis && (
+              <section style={styles.intakeAnalysisCard}>
+                <div style={styles.cardTitleRow}>
+                  <div>
+                    <p style={styles.label}>Delivery Lead Intake Review</p>
+                    <h2 style={styles.cardTitle}>Requirement Readiness</h2>
                   </div>
-                </Card>
 
-                <Card
-                  title="Proposed Tables"
-                  copyValue={JSON.stringify(result.tables, null, 2)}
-                  onCopy={copyToClipboard}
-                >
-                  {result.tables?.length ? (
-                    <table style={styles.table}>
-                      <thead>
-                        <tr>
-                          <th style={styles.th}>Table</th>
-                          <th style={styles.th}>Type</th>
-                          <th style={styles.th}>Purpose</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {result.tables.map((table, index) => (
-                          <tr key={index}>
-                            <td style={styles.tableName}>{table.table_name}</td>
-                            <td style={styles.td}>{table.type}</td>
-                            <td style={styles.td}>{table.purpose}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <p style={styles.muted}>No tables returned.</p>
-                  )}
-                </Card>
-
-                <div style={responsiveTwoGrid}>
-                  <Card
-                    title="Workflow Steps"
-                    copyValue={result.workflow_steps?.join("\n")}
-                    onCopy={copyToClipboard}
-                  >
-                    {result.workflow_steps?.length ? (
-                      <ol style={styles.list}>
-                        {result.workflow_steps.map((step, index) => (
-                          <li key={index}>{step}</li>
-                        ))}
-                      </ol>
-                    ) : (
-                      <p style={styles.muted}>No workflow steps returned.</p>
-                    )}
-                  </Card>
-
-                  <Card
-                    title="Risks"
-                    copyValue={JSON.stringify(result.risks, null, 2)}
-                    onCopy={copyToClipboard}
-                  >
-                    {result.risks?.length ? (
-                      <div style={styles.stack}>
-                        {result.risks.map((risk, index) => (
-                          <div key={index} style={styles.riskBox}>
-                            <p style={styles.riskTitle}>{risk.risk}</p>
-                            <p style={styles.bodyText}>
-                              <strong>Mitigation:</strong> {risk.mitigation}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p style={styles.muted}>No risks returned.</p>
-                    )}
-                  </Card>
+                  <Badge>{intakeAnalysis.confidence} Confidence</Badge>
                 </div>
-              </div>
-            )}
 
-            {packageTab === "stories" && (
-              <Card
-                title="Stories"
-                copyValue={JSON.stringify(result.stories, null, 2)}
-                onCopy={copyToClipboard}
-              >
                 <div style={styles.stack}>
-                  {result.epic && (
+                  <div style={styles.innerCard}>
+                    <p style={styles.label}>Understanding</p>
+                    <p style={styles.bodyText}>
+                      {intakeAnalysis.understanding}
+                    </p>
+                  </div>
+
+                  <div style={responsiveTwoGrid}>
                     <div style={styles.innerCard}>
-                      <p style={styles.label}>Epic</p>
-                      <p style={styles.accentText}>{result.epic}</p>
-                    </div>
-                  )}
-
-                  {result.stories?.length ? (
-                    <div style={responsiveTwoGrid}>
-                      {result.stories.map((story, index) => (
-                        <div key={index} style={styles.innerCard}>
-                          <div style={styles.rowBetween}>
-                            <h3 style={styles.itemTitle}>{story.title}</h3>
-                            <Badge>{story.priority}</Badge>
-                          </div>
-
-                          <p style={styles.bodyText}>{story.story}</p>
-
-                          {story.acceptance_criteria?.length > 0 && (
-                            <>
-                              <p style={styles.label}>Acceptance Criteria</p>
-                              <ul style={styles.list}>
-                                {story.acceptance_criteria.map((criteria, i) => (
-                                  <li key={i}>{criteria}</li>
-                                ))}
-                              </ul>
-                            </>
+                      <p style={styles.label}>Clarifying Questions</p>
+                      {intakeAnalysis.clarifying_questions?.length ? (
+                        <ul style={styles.list}>
+                          {intakeAnalysis.clarifying_questions.map(
+                            (question, index) => (
+                              <li key={index}>{question}</li>
+                            ),
                           )}
-
-                          <button
-                            style={styles.smallCopyButton}
-                            onClick={() => copyToClipboard(JSON.stringify(story, null, 2))}
-                          >
-                            Copy Story
-                          </button>
-                        </div>
-                      ))}
+                        </ul>
+                      ) : (
+                        <p style={styles.muted}>
+                          No major questions identified.
+                        </p>
+                      )}
                     </div>
-                  ) : (
-                    <p style={styles.muted}>No stories generated.</p>
-                  )}
 
-                  <RegeneratePanel
-                    section="stories"
-                    instruction={regenerateInstruction}
-                    setInstruction={setRegenerateInstruction}
-                    regeneratingSection={regeneratingSection}
-                    onRegenerate={regenerateSection}
-                  />
-                </div>
-              </Card>
-            )}
-
-            {packageTab === "technical" && (
-              <Card
-                title="Technical Workbench"
-                copyValue={JSON.stringify(result.developer, null, 2)}
-                onCopy={copyToClipboard}
-              >
-                <div style={styles.stack}>
-                  {result.developer ? (
-                    <>
-                      <div style={styles.technicalHero}>
-                        <div>
-                          <p style={styles.label}>Implementation Summary</p>
-                          <p style={styles.bodyText}>{result.developer.implementation_summary}</p>
-                        </div>
-                        <div style={styles.technicalStatsGrid}>
-                          <div style={styles.technicalStat}>
-                            <p style={styles.label}>Objects</p>
-                            <p style={styles.snapshotNumber}>{result.developer.service_now_objects?.length || 0}</p>
-                          </div>
-                          <div style={styles.technicalStat}>
-                            <p style={styles.label}>Flows</p>
-                            <p style={styles.snapshotNumber}>{result.developer.flow_designer_notes?.length || 0}</p>
-                          </div>
-                          <div style={styles.technicalStat}>
-                            <p style={styles.label}>Rules</p>
-                            <p style={styles.snapshotNumber}>{result.developer.business_rules?.length || 0}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {result.developer.service_now_objects?.length > 0 && (
-                        <div style={styles.techSection}>
-                          <div style={styles.techSectionHeader}>
-                            <div>
-                              <p style={styles.label}>Build Inventory</p>
-                              <h3 style={styles.itemTitle}>ServiceNow Objects</h3>
-                            </div>
-                            <Badge>{result.developer.service_now_objects.length} objects</Badge>
-                          </div>
-                          <div style={responsiveTwoGrid}>
-                            {result.developer.service_now_objects.map((object, index) => (
-                              <button
-                                key={index}
-                                style={styles.clickableInnerCard}
-                                onClick={() =>
-                                  generateCodeForCard(
-                                    { category: "ServiceNow Object", ...object },
-                                    object.name
-                                  )
-                                }
-                              >
-                                <div style={styles.rowBetween}>
-                                  <p style={styles.accentText}>{object.name}</p>
-                                  <span style={styles.objectTypePill}>{object.object_type}</span>
-                                </div>
-                                <p style={styles.bodyText}>{object.purpose}</p>
-                                <p style={styles.clickHint}>Generate implementation guidance →</p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {result.developer.flow_designer_notes?.length > 0 && (
-                        <div style={styles.techSection}>
-                          <div style={styles.techSectionHeader}>
-                            <div>
-                              <p style={styles.label}>Automation</p>
-                              <h3 style={styles.itemTitle}>Flow Designer</h3>
-                            </div>
-                            <Badge>{result.developer.flow_designer_notes.length} flows</Badge>
-                          </div>
-                          <div style={styles.stack}>
-                            {result.developer.flow_designer_notes.map((flow, index) => (
-                              <button
-                                key={index}
-                                style={styles.clickableInnerCard}
-                                onClick={() =>
-                                  generateCodeForCard(
-                                    { category: "Flow Designer", ...flow },
-                                    flow.flow_name
-                                  )
-                                }
-                              >
-                                <div style={styles.rowBetween}>
-                                  <h3 style={styles.itemTitle}>{flow.flow_name}</h3>
-                                  <span style={styles.statusChip}>Flow</span>
-                                </div>
-                                <p style={styles.muted}>Trigger: {flow.trigger}</p>
-                                <ol style={styles.list}>
-                                  {flow.steps.map((step, i) => (
-                                    <li key={i}>{step}</li>
-                                  ))}
-                                </ol>
-                                <p style={styles.clickHint}>Generate flow implementation details →</p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {result.developer.business_rules?.length > 0 && (
-                        <div style={styles.techSection}>
-                          <div style={styles.techSectionHeader}>
-                            <div>
-                              <p style={styles.label}>Server Logic</p>
-                              <h3 style={styles.itemTitle}>Business Rules</h3>
-                            </div>
-                            <Badge>{result.developer.business_rules.length} rules</Badge>
-                          </div>
-                          <div style={responsiveTwoGrid}>
-                            {result.developer.business_rules.map((rule, index) => (
-                              <button
-                                key={index}
-                                style={styles.clickableInnerCard}
-                                onClick={() =>
-                                  generateCodeForCard(
-                                    { category: "Business Rule", ...rule },
-                                    rule.name
-                                  )
-                                }
-                              >
-                                <div style={styles.rowBetween}>
-                                  <h3 style={styles.itemTitle}>{rule.name}</h3>
-                                  <span style={styles.statusChip}>{rule.when}</span>
-                                </div>
-                                <p style={styles.muted}>Condition: {rule.condition}</p>
-                                <p style={styles.bodyText}>{rule.purpose}</p>
-                                <p style={styles.clickHint}>Generate business rule script/guidance →</p>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div style={responsiveTwoGrid}>
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>ACL / Security Notes</p>
-                          {result.developer.acl_notes?.length ? (
-                            <ul style={styles.list}>
-                              {result.developer.acl_notes.map((item, index) => (
-                                <li key={index}>{item}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p style={styles.muted}>No ACL notes generated.</p>
+                    <div style={styles.innerCard}>
+                      <p style={styles.label}>Assumptions</p>
+                      {intakeAnalysis.assumptions?.length ? (
+                        <ul style={styles.list}>
+                          {intakeAnalysis.assumptions.map(
+                            (assumption, index) => (
+                              <li key={index}>{assumption}</li>
+                            ),
                           )}
-                        </div>
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Notification Notes</p>
-                          {result.developer.notification_notes?.length ? (
-                            <ul style={styles.list}>
-                              {result.developer.notification_notes.map((item, index) => (
-                                <li key={index}>{item}</li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p style={styles.muted}>No notification notes generated.</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {result.developer.deployment_notes?.length > 0 && (
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Deployment Notes</p>
-                          <ul style={styles.list}>
-                            {result.developer.deployment_notes.map((item, index) => (
-                              <li key={index}>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
+                        </ul>
+                      ) : (
+                        <p style={styles.muted}>No assumptions identified.</p>
                       )}
-
-                      <RegeneratePanel
-                        section="developer"
-                        instruction={regenerateInstruction}
-                        setInstruction={setRegenerateInstruction}
-                        regeneratingSection={regeneratingSection}
-                        onRegenerate={regenerateSection}
-                      />
-                    </>
-                  ) : (
-                    <div style={styles.emptyCard}>
-                      <h2 style={styles.sectionTitle}>Technical notes are not available yet</h2>
-                      <p style={styles.bodyText}>
-                        Generate a full detailed package or upgrade the quick package to create implementation notes, flows, ACL guidance, notifications, and code-ready objects.
-                      </p>
                     </div>
-                  )}
-                </div>
-              </Card>
-            )}
+                  </div>
 
-            {packageTab === "qa" && (
-              <Card
-                title="QA"
-                copyValue={JSON.stringify(result.qa, null, 2)}
-                onCopy={copyToClipboard}
-              >
-                <div style={styles.stack}>
-                  {result.qa ? (
-                    <>
-                      <div style={styles.innerCard}>
-                        <p style={styles.label}>Test Strategy</p>
-                        <p style={styles.bodyText}>{result.qa.test_strategy}</p>
-                      </div>
-
-                      {result.qa.test_cases?.length > 0 && (
-                        <>
-                          <p style={styles.label}>Test Cases</p>
-                          <div style={responsiveTwoGrid}>
-                            {result.qa.test_cases.map((test, index) => (
-                              <div key={index} style={styles.innerCard}>
-                                <div style={styles.rowBetween}>
-                                  <h3 style={styles.itemTitle}>{test.id}: {test.title}</h3>
-                                  <Badge>{test.priority}</Badge>
-                                </div>
-
-                                <p style={styles.accentText}>{test.type}</p>
-                                <ol style={styles.list}>
-                                  {test.steps.map((step, i) => (
-                                    <li key={i}>{step}</li>
-                                  ))}
-                                </ol>
-                                <p style={styles.bodyText}>
-                                  <strong>Expected:</strong> {test.expected_result}
-                                </p>
-                                <button
-                                  style={styles.smallCopyButton}
-                                  onClick={() => copyToClipboard(JSON.stringify(test, null, 2))}
-                                >
-                                  Copy Test Case
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-
-                      {result.qa.uat_cases?.length > 0 && (
-                        <>
-                          <p style={styles.label}>UAT Cases</p>
-                          <div style={responsiveTwoGrid}>
-                            {result.qa.uat_cases.map((uat, index) => (
-                              <div key={index} style={styles.innerCard}>
-                                <h3 style={styles.itemTitle}>{uat.id}: {uat.title}</h3>
-                                <p style={styles.muted}>{uat.persona}</p>
-                                <ol style={styles.list}>
-                                  {uat.steps.map((step, i) => (
-                                    <li key={i}>{step}</li>
-                                  ))}
-                                </ol>
-                                <p style={styles.bodyText}>
-                                  <strong>Expected:</strong> {uat.expected_result}
-                                </p>
-                                <button
-                                  style={styles.smallCopyButton}
-                                  onClick={() => copyToClipboard(JSON.stringify(uat, null, 2))}
-                                >
-                                  Copy UAT Case
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-
-                      <RegeneratePanel
-                        section="qa"
-                        instruction={regenerateInstruction}
-                        setInstruction={setRegenerateInstruction}
-                        regeneratingSection={regeneratingSection}
-                        onRegenerate={regenerateSection}
-                      />
-                    </>
-                  ) : (
-                    <p style={styles.muted}>No QA generated.</p>
-                  )}
-                </div>
-              </Card>
-            )}
-
-            {packageTab === "review" && (
-              <Card
-                title="Agent Review Board"
-                copyValue={JSON.stringify(result.agent_review, null, 2)}
-                onCopy={copyToClipboard}
-              >
-                {result.agent_review ? (
-                  <div style={styles.stack}>
-                    <div style={styles.reviewSummaryGrid}>
-                      <div style={styles.innerCard}>
-                        <p style={styles.label}>Overall Review Summary</p>
-                        <p style={styles.bodyText}>
-                          {result.agent_review.overall_review_summary}
-                        </p>
-                        <p style={{ ...styles.accentText, marginTop: "12px" }}>
-                          Final Verdict: {result.agent_review.final_verdict}
-                        </p>
-                      </div>
-
-                      <div style={styles.innerCard}>
-                        <p style={styles.label}>How to Use This Review</p>
-                        <p style={styles.bodyText}>
-                          Start with the overall verdict and priority fixes. Then open a specialist
-                          tab below to review Architect, Developer, QA, or Delivery Lead feedback.
-                          You can ask that agent questions and apply requirement updates when needed.
-                        </p>
-                      </div>
-                    </div>
-
-                    {result.agent_review.priority_fixes?.length > 0 && (
-                      <div style={styles.innerCard}>
-                        <div style={styles.cardTitleRow}>
-                          <div>
-                            <p style={styles.label}>Priority Fixes</p>
-                            <h3 style={styles.itemTitle}>Fix these before build handoff</h3>
-                          </div>
-                          <Badge>{result.agent_review.priority_fixes.length} fixes</Badge>
-                        </div>
-
-                        <div style={styles.priorityFixGrid}>
-                          {result.agent_review.priority_fixes.map((fix, index) => (
-                            <div key={index} style={styles.priorityFixCard}>
-                              <p style={styles.riskTitle}>
-                                {fix.priority}: {fix.fix}
-                              </p>
+                  {intakeAnalysis.missing_requirements?.length > 0 && (
+                    <div style={styles.innerCard}>
+                      <p style={styles.label}>Missing / Weak Requirements</p>
+                      <div style={styles.stack}>
+                        {intakeAnalysis.missing_requirements.map(
+                          (item, index) => (
+                            <div key={index} style={styles.riskBox}>
+                              <p style={styles.riskTitle}>{item.gap}</p>
                               <p style={styles.bodyText}>
-                                <strong>Reason:</strong> {fix.reason}
+                                <strong>Why it matters:</strong>{" "}
+                                {item.why_it_matters}
                               </p>
                             </div>
-                          ))}
-                        </div>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={styles.innerCard}>
+                    <p style={styles.label}>
+                      Answer Questions / Add Clarifications
+                    </p>
+                    <textarea
+                      value={clarificationAnswers}
+                      onChange={(e) => setClarificationAnswers(e.target.value)}
+                      placeholder="Answer the clarifying questions here. Then click Reanalyze with Answers or Generate Package with Answers..."
+                      style={{
+                        width: "100%",
+                        minHeight: "240px",
+                        resize: "vertical",
+                        border: "1px solid #94A3B8",
+                        borderRadius: "16px",
+                        background: "#FFFFFF",
+                        padding: "16px",
+                        color: "#0F172A",
+                        fontSize: "15px",
+                        lineHeight: "1.7",
+                        outline: "none",
+                        boxShadow: "inset 0 1px 4px rgba(15, 23, 42, 0.08)",
+                        boxSizing: "border-box",
+                      }}
+                    />
+
+                    <div style={styles.analysisActions}>
+                      <button
+                        onClick={analyzeRequirement}
+                        disabled={analyzing || loading}
+                        style={{
+                          ...styles.secondaryButton,
+                          opacity: analyzing || loading ? 0.65 : 1,
+                          cursor:
+                            analyzing || loading ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {analyzing
+                          ? "Reanalyzing..."
+                          : "Reanalyze with Answers"}
+                      </button>
+
+                      <button
+                        onClick={() => generatePackage("quick")}
+                        disabled={loading || analyzing}
+                        style={{
+                          ...styles.secondaryButton,
+                          opacity: loading || analyzing ? 0.65 : 1,
+                          cursor:
+                            loading || analyzing ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {activeGenerationMode === "quick"
+                          ? "Generating Quick..."
+                          : "Quick Package with Answers"}
+                      </button>
+
+                      <button
+                        onClick={() => generatePackage("full")}
+                        disabled={loading || analyzing}
+                        style={{
+                          ...styles.button,
+                          opacity: loading || analyzing ? 0.65 : 1,
+                          cursor:
+                            loading || analyzing ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {activeGenerationMode === "full"
+                          ? "Generating Full..."
+                          : "Full Detailed Package with Answers"}
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setIntakeAnalysis(null);
+                          setClarificationAnswers("");
+                        }}
+                        style={styles.secondaryButton}
+                      >
+                        Edit Requirement
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {!result && (
+              <section style={styles.emptyCard}>
+                <h2 style={styles.sectionTitle}>No package generated yet</h2>
+                <p style={styles.bodyText}>
+                  Add a requirement or upload documents, then click Analyze
+                  Requirement or Generate Package.
+                </p>
+              </section>
+            )}
+
+            {result && (
+              <section style={styles.packageWorkspace}>
+                <div style={styles.packageSummaryCard}>
+                  <div>
+                    <p style={styles.label}>Generated Package</p>
+                    <h2 style={styles.packageTitle}>
+                      {projectName || "Current Delivery Package"}
+                    </h2>
+                    <p style={styles.muted}>
+                      Use the section tabs to review, refine, and export the
+                      package without scrolling through the full output.
+                    </p>
+                    {(!result.developer ||
+                      !result.qa ||
+                      !result.quality_score) && (
+                      <div style={{ marginTop: "14px" }}>
+                        <button
+                          onClick={upgradeQuickPackageToFull}
+                          disabled={loading}
+                          style={{
+                            ...styles.button,
+                            opacity: loading ? 0.65 : 1,
+                            cursor: loading ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          {loading
+                            ? "Upgrading..."
+                            : "Upgrade to Full Detailed Package"}
+                        </button>
                       </div>
                     )}
+                  </div>
 
-                    <div style={styles.reviewAgentShell}>
-                      <div style={styles.reviewAgentTabs}>
-                        {REVIEW_AGENT_TABS.map((tab) => (
-                          <button
-                            key={tab.id}
-                            onClick={() => {
-                              setActiveReviewAgent(tab.id);
-                              setReviewAgentMessage("");
-                              setReviewAgentPendingRequirementUpdate("");
-                            }}
-                            style={
-                              activeReviewAgent === tab.id
-                                ? styles.activeReviewAgentTab
-                                : styles.inactiveReviewAgentTab
-                            }
-                          >
-                            {tab.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      <ReviewAgentPanel
-                        agentTitle={
-                          REVIEW_AGENT_TABS.find((tab) => tab.id === activeReviewAgent)?.title ||
-                          "Agent Review"
-                        }
-                        review={getReviewFeedback(activeReviewAgent)}
-                      />
-
-                      <div style={styles.reviewAgentChatBox}>
-                        <div style={styles.reviewAgentChatHeader}>
-                          <div>
-                            <p style={styles.label}>Reviewer Chat</p>
-                            <h3 style={styles.itemTitle}>
-                              Talk directly with {getReviewAgentLabel(activeReviewAgent)}
-                            </h3>
-                            <p style={styles.muted}>
-                              Ask for priority fixes, requirement rewrites, implementation guidance,
-                              risks, or what to clarify with business.
-                            </p>
-                          </div>
-
-                          <Badge>{reviewAgentChats[activeReviewAgent]?.length || 0} messages</Badge>
-                        </div>
-
-                        <div style={styles.reviewAgentPromptGrid}>
-                          {[
-                            "What should I fix first?",
-                            "Rewrite the requirement for your top concern.",
-                            "What questions should I ask business?",
-                            "What is risky for build handoff?",
-                          ].map((prompt) => (
-                            <button
-                              key={prompt}
-                              type="button"
-                              onClick={() => setReviewAgentMessage(prompt)}
-                              style={styles.reviewAgentPromptButton}
-                            >
-                              {prompt}
-                            </button>
-                          ))}
-                        </div>
-
-                        <div style={styles.agentChatHistoryLarge}>
-                          {reviewAgentChats[activeReviewAgent]?.length ? (
-                            reviewAgentChats[activeReviewAgent].map((message, index) => (
-                              <div
-                                key={index}
-                                style={
-                                  message.role === "user"
-                                    ? styles.agentUserMessage
-                                    : styles.agentResponseMessage
-                                }
-                              >
-                                <p style={styles.label}>
-                                  {message.role === "user"
-                                    ? "You"
-                                    : getReviewAgentLabel(activeReviewAgent)}
-                                </p>
-                                <p style={styles.agentMessageText}>{message.content}</p>
-                              </div>
-                            ))
-                          ) : (
-                            <div style={styles.agentChatEmpty}>
-                              <p style={styles.label}>Start with a specific ask</p>
-                              <p style={styles.bodyText}>
-                                Example: “Developer, rewrite the requirement to address your top
-                                implementation concern.” If the reviewer suggests a requirement update,
-                                you can apply it back to the main requirement.
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {reviewAgentPendingRequirementUpdate && (
-                          <div style={styles.requirementUpdateBox}>
-                            <p style={styles.label}>Suggested Requirement Update</p>
-                            <p style={styles.bodyText}>{reviewAgentPendingRequirementUpdate}</p>
-                            <button
-                              onClick={() =>
-                                applyReviewAgentRequirementUpdate(
-                                  reviewAgentPendingRequirementUpdate
-                                )
-                              }
-                              style={{ ...styles.button, marginTop: "12px" }}
-                            >
-                              Apply to Requirement
-                            </button>
-                          </div>
-                        )}
-
-                        <div style={styles.reviewAgentComposer}>
-                          <textarea
-                            value={reviewAgentMessage}
-                            onChange={(e) => setReviewAgentMessage(e.target.value)}
-                            onKeyDown={(e) => {
-                              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                                e.preventDefault();
-                                askReviewAgent();
-                              }
-                            }}
-                            placeholder={`Ask ${getReviewAgentLabel(activeReviewAgent)} to clarify, critique, rewrite, or improve the requirement...`}
-                            style={styles.reviewAgentTextarea}
-                          />
-
-                          <div style={styles.reviewAgentActions}>
-                            <button
-                              onClick={askReviewAgent}
-                              disabled={reviewAgentThinking || loading}
-                              style={{
-                                ...styles.button,
-                                opacity: reviewAgentThinking || loading ? 0.65 : 1,
-                                cursor:
-                                  reviewAgentThinking || loading ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              {reviewAgentThinking
-                                ? "Thinking..."
-                                : `Ask ${getReviewAgentLabel(activeReviewAgent)}`}
-                            </button>
-
-                            <button
-                              onClick={() => {
-                                setReviewAgentChats({
-                                  ...reviewAgentChats,
-                                  [activeReviewAgent]: [],
-                                });
-                                setReviewAgentPendingRequirementUpdate("");
-                              }}
-                              style={styles.secondaryButton}
-                            >
-                              Clear Chat
-                            </button>
-                          </div>
-
-                          <p style={styles.composerHint}>
-                            Press Cmd/Ctrl + Enter to send. Use the reviewer tabs above to switch
-                            between Architect, Developer, QA, and Delivery Lead.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
+                  <div style={{ marginTop: "12px" }}>
                     <button
                       onClick={runAgentReview}
                       disabled={loading}
@@ -4679,341 +4039,1770 @@ ${uat.expected_result}
                         cursor: loading ? "not-allowed" : "pointer",
                       }}
                     >
-                      {loading ? "Reviewing..." : "Rerun Agent Review"}
-                    </button>
-                  </div>
-                ) : (
-                  <div style={styles.stack}>
-                    <p style={styles.bodyText}>
-                      Run the agent review board to have the Architect, Developer, QA Lead,
-                      and Delivery Lead critique this package.
-                    </p>
-                    <button
-                      onClick={runAgentReview}
-                      disabled={loading}
-                      style={{
-                        ...styles.button,
-                        opacity: loading ? 0.65 : 1,
-                        cursor: loading ? "not-allowed" : "pointer",
-                      }}
-                    >
                       {loading ? "Reviewing..." : "Run Agent Review"}
                     </button>
                   </div>
-                )}
-              </Card>
-            )}
 
-            {packageTab === "delivery_lead" && (
-              <Card title="Delivery Lead Copilot">
-                <div style={styles.stack}>
-                  <div style={styles.innerCard}>
-                    <p style={styles.label}>Ask the Delivery Lead</p>
-                    <p style={styles.bodyText}>
-                      Ask about scope, missing requirements, ServiceNow approach, MVP vs phase 2,
-                      stakeholder questions, risks, or request updates to the requirement.
-                    </p>
+                  <div
+                    style={
+                      isMobile ? styles.mobileSnapshotGrid : styles.snapshotGrid
+                    }
+                  >
+                    <div style={styles.snapshotMetric}>
+                      <p style={styles.label}>{packageScoreLabel}</p>
+                      <p style={styles.snapshotNumber}>
+                        {displayScore(result.quality_score?.overall_score)}
+                      </p>
+                      <p style={styles.snapshotText}>
+                        {hasScore
+                          ? "/ 100"
+                          : result.generation_mode === "quick"
+                            ? "not scored yet"
+                            : "unavailable"}
+                      </p>
+                    </div>
+                    <div style={styles.snapshotMetric}>
+                      <p style={styles.label}>Stories</p>
+                      <p style={styles.snapshotNumber}>
+                        {result.stories?.length || 0}
+                      </p>
+                      <p style={styles.snapshotText}>generated</p>
+                    </div>
+                    <div style={styles.snapshotMetric}>
+                      <p style={styles.label}>Test Cases</p>
+                      <p style={styles.snapshotNumber}>
+                        {result.generation_mode === "quick"
+                          ? "—"
+                          : result.qa?.test_cases?.length || 0}
+                      </p>
+                      <p style={styles.snapshotText}>
+                        {result.generation_mode === "quick"
+                          ? "full package only"
+                          : "QA cases"}
+                      </p>
+                    </div>
+                    <div style={styles.snapshotMetric}>
+                      <p style={styles.label}>Tech Objects</p>
+                      <p style={styles.snapshotNumber}>
+                        {result.generation_mode === "quick"
+                          ? "—"
+                          : result.developer?.service_now_objects?.length || 0}
+                      </p>
+                      <p style={styles.snapshotText}>
+                        {result.generation_mode === "quick"
+                          ? "full package only"
+                          : "objects"}
+                      </p>
+                    </div>
+                    <div style={styles.snapshotMetric}>
+                      <p style={styles.label}>Open Questions</p>
+                      <p style={styles.snapshotNumber}>
+                        {result.open_questions?.length || 0}
+                      </p>
+                      <p style={styles.snapshotText}>items</p>
+                    </div>
                   </div>
+                </div>
 
-                  {deliveryLeadChat.length > 0 && (
-                    <div style={styles.stack}>
-                      {deliveryLeadChat.map((message, index) => (
-                        <div
-                          key={index}
-                          style={
-                            message.role === "user"
-                              ? styles.chatUserBubble
-                              : styles.chatLeadBubble
-                          }
-                        >
-                          <p style={styles.label}>
-                            {message.role === "user" ? "You" : "Delivery Lead"}
+                <div
+                  style={isMobile ? styles.mobilePackageNav : styles.packageNav}
+                >
+                  {PACKAGE_TABS.map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setPackageTab(tab.id)}
+                      style={
+                        packageTab === tab.id
+                          ? styles.activePackageTab
+                          : styles.inactivePackageTab
+                      }
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {packageTab === "overview" && (
+                  <div style={styles.results}>
+                    <Card
+                      title="Delivery Lead Review"
+                      copyValue={JSON.stringify(
+                        result.delivery_lead_review,
+                        null,
+                        2,
+                      )}
+                      onCopy={copyToClipboard}
+                    >
+                      {result.delivery_lead_review ? (
+                        <div style={styles.stack}>
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>Understanding</p>
+                            <p style={styles.bodyText}>
+                              {result.delivery_lead_review.understanding}
+                            </p>
+                          </div>
+
+                          <div style={responsiveTwoGrid}>
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>MVP Scope</p>
+                              <ul style={styles.list}>
+                                {result.delivery_lead_review.mvp_scope?.map(
+                                  (item, index) => (
+                                    <li key={index}>{item}</li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Phase 2 Scope</p>
+                              <ul style={styles.list}>
+                                {result.delivery_lead_review.phase_2_scope?.map(
+                                  (item, index) => (
+                                    <li key={index}>{item}</li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+                          </div>
+
+                          <div style={responsiveTwoGrid}>
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Clarifying Questions</p>
+                              <ul style={styles.list}>
+                                {result.delivery_lead_review.clarifying_questions?.map(
+                                  (question, index) => (
+                                    <li key={index}>{question}</li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Recommended Next Steps</p>
+                              <ul style={styles.list}>
+                                {result.delivery_lead_review.recommended_next_steps?.map(
+                                  (step, index) => (
+                                    <li key={index}>{step}</li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+                          </div>
+
+                          {result.delivery_lead_review.missing_requirements
+                            ?.length > 0 && (
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>
+                                Missing / Weak Requirements
+                              </p>
+                              <div style={styles.stack}>
+                                {result.delivery_lead_review.missing_requirements.map(
+                                  (item, index) => (
+                                    <div key={index} style={styles.riskBox}>
+                                      <p style={styles.riskTitle}>{item.gap}</p>
+                                      <p style={styles.bodyText}>
+                                        <strong>Why it matters:</strong>{" "}
+                                        {item.why_it_matters}
+                                      </p>
+                                    </div>
+                                  ),
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {result.delivery_lead_review.assumptions?.length >
+                            0 && (
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Assumptions</p>
+                              <ul style={styles.list}>
+                                {result.delivery_lead_review.assumptions.map(
+                                  (item, index) => (
+                                    <li key={index}>{item}</li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+                          )}
+
+                          <RegeneratePanel
+                            section="delivery_lead_review"
+                            instruction={regenerateInstruction}
+                            setInstruction={setRegenerateInstruction}
+                            regeneratingSection={regeneratingSection}
+                            onRegenerate={regenerateSection}
+                          />
+                        </div>
+                      ) : (
+                        <p style={styles.muted}>
+                          No Delivery Lead review generated.
+                        </p>
+                      )}
+                    </Card>
+
+                    <Card
+                      title={packageScoreTitle}
+                      copyValue={JSON.stringify(result.quality_score, null, 2)}
+                      onCopy={copyToClipboard}
+                    >
+                      {result.quality_score ? (
+                        <div style={styles.stack}>
+                          {!hasUsableQualityScore(result.quality_score) && (
+                            <div style={styles.riskBox}>
+                              <p style={styles.riskTitle}>Score unavailable</p>
+                              <p style={styles.bodyText}>
+                                {result.quality_score.summary ||
+                                  "The backend did not return a usable score. Regenerate the score or check the quality score agent."}
+                              </p>
+                            </div>
+                          )}
+
+                          <div style={responsiveScoreGrid}>
+                            <ScoreBox
+                              label="Overall"
+                              score={result.quality_score.overall_score}
+                              color={getScoreColor(
+                                result.quality_score.overall_score,
+                              )}
+                              background={getScoreBackground(
+                                result.quality_score.overall_score,
+                              )}
+                            />
+                            <ScoreBox
+                              label="Completeness"
+                              score={result.quality_score.completeness_score}
+                              color={getScoreColor(
+                                result.quality_score.completeness_score,
+                              )}
+                              background={getScoreBackground(
+                                result.quality_score.completeness_score,
+                              )}
+                            />
+                            <ScoreBox
+                              label="Risk"
+                              score={result.quality_score.risk_score}
+                              color={getScoreColor(
+                                result.quality_score.risk_score,
+                              )}
+                              background={getScoreBackground(
+                                result.quality_score.risk_score,
+                              )}
+                            />
+                            <ScoreBox
+                              label="Readiness"
+                              score={result.quality_score.readiness_score}
+                              color={getScoreColor(
+                                result.quality_score.readiness_score,
+                              )}
+                              background={getScoreBackground(
+                                result.quality_score.readiness_score,
+                              )}
+                            />
+                          </div>
+
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>Rating</p>
+                            <p style={styles.accentText}>
+                              {result.quality_score.rating}
+                            </p>
+                            <p style={styles.bodyText}>
+                              {result.quality_score.summary}
+                            </p>
+                          </div>
+
+                          {result.quality_score.build_readiness_verdict && (
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>
+                                Build Readiness Verdict
+                              </p>
+                              <p style={styles.accentText}>
+                                {result.quality_score.build_readiness_verdict}
+                              </p>
+                            </div>
+                          )}
+
+                          {result.quality_score.score_rationale && (
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Score Rationale</p>
+                              <p style={styles.bodyText}>
+                                <strong>Completeness:</strong>{" "}
+                                {
+                                  result.quality_score.score_rationale
+                                    .completeness
+                                }
+                              </p>
+                              <p style={styles.bodyText}>
+                                <strong>Risk:</strong>{" "}
+                                {result.quality_score.score_rationale.risk}
+                              </p>
+                              <p style={styles.bodyText}>
+                                <strong>Readiness:</strong>{" "}
+                                {result.quality_score.score_rationale.readiness}
+                              </p>
+                            </div>
+                          )}
+
+                          {result.quality_score.score_caps_applied?.length ? (
+                            <div style={styles.riskBox}>
+                              <p style={styles.riskTitle}>
+                                Score Caps / Penalties Applied
+                              </p>
+                              <ul style={styles.list}>
+                                {result.quality_score.score_caps_applied.map(
+                                  (item, index) => (
+                                    <li key={index}>{item}</li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+                          ) : null}
+
+                          <div style={responsiveTwoGrid}>
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Strengths</p>
+                              <ul style={styles.list}>
+                                {result.quality_score.strengths?.map(
+                                  (item, index) => (
+                                    <li key={index}>{item}</li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Weaknesses</p>
+                              <ul style={styles.list}>
+                                {result.quality_score.weaknesses?.map(
+                                  (item, index) => (
+                                    <li key={index}>{item}</li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+                          </div>
+
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>Recommended Fixes</p>
+                            <ul style={styles.list}>
+                              {result.quality_score.recommended_fixes?.map(
+                                (item, index) => (
+                                  <li key={index}>{item}</li>
+                                ),
+                              )}
+                            </ul>
+                          </div>
+
+                          <RegeneratePanel
+                            section="quality_score"
+                            instruction={regenerateInstruction}
+                            setInstruction={setRegenerateInstruction}
+                            regeneratingSection={regeneratingSection}
+                            onRegenerate={regenerateSection}
+                          />
+                        </div>
+                      ) : (
+                        <p style={styles.muted}>No quality score generated.</p>
+                      )}
+                    </Card>
+
+                    <Card
+                      title="Process / State Flow Diagram"
+                      copyValue={result.process_diagram?.mermaid_code || ""}
+                      onCopy={copyToClipboard}
+                    >
+                      {result.process_diagram ? (
+                        <div style={styles.stack}>
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>
+                              {result.process_diagram.title}
+                            </p>
+                            <p style={styles.bodyText}>
+                              {result.process_diagram.summary}
+                            </p>
+                          </div>
+
+                          <div style={styles.diagramShell}>
+                            <MermaidDiagram
+                              chart={result.process_diagram.mermaid_code}
+                            />
+                          </div>
+
+                          <details style={styles.detailsBox}>
+                            <summary style={styles.detailsSummary}>
+                              View Mermaid Code
+                            </summary>
+                            <pre style={styles.mermaidCodeBlock}>
+                              {result.process_diagram.mermaid_code}
+                            </pre>
+                          </details>
+
+                          {result.process_diagram.diagram_notes?.length > 0 && (
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Diagram Notes</p>
+                              <ul style={styles.list}>
+                                {result.process_diagram.diagram_notes.map(
+                                  (note, index) => (
+                                    <li key={index}>{note}</li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+                          )}
+
+                          <RegeneratePanel
+                            section="process_diagram"
+                            instruction={regenerateInstruction}
+                            setInstruction={setRegenerateInstruction}
+                            regeneratingSection={regeneratingSection}
+                            onRegenerate={regenerateSection}
+                          />
+                        </div>
+                      ) : (
+                        <p style={styles.muted}>No diagram generated.</p>
+                      )}
+                    </Card>
+                  </div>
+                )}
+
+                {packageTab === "design" && (
+                  <div style={styles.results}>
+                    <div style={responsiveTopGrid}>
+                      <Card
+                        title="Requirement Summary"
+                        span={2}
+                        copyValue={result.requirement_summary}
+                        onCopy={copyToClipboard}
+                      >
+                        <p style={styles.bodyText}>
+                          {result.requirement_summary}
+                        </p>
+                      </Card>
+
+                      <Card
+                        title="Recommended App Type"
+                        copyValue={result.recommended_app_type}
+                        onCopy={copyToClipboard}
+                      >
+                        <p style={styles.accentText}>
+                          {result.recommended_app_type}
+                        </p>
+                        <p style={styles.muted}>
+                          Use this as the delivery architecture direction before
+                          refining stories and technical notes.
+                        </p>
+                      </Card>
+                    </div>
+
+                    <Card
+                      title="Open Questions / Build Gaps"
+                      copyValue={result.open_questions?.join("\n")}
+                      onCopy={copyToClipboard}
+                    >
+                      {result.open_questions?.length ? (
+                        <div style={responsiveTwoGrid}>
+                          {result.open_questions.map((question, index) => (
+                            <div key={index} style={styles.questionCard}>
+                              <p style={styles.questionNumber}>
+                                Question {index + 1}
+                              </p>
+                              <p style={styles.bodyText}>{question}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={styles.muted}>
+                          No open questions identified.
+                        </p>
+                      )}
+                    </Card>
+
+                    <Card
+                      title="Solution Design"
+                      copyValue={result.solution_design}
+                      onCopy={copyToClipboard}
+                    >
+                      <div style={styles.stack}>
+                        <p style={styles.bodyText}>{result.solution_design}</p>
+                        <RegeneratePanel
+                          section="solution_design"
+                          instruction={regenerateInstruction}
+                          setInstruction={setRegenerateInstruction}
+                          regeneratingSection={regeneratingSection}
+                          onRegenerate={regenerateSection}
+                        />
+                      </div>
+                    </Card>
+
+                    <Card
+                      title="Proposed Tables"
+                      copyValue={JSON.stringify(result.tables, null, 2)}
+                      onCopy={copyToClipboard}
+                    >
+                      {result.tables?.length ? (
+                        <table style={styles.table}>
+                          <thead>
+                            <tr>
+                              <th style={styles.th}>Table</th>
+                              <th style={styles.th}>Type</th>
+                              <th style={styles.th}>Purpose</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {result.tables.map((table, index) => (
+                              <tr key={index}>
+                                <td style={styles.tableName}>
+                                  {table.table_name}
+                                </td>
+                                <td style={styles.td}>{table.type}</td>
+                                <td style={styles.td}>{table.purpose}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <p style={styles.muted}>No tables returned.</p>
+                      )}
+                    </Card>
+
+                    <div style={responsiveTwoGrid}>
+                      <Card
+                        title="Workflow Steps"
+                        copyValue={result.workflow_steps?.join("\n")}
+                        onCopy={copyToClipboard}
+                      >
+                        {result.workflow_steps?.length ? (
+                          <ol style={styles.list}>
+                            {result.workflow_steps.map((step, index) => (
+                              <li key={index}>{step}</li>
+                            ))}
+                          </ol>
+                        ) : (
+                          <p style={styles.muted}>
+                            No workflow steps returned.
                           </p>
-
-                          <p style={styles.bodyText}>{safeText(message.content)}</p>
-                          
-                          {message.response?.artifact_type && (
-                          <div style={styles.innerCard}>
-                            <p style={styles.label}>Artifact Type</p>
-                            <p style={styles.accentText}>{safeText(message.response.artifact_type)}</p>
-                          </div>
                         )}
+                      </Card>
 
-                        {message.response?.artifact_details && (
-                          <div style={styles.innerCard}>
-                            <p style={styles.label}>Artifact Details</p>
-
-                            {message.response.artifact_details.name && (
-                              <p style={styles.bodyText}>
-                                <strong>Name:</strong>{" "}
-                                {safeText(message.response.artifact_details.name)}
-                              </p>
-                            )}
-
-                            {message.response.artifact_details.table && (
-                              <p style={styles.bodyText}>
-                                <strong>Table:</strong>{" "}
-                                {safeText(message.response.artifact_details.table)}
-                              </p>
-                            )}
-
-                            {message.response.artifact_details.trigger && (
-                              <p style={styles.bodyText}>
-                                <strong>Trigger:</strong>{" "}
-                                {safeText(message.response.artifact_details.trigger)}
-                              </p>
-                            )}
-
-                            {message.response.artifact_details.condition && (
-                              <p style={styles.bodyText}>
-                                <strong>Condition:</strong>{" "}
-                                {safeText(message.response.artifact_details.condition)}
-                              </p>
-                            )}
-
-                            {safeList(message.response.artifact_details.recipients).length > 0 && (
-                              <>
-                                <p style={styles.label}>Recipients</p>
-                                <ul style={styles.list}>
-                                  {safeList(message.response.artifact_details.recipients).map((item, i) => (
-                                    <li key={i}>
-                                      <pre style={styles.inlinePre}>{safeText(item)}</pre>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </>
-                            )}
-
-                            {message.response.artifact_details.subject && (
-                              <p style={styles.bodyText}>
-                                <strong>Subject:</strong>{" "}
-                                {safeText(message.response.artifact_details.subject)}
-                              </p>
-                            )}
-
-                            {message.response.artifact_details.body && (
-                              <>
-                                <p style={styles.label}>Body / Content</p>
-                                <pre style={styles.inlinePre}>
-                                  {safeText(message.response.artifact_details.body)}
-                                </pre>
-                              </>
-                            )}
-
-                            {safeList(message.response.artifact_details.steps).length > 0 && (
-                              <>
-                                <p style={styles.label}>Steps</p>
-                                <ol style={styles.list}>
-                                  {safeList(message.response.artifact_details.steps).map((item, i) => (
-                                    <li key={i}>
-                                      <pre style={styles.inlinePre}>{safeText(item)}</pre>
-                                    </li>
-                                  ))}
-                                </ol>
-                              </>
-                            )}
-
-                            {safeList(message.response.artifact_details.roles).length > 0 && (
-                              <>
-                                <p style={styles.label}>Roles</p>
-                                <ul style={styles.list}>
-                                  {safeList(message.response.artifact_details.roles).map((item, i) => (
-                                    <li key={i}>
-                                      <pre style={styles.inlinePre}>{safeText(item)}</pre>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </>
-                            )}
-
-                            {safeList(message.response.artifact_details.fields).length > 0 && (
-                              <>
-                                <p style={styles.label}>Fields</p>
-                                <ul style={styles.list}>
-                                  {safeList(message.response.artifact_details.fields).map((item, i) => (
-                                    <li key={i}>
-                                      <pre style={styles.inlinePre}>{safeText(item)}</pre>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </>
-                            )}
-
-                            {message.response.artifact_details.expected_result && (
-                              <p style={styles.bodyText}>
-                                <strong>Expected Result:</strong>{" "}
-                                {safeText(message.response.artifact_details.expected_result)}
-                              </p>
-                            )}
-
-                            {safeList(message.response.artifact_details.notes).length > 0 && (
-                              <>
-                                <p style={styles.label}>Notes</p>
-                                <ul style={styles.list}>
-                                  {safeList(message.response.artifact_details.notes).map((item, i) => (
-                                    <li key={i}>
-                                      <pre style={styles.inlinePre}>{safeText(item)}</pre>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </>
-                            )}
-
-                            <button
-                              onClick={() =>
-                                copyToClipboard(
-                                  JSON.stringify(message.response?.artifact_details, null, 2)
-                                )
-                              }
-                              style={{
-                                ...styles.secondaryButton,
-                                marginTop: "14px",
-                              }}
-                            >
-                              Copy Artifact Details
-                            </button>
+                      <Card
+                        title="Risks"
+                        copyValue={JSON.stringify(result.risks, null, 2)}
+                        onCopy={copyToClipboard}
+                      >
+                        {result.risks?.length ? (
+                          <div style={styles.stack}>
+                            {result.risks.map((risk, index) => (
+                              <div key={index} style={styles.riskBox}>
+                                <p style={styles.riskTitle}>{risk.risk}</p>
+                                <p style={styles.bodyText}>
+                                  <strong>Mitigation:</strong> {risk.mitigation}
+                                </p>
+                              </div>
+                            ))}
                           </div>
+                        ) : (
+                          <p style={styles.muted}>No risks returned.</p>
                         )}
+                      </Card>
+                    </div>
+                  </div>
+                )}
 
-                          {message.response && (
-                            <div style={{ marginTop: "14px" }}>
-                              {message.response.delivery_lead_recommendation && (
-                                <div style={styles.innerCard}>
-                                  <p style={styles.label}>Recommendation</p>
-                                  <p style={styles.bodyText}>
-                                    {safeText(message.response.delivery_lead_recommendation)}
+                {packageTab === "stories" && (
+                  <Card
+                    title="Stories"
+                    copyValue={JSON.stringify(result.stories, null, 2)}
+                    onCopy={copyToClipboard}
+                  >
+                    <div style={styles.stack}>
+                      {result.epic && (
+                        <div style={styles.innerCard}>
+                          <p style={styles.label}>Epic</p>
+                          <p style={styles.accentText}>{result.epic}</p>
+                        </div>
+                      )}
+
+                      {result.stories?.length ? (
+                        <div style={responsiveTwoGrid}>
+                          {result.stories.map((story, index) => (
+                            <div key={index} style={styles.innerCard}>
+                              <div style={styles.rowBetween}>
+                                <h3 style={styles.itemTitle}>{story.title}</h3>
+                                <Badge>{story.priority}</Badge>
+                              </div>
+
+                              <p style={styles.bodyText}>{story.story}</p>
+
+                              {story.acceptance_criteria?.length > 0 && (
+                                <>
+                                  <p style={styles.label}>
+                                    Acceptance Criteria
                                   </p>
-                                </div>
-                              )}
-
-                              {message.response.impacted_sections?.length > 0 && (
-                                <div style={{ ...styles.innerCard, marginTop: "12px" }}>
-                                  <p style={styles.label}>Impacted Sections</p>
                                   <ul style={styles.list}>
-                                    {message.response.impacted_sections.map((item, i) => (
-                                      <li key={i}>{safeText(item)}</li>
-                                    ))}
+                                    {story.acceptance_criteria.map(
+                                      (criteria, i) => (
+                                        <li key={i}>{criteria}</li>
+                                      ),
+                                    )}
                                   </ul>
-                                </div>
+                                </>
                               )}
 
-                              {message.response.follow_up_questions?.length > 0 && (
-                                <div style={{ ...styles.innerCard, marginTop: "12px" }}>
-                                  <p style={styles.label}>Follow-Up Questions</p>
-                                  <ul style={styles.list}>
-                                    {message.response.follow_up_questions.map((item, i) => (
-                                      <li key={i}>{safeText(item)}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
+                              <button
+                                style={styles.smallCopyButton}
+                                onClick={() =>
+                                  copyToClipboard(
+                                    JSON.stringify(story, null, 2),
+                                  )
+                                }
+                              >
+                                Copy Story
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={styles.muted}>No stories generated.</p>
+                      )}
 
-                              {message.response.suggested_requirement_update && (
-                                <div style={{ ...styles.riskBox, marginTop: "12px" }}>
-                                  <p style={styles.riskTitle}>Suggested Requirement Update</p>
-                                  <p style={styles.bodyText}>
-                                    {safeText(message.response.suggested_requirement_update)}
-                                  </p>
-                                </div>
-                              )}
+                      <RegeneratePanel
+                        section="stories"
+                        instruction={regenerateInstruction}
+                        setInstruction={setRegenerateInstruction}
+                        regeneratingSection={regeneratingSection}
+                        onRegenerate={regenerateSection}
+                      />
+                    </div>
+                  </Card>
+                )}
 
-                              {message.response.recommended_next_action && (
-                                <p style={{ ...styles.accentText, marginTop: "12px" }}>
-                                  Recommended Next Action: {safeText(message.response.recommended_next_action)}
+                {packageTab === "technical" && (
+                  <Card
+                    title="Technical Workbench"
+                    copyValue={JSON.stringify(result.developer, null, 2)}
+                    onCopy={copyToClipboard}
+                  >
+                    <div style={styles.stack}>
+                      {result.developer ? (
+                        <>
+                          <div style={styles.technicalHero}>
+                            <div>
+                              <p style={styles.label}>Implementation Summary</p>
+                              <p style={styles.bodyText}>
+                                {result.developer.implementation_summary}
+                              </p>
+                            </div>
+                            <div style={styles.technicalStatsGrid}>
+                              <div style={styles.technicalStat}>
+                                <p style={styles.label}>Objects</p>
+                                <p style={styles.snapshotNumber}>
+                                  {result.developer.service_now_objects
+                                    ?.length || 0}
+                                </p>
+                              </div>
+                              <div style={styles.technicalStat}>
+                                <p style={styles.label}>Flows</p>
+                                <p style={styles.snapshotNumber}>
+                                  {result.developer.flow_designer_notes
+                                    ?.length || 0}
+                                </p>
+                              </div>
+                              <div style={styles.technicalStat}>
+                                <p style={styles.label}>Rules</p>
+                                <p style={styles.snapshotNumber}>
+                                  {result.developer.business_rules?.length || 0}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {result.developer.service_now_objects?.length > 0 && (
+                            <div style={styles.techSection}>
+                              <div style={styles.techSectionHeader}>
+                                <div>
+                                  <p style={styles.label}>Build Inventory</p>
+                                  <h3 style={styles.itemTitle}>
+                                    ServiceNow Objects
+                                  </h3>
+                                </div>
+                                <Badge>
+                                  {result.developer.service_now_objects.length}{" "}
+                                  objects
+                                </Badge>
+                              </div>
+                              <div style={responsiveTwoGrid}>
+                                {result.developer.service_now_objects.map(
+                                  (object, index) => (
+                                    <button
+                                      key={index}
+                                      style={styles.clickableInnerCard}
+                                      onClick={() =>
+                                        generateCodeForCard(
+                                          {
+                                            category: "ServiceNow Object",
+                                            ...object,
+                                          },
+                                          object.name,
+                                        )
+                                      }
+                                    >
+                                      <div style={styles.rowBetween}>
+                                        <p style={styles.accentText}>
+                                          {object.name}
+                                        </p>
+                                        <span style={styles.objectTypePill}>
+                                          {object.object_type}
+                                        </span>
+                                      </div>
+                                      <p style={styles.bodyText}>
+                                        {object.purpose}
+                                      </p>
+                                      <p style={styles.clickHint}>
+                                        Generate implementation guidance →
+                                      </p>
+                                    </button>
+                                  ),
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {result.developer.flow_designer_notes?.length > 0 && (
+                            <div style={styles.techSection}>
+                              <div style={styles.techSectionHeader}>
+                                <div>
+                                  <p style={styles.label}>Automation</p>
+                                  <h3 style={styles.itemTitle}>
+                                    Flow Designer
+                                  </h3>
+                                </div>
+                                <Badge>
+                                  {result.developer.flow_designer_notes.length}{" "}
+                                  flows
+                                </Badge>
+                              </div>
+                              <div style={styles.stack}>
+                                {result.developer.flow_designer_notes.map(
+                                  (flow, index) => (
+                                    <button
+                                      key={index}
+                                      style={styles.clickableInnerCard}
+                                      onClick={() =>
+                                        generateCodeForCard(
+                                          {
+                                            category: "Flow Designer",
+                                            ...flow,
+                                          },
+                                          flow.flow_name,
+                                        )
+                                      }
+                                    >
+                                      <div style={styles.rowBetween}>
+                                        <h3 style={styles.itemTitle}>
+                                          {flow.flow_name}
+                                        </h3>
+                                        <span style={styles.statusChip}>
+                                          Flow
+                                        </span>
+                                      </div>
+                                      <p style={styles.muted}>
+                                        Trigger: {flow.trigger}
+                                      </p>
+                                      <ol style={styles.list}>
+                                        {flow.steps.map((step, i) => (
+                                          <li key={i}>{step}</li>
+                                        ))}
+                                      </ol>
+                                      <p style={styles.clickHint}>
+                                        Generate flow implementation details →
+                                      </p>
+                                    </button>
+                                  ),
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {result.developer.business_rules?.length > 0 && (
+                            <div style={styles.techSection}>
+                              <div style={styles.techSectionHeader}>
+                                <div>
+                                  <p style={styles.label}>Server Logic</p>
+                                  <h3 style={styles.itemTitle}>
+                                    Business Rules
+                                  </h3>
+                                </div>
+                                <Badge>
+                                  {result.developer.business_rules.length} rules
+                                </Badge>
+                              </div>
+                              <div style={responsiveTwoGrid}>
+                                {result.developer.business_rules.map(
+                                  (rule, index) => (
+                                    <button
+                                      key={index}
+                                      style={styles.clickableInnerCard}
+                                      onClick={() =>
+                                        generateCodeForCard(
+                                          {
+                                            category: "Business Rule",
+                                            ...rule,
+                                          },
+                                          rule.name,
+                                        )
+                                      }
+                                    >
+                                      <div style={styles.rowBetween}>
+                                        <h3 style={styles.itemTitle}>
+                                          {rule.name}
+                                        </h3>
+                                        <span style={styles.statusChip}>
+                                          {rule.when}
+                                        </span>
+                                      </div>
+                                      <p style={styles.muted}>
+                                        Condition: {rule.condition}
+                                      </p>
+                                      <p style={styles.bodyText}>
+                                        {rule.purpose}
+                                      </p>
+                                      <p style={styles.clickHint}>
+                                        Generate business rule script/guidance →
+                                      </p>
+                                    </button>
+                                  ),
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={responsiveTwoGrid}>
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>ACL / Security Notes</p>
+                              {result.developer.acl_notes?.length ? (
+                                <ul style={styles.list}>
+                                  {result.developer.acl_notes.map(
+                                    (item, index) => (
+                                      <li key={index}>{item}</li>
+                                    ),
+                                  )}
+                                </ul>
+                              ) : (
+                                <p style={styles.muted}>
+                                  No ACL notes generated.
                                 </p>
                               )}
                             </div>
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Notification Notes</p>
+                              {result.developer.notification_notes?.length ? (
+                                <ul style={styles.list}>
+                                  {result.developer.notification_notes.map(
+                                    (item, index) => (
+                                      <li key={index}>{item}</li>
+                                    ),
+                                  )}
+                                </ul>
+                              ) : (
+                                <p style={styles.muted}>
+                                  No notification notes generated.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {result.developer.deployment_notes?.length > 0 && (
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Deployment Notes</p>
+                              <ul style={styles.list}>
+                                {result.developer.deployment_notes.map(
+                                  (item, index) => (
+                                    <li key={index}>{item}</li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
                           )}
+
+                          <RegeneratePanel
+                            section="developer"
+                            instruction={regenerateInstruction}
+                            setInstruction={setRegenerateInstruction}
+                            regeneratingSection={regeneratingSection}
+                            onRegenerate={regenerateSection}
+                          />
+                        </>
+                      ) : (
+                        <div style={styles.emptyCard}>
+                          <h2 style={styles.sectionTitle}>
+                            Technical notes are not available yet
+                          </h2>
+                          <p style={styles.bodyText}>
+                            Generate a full detailed package or upgrade the
+                            quick package to create implementation notes, flows,
+                            ACL guidance, notifications, and code-ready objects.
+                          </p>
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
+                  </Card>
+                )}
 
-                  <textarea
-                    value={deliveryLeadMessage}
-                    onChange={(e) => setDeliveryLeadMessage(e.target.value)}
-                    placeholder="Ask the Delivery Lead: What is missing? Should this be a scoped app or catalog item? Update the requirement to include a rejection path..."
-                    style={styles.regenerateTextarea}
-                  />
+                {packageTab === "qa" && (
+                  <Card
+                    title="QA"
+                    copyValue={JSON.stringify(result.qa, null, 2)}
+                    onCopy={copyToClipboard}
+                  >
+                    <div style={styles.stack}>
+                      {result.qa ? (
+                        <>
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>Test Strategy</p>
+                            <p style={styles.bodyText}>
+                              {result.qa.test_strategy}
+                            </p>
+                          </div>
 
-                  <div style={isMobile ? styles.mobileActionRow : styles.exportActions}>
-                    <button
-                      onClick={askDeliveryLead}
-                      disabled={deliveryLeadThinking || loading}
-                      style={{
-                        ...styles.button,
-                        opacity: deliveryLeadThinking || loading ? 0.65 : 1,
-                        cursor: deliveryLeadThinking || loading ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      {deliveryLeadThinking ? "Thinking..." : "Ask Delivery Lead"}
-                    </button>
+                          {result.qa.test_cases?.length > 0 && (
+                            <>
+                              <p style={styles.label}>Test Cases</p>
+                              <div style={responsiveTwoGrid}>
+                                {result.qa.test_cases.map((test, index) => (
+                                  <div key={index} style={styles.innerCard}>
+                                    <div style={styles.rowBetween}>
+                                      <h3 style={styles.itemTitle}>
+                                        {test.id}: {test.title}
+                                      </h3>
+                                      <Badge>{test.priority}</Badge>
+                                    </div>
 
-                    {deliveryLeadPendingRequirementUpdate && (
-                      <button
-                        onClick={() =>
-                          applyDeliveryLeadRequirementUpdate(
-                            deliveryLeadPendingRequirementUpdate
-                          )
-                        }
-                        style={styles.secondaryButton}
-                      >
-                        Apply Requirement Update
-                      </button>
+                                    <p style={styles.accentText}>{test.type}</p>
+                                    <ol style={styles.list}>
+                                      {test.steps.map((step, i) => (
+                                        <li key={i}>{step}</li>
+                                      ))}
+                                    </ol>
+                                    <p style={styles.bodyText}>
+                                      <strong>Expected:</strong>{" "}
+                                      {test.expected_result}
+                                    </p>
+                                    <button
+                                      style={styles.smallCopyButton}
+                                      onClick={() =>
+                                        copyToClipboard(
+                                          JSON.stringify(test, null, 2),
+                                        )
+                                      }
+                                    >
+                                      Copy Test Case
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+
+                          {result.qa.uat_cases?.length > 0 && (
+                            <>
+                              <p style={styles.label}>UAT Cases</p>
+                              <div style={responsiveTwoGrid}>
+                                {result.qa.uat_cases.map((uat, index) => (
+                                  <div key={index} style={styles.innerCard}>
+                                    <h3 style={styles.itemTitle}>
+                                      {uat.id}: {uat.title}
+                                    </h3>
+                                    <p style={styles.muted}>{uat.persona}</p>
+                                    <ol style={styles.list}>
+                                      {uat.steps.map((step, i) => (
+                                        <li key={i}>{step}</li>
+                                      ))}
+                                    </ol>
+                                    <p style={styles.bodyText}>
+                                      <strong>Expected:</strong>{" "}
+                                      {uat.expected_result}
+                                    </p>
+                                    <button
+                                      style={styles.smallCopyButton}
+                                      onClick={() =>
+                                        copyToClipboard(
+                                          JSON.stringify(uat, null, 2),
+                                        )
+                                      }
+                                    >
+                                      Copy UAT Case
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+
+                          <RegeneratePanel
+                            section="qa"
+                            instruction={regenerateInstruction}
+                            setInstruction={setRegenerateInstruction}
+                            regeneratingSection={regeneratingSection}
+                            onRegenerate={regenerateSection}
+                          />
+                        </>
+                      ) : (
+                        <p style={styles.muted}>No QA generated.</p>
+                      )}
+                    </div>
+                  </Card>
+                )}
+
+                {packageTab === "review" && (
+                  <Card
+                    title="Agent Review Board"
+                    copyValue={JSON.stringify(result.agent_review, null, 2)}
+                    onCopy={copyToClipboard}
+                  >
+                    {result.agent_review ? (
+                      <div style={styles.stack}>
+                        <div style={styles.reviewSummaryGrid}>
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>Overall Review Summary</p>
+                            <p style={styles.bodyText}>
+                              {result.agent_review.overall_review_summary}
+                            </p>
+                            <p
+                              style={{
+                                ...styles.accentText,
+                                marginTop: "12px",
+                              }}
+                            >
+                              Final Verdict: {result.agent_review.final_verdict}
+                            </p>
+                          </div>
+
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>How to Use This Review</p>
+                            <p style={styles.bodyText}>
+                              Start with the overall verdict and priority fixes.
+                              Then open a specialist tab below to review
+                              Architect, Developer, QA, or Delivery Lead
+                              feedback. You can ask that agent questions and
+                              apply requirement updates when needed.
+                            </p>
+                          </div>
+                        </div>
+
+                        {result.agent_review.priority_fixes?.length > 0 && (
+                          <div style={styles.innerCard}>
+                            <div style={styles.cardTitleRow}>
+                              <div>
+                                <p style={styles.label}>Priority Fixes</p>
+                                <h3 style={styles.itemTitle}>
+                                  Fix these before build handoff
+                                </h3>
+                              </div>
+                              <Badge>
+                                {result.agent_review.priority_fixes.length}{" "}
+                                fixes
+                              </Badge>
+                            </div>
+
+                            <div style={styles.priorityFixGrid}>
+                              {result.agent_review.priority_fixes.map(
+                                (fix, index) => (
+                                  <div
+                                    key={index}
+                                    style={styles.priorityFixCard}
+                                  >
+                                    <p style={styles.riskTitle}>
+                                      {fix.priority}: {fix.fix}
+                                    </p>
+                                    <p style={styles.bodyText}>
+                                      <strong>Reason:</strong> {fix.reason}
+                                    </p>
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <div style={styles.reviewAgentShell}>
+                          <div style={styles.reviewAgentTabs}>
+                            {REVIEW_AGENT_TABS.map((tab) => (
+                              <button
+                                key={tab.id}
+                                onClick={() => {
+                                  setActiveReviewAgent(tab.id);
+                                  setReviewAgentMessage("");
+                                  setReviewAgentPendingRequirementUpdate("");
+                                }}
+                                style={
+                                  activeReviewAgent === tab.id
+                                    ? styles.activeReviewAgentTab
+                                    : styles.inactiveReviewAgentTab
+                                }
+                              >
+                                {tab.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          <ReviewAgentPanel
+                            agentTitle={
+                              REVIEW_AGENT_TABS.find(
+                                (tab) => tab.id === activeReviewAgent,
+                              )?.title || "Agent Review"
+                            }
+                            review={getReviewFeedback(activeReviewAgent)}
+                          />
+
+                          <div style={styles.reviewAgentChatBox}>
+                            <div style={styles.reviewAgentChatHeader}>
+                              <div>
+                                <p style={styles.label}>Reviewer Chat</p>
+                                <h3 style={styles.itemTitle}>
+                                  Talk directly with{" "}
+                                  {getReviewAgentLabel(activeReviewAgent)}
+                                </h3>
+                                <p style={styles.muted}>
+                                  Ask for priority fixes, requirement rewrites,
+                                  implementation guidance, risks, or what to
+                                  clarify with business.
+                                </p>
+                              </div>
+
+                              <Badge>
+                                {reviewAgentChats[activeReviewAgent]?.length ||
+                                  0}{" "}
+                                messages
+                              </Badge>
+                            </div>
+
+                            <div style={styles.reviewAgentPromptGrid}>
+                              {[
+                                "What should I fix first?",
+                                "Rewrite the requirement for your top concern.",
+                                "What questions should I ask business?",
+                                "What is risky for build handoff?",
+                              ].map((prompt) => (
+                                <button
+                                  key={prompt}
+                                  type="button"
+                                  onClick={() => setReviewAgentMessage(prompt)}
+                                  style={styles.reviewAgentPromptButton}
+                                >
+                                  {prompt}
+                                </button>
+                              ))}
+                            </div>
+
+                            <div style={styles.agentChatHistoryLarge}>
+                              {reviewAgentChats[activeReviewAgent]?.length ? (
+                                reviewAgentChats[activeReviewAgent].map(
+                                  (message, index) => (
+                                    <div
+                                      key={index}
+                                      style={
+                                        message.role === "user"
+                                          ? styles.agentUserMessage
+                                          : styles.agentResponseMessage
+                                      }
+                                    >
+                                      <p style={styles.label}>
+                                        {message.role === "user"
+                                          ? "You"
+                                          : getReviewAgentLabel(
+                                              activeReviewAgent,
+                                            )}
+                                      </p>
+                                      <p style={styles.agentMessageText}>
+                                        {message.content}
+                                      </p>
+                                    </div>
+                                  ),
+                                )
+                              ) : (
+                                <div style={styles.agentChatEmpty}>
+                                  <p style={styles.label}>
+                                    Start with a specific ask
+                                  </p>
+                                  <p style={styles.bodyText}>
+                                    Example: “Developer, rewrite the requirement
+                                    to address your top implementation concern.”
+                                    If the reviewer suggests a requirement
+                                    update, you can apply it back to the main
+                                    requirement.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
+                            {reviewAgentPendingRequirementUpdate && (
+                              <div style={styles.requirementUpdateBox}>
+                                <p style={styles.label}>
+                                  Suggested Requirement Update
+                                </p>
+                                <p style={styles.bodyText}>
+                                  {reviewAgentPendingRequirementUpdate}
+                                </p>
+                                <button
+                                  onClick={() =>
+                                    applyReviewAgentRequirementUpdate(
+                                      reviewAgentPendingRequirementUpdate,
+                                    )
+                                  }
+                                  style={{
+                                    ...styles.button,
+                                    marginTop: "12px",
+                                  }}
+                                >
+                                  Apply to Requirement
+                                </button>
+                              </div>
+                            )}
+
+                            <div style={styles.reviewAgentComposer}>
+                              <textarea
+                                value={reviewAgentMessage}
+                                onChange={(e) =>
+                                  setReviewAgentMessage(e.target.value)
+                                }
+                                onKeyDown={(e) => {
+                                  if (
+                                    (e.metaKey || e.ctrlKey) &&
+                                    e.key === "Enter"
+                                  ) {
+                                    e.preventDefault();
+                                    askReviewAgent();
+                                  }
+                                }}
+                                placeholder={`Ask ${getReviewAgentLabel(activeReviewAgent)} to clarify, critique, rewrite, or improve the requirement...`}
+                                style={styles.reviewAgentTextarea}
+                              />
+
+                              <div style={styles.reviewAgentActions}>
+                                <button
+                                  onClick={askReviewAgent}
+                                  disabled={reviewAgentThinking || loading}
+                                  style={{
+                                    ...styles.button,
+                                    opacity:
+                                      reviewAgentThinking || loading ? 0.65 : 1,
+                                    cursor:
+                                      reviewAgentThinking || loading
+                                        ? "not-allowed"
+                                        : "pointer",
+                                  }}
+                                >
+                                  {reviewAgentThinking
+                                    ? "Thinking..."
+                                    : `Ask ${getReviewAgentLabel(activeReviewAgent)}`}
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    setReviewAgentChats({
+                                      ...reviewAgentChats,
+                                      [activeReviewAgent]: [],
+                                    });
+                                    setReviewAgentPendingRequirementUpdate("");
+                                  }}
+                                  style={styles.secondaryButton}
+                                >
+                                  Clear Chat
+                                </button>
+                              </div>
+
+                              <p style={styles.composerHint}>
+                                Press Cmd/Ctrl + Enter to send. Use the reviewer
+                                tabs above to switch between Architect,
+                                Developer, QA, and Delivery Lead.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={runAgentReview}
+                          disabled={loading}
+                          style={{
+                            ...styles.secondaryButton,
+                            opacity: loading ? 0.65 : 1,
+                            cursor: loading ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          {loading ? "Reviewing..." : "Rerun Agent Review"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={styles.stack}>
+                        <p style={styles.bodyText}>
+                          Run the agent review board to have the Architect,
+                          Developer, QA Lead, and Delivery Lead critique this
+                          package.
+                        </p>
+                        <button
+                          onClick={runAgentReview}
+                          disabled={loading}
+                          style={{
+                            ...styles.button,
+                            opacity: loading ? 0.65 : 1,
+                            cursor: loading ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          {loading ? "Reviewing..." : "Run Agent Review"}
+                        </button>
+                      </div>
                     )}
+                  </Card>
+                )}
 
-                    <button
-                      onClick={() => {
-                        setDeliveryLeadChat([]);
-                        setDeliveryLeadPendingRequirementUpdate("");
-                      }}
-                      style={styles.secondaryButton}
-                    >
-                      Clear Chat
-                    </button>
-                  </div>
-                </div>
-              </Card>
+                {packageTab === "delivery_lead" && (
+                  <Card title="Delivery Lead Copilot">
+                    <div style={styles.stack}>
+                      <div style={styles.innerCard}>
+                        <p style={styles.label}>Ask the Delivery Lead</p>
+                        <p style={styles.bodyText}>
+                          Ask about scope, missing requirements, ServiceNow
+                          approach, MVP vs phase 2, stakeholder questions,
+                          risks, or request updates to the requirement.
+                        </p>
+                      </div>
+
+                      {deliveryLeadChat.length > 0 && (
+                        <div style={styles.stack}>
+                          {deliveryLeadChat.map((message, index) => (
+                            <div
+                              key={index}
+                              style={
+                                message.role === "user"
+                                  ? styles.chatUserBubble
+                                  : styles.chatLeadBubble
+                              }
+                            >
+                              <p style={styles.label}>
+                                {message.role === "user"
+                                  ? "You"
+                                  : "Delivery Lead"}
+                              </p>
+
+                              <p style={styles.bodyText}>
+                                {safeText(message.content)}
+                              </p>
+
+                              {message.response?.artifact_type && (
+                                <div style={styles.innerCard}>
+                                  <p style={styles.label}>Artifact Type</p>
+                                  <p style={styles.accentText}>
+                                    {safeText(message.response.artifact_type)}
+                                  </p>
+                                </div>
+                              )}
+
+                              {message.response?.artifact_details && (
+                                <div style={styles.innerCard}>
+                                  <p style={styles.label}>Artifact Details</p>
+
+                                  {message.response.artifact_details.name && (
+                                    <p style={styles.bodyText}>
+                                      <strong>Name:</strong>{" "}
+                                      {safeText(
+                                        message.response.artifact_details.name,
+                                      )}
+                                    </p>
+                                  )}
+
+                                  {message.response.artifact_details.table && (
+                                    <p style={styles.bodyText}>
+                                      <strong>Table:</strong>{" "}
+                                      {safeText(
+                                        message.response.artifact_details.table,
+                                      )}
+                                    </p>
+                                  )}
+
+                                  {message.response.artifact_details
+                                    .trigger && (
+                                    <p style={styles.bodyText}>
+                                      <strong>Trigger:</strong>{" "}
+                                      {safeText(
+                                        message.response.artifact_details
+                                          .trigger,
+                                      )}
+                                    </p>
+                                  )}
+
+                                  {message.response.artifact_details
+                                    .condition && (
+                                    <p style={styles.bodyText}>
+                                      <strong>Condition:</strong>{" "}
+                                      {safeText(
+                                        message.response.artifact_details
+                                          .condition,
+                                      )}
+                                    </p>
+                                  )}
+
+                                  {safeList(
+                                    message.response.artifact_details
+                                      .recipients,
+                                  ).length > 0 && (
+                                    <>
+                                      <p style={styles.label}>Recipients</p>
+                                      <ul style={styles.list}>
+                                        {safeList(
+                                          message.response.artifact_details
+                                            .recipients,
+                                        ).map((item, i) => (
+                                          <li key={i}>
+                                            <pre style={styles.inlinePre}>
+                                              {safeText(item)}
+                                            </pre>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </>
+                                  )}
+
+                                  {message.response.artifact_details
+                                    .subject && (
+                                    <p style={styles.bodyText}>
+                                      <strong>Subject:</strong>{" "}
+                                      {safeText(
+                                        message.response.artifact_details
+                                          .subject,
+                                      )}
+                                    </p>
+                                  )}
+
+                                  {message.response.artifact_details.body && (
+                                    <>
+                                      <p style={styles.label}>Body / Content</p>
+                                      <pre style={styles.inlinePre}>
+                                        {safeText(
+                                          message.response.artifact_details
+                                            .body,
+                                        )}
+                                      </pre>
+                                    </>
+                                  )}
+
+                                  {safeList(
+                                    message.response.artifact_details.steps,
+                                  ).length > 0 && (
+                                    <>
+                                      <p style={styles.label}>Steps</p>
+                                      <ol style={styles.list}>
+                                        {safeList(
+                                          message.response.artifact_details
+                                            .steps,
+                                        ).map((item, i) => (
+                                          <li key={i}>
+                                            <pre style={styles.inlinePre}>
+                                              {safeText(item)}
+                                            </pre>
+                                          </li>
+                                        ))}
+                                      </ol>
+                                    </>
+                                  )}
+
+                                  {safeList(
+                                    message.response.artifact_details.roles,
+                                  ).length > 0 && (
+                                    <>
+                                      <p style={styles.label}>Roles</p>
+                                      <ul style={styles.list}>
+                                        {safeList(
+                                          message.response.artifact_details
+                                            .roles,
+                                        ).map((item, i) => (
+                                          <li key={i}>
+                                            <pre style={styles.inlinePre}>
+                                              {safeText(item)}
+                                            </pre>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </>
+                                  )}
+
+                                  {safeList(
+                                    message.response.artifact_details.fields,
+                                  ).length > 0 && (
+                                    <>
+                                      <p style={styles.label}>Fields</p>
+                                      <ul style={styles.list}>
+                                        {safeList(
+                                          message.response.artifact_details
+                                            .fields,
+                                        ).map((item, i) => (
+                                          <li key={i}>
+                                            <pre style={styles.inlinePre}>
+                                              {safeText(item)}
+                                            </pre>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </>
+                                  )}
+
+                                  {message.response.artifact_details
+                                    .expected_result && (
+                                    <p style={styles.bodyText}>
+                                      <strong>Expected Result:</strong>{" "}
+                                      {safeText(
+                                        message.response.artifact_details
+                                          .expected_result,
+                                      )}
+                                    </p>
+                                  )}
+
+                                  {safeList(
+                                    message.response.artifact_details.notes,
+                                  ).length > 0 && (
+                                    <>
+                                      <p style={styles.label}>Notes</p>
+                                      <ul style={styles.list}>
+                                        {safeList(
+                                          message.response.artifact_details
+                                            .notes,
+                                        ).map((item, i) => (
+                                          <li key={i}>
+                                            <pre style={styles.inlinePre}>
+                                              {safeText(item)}
+                                            </pre>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </>
+                                  )}
+
+                                  <button
+                                    onClick={() =>
+                                      copyToClipboard(
+                                        JSON.stringify(
+                                          message.response?.artifact_details,
+                                          null,
+                                          2,
+                                        ),
+                                      )
+                                    }
+                                    style={{
+                                      ...styles.secondaryButton,
+                                      marginTop: "14px",
+                                    }}
+                                  >
+                                    Copy Artifact Details
+                                  </button>
+                                </div>
+                              )}
+
+                              {message.response && (
+                                <div style={{ marginTop: "14px" }}>
+                                  {message.response
+                                    .delivery_lead_recommendation && (
+                                    <div style={styles.innerCard}>
+                                      <p style={styles.label}>Recommendation</p>
+                                      <p style={styles.bodyText}>
+                                        {safeText(
+                                          message.response
+                                            .delivery_lead_recommendation,
+                                        )}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {message.response.impacted_sections?.length >
+                                    0 && (
+                                    <div
+                                      style={{
+                                        ...styles.innerCard,
+                                        marginTop: "12px",
+                                      }}
+                                    >
+                                      <p style={styles.label}>
+                                        Impacted Sections
+                                      </p>
+                                      <ul style={styles.list}>
+                                        {message.response.impacted_sections.map(
+                                          (item, i) => (
+                                            <li key={i}>{safeText(item)}</li>
+                                          ),
+                                        )}
+                                      </ul>
+                                    </div>
+                                  )}
+
+                                  {message.response.follow_up_questions
+                                    ?.length > 0 && (
+                                    <div
+                                      style={{
+                                        ...styles.innerCard,
+                                        marginTop: "12px",
+                                      }}
+                                    >
+                                      <p style={styles.label}>
+                                        Follow-Up Questions
+                                      </p>
+                                      <ul style={styles.list}>
+                                        {message.response.follow_up_questions.map(
+                                          (item, i) => (
+                                            <li key={i}>{safeText(item)}</li>
+                                          ),
+                                        )}
+                                      </ul>
+                                    </div>
+                                  )}
+
+                                  {message.response
+                                    .suggested_requirement_update && (
+                                    <div
+                                      style={{
+                                        ...styles.riskBox,
+                                        marginTop: "12px",
+                                      }}
+                                    >
+                                      <p style={styles.riskTitle}>
+                                        Suggested Requirement Update
+                                      </p>
+                                      <p style={styles.bodyText}>
+                                        {safeText(
+                                          message.response
+                                            .suggested_requirement_update,
+                                        )}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {message.response.recommended_next_action && (
+                                    <p
+                                      style={{
+                                        ...styles.accentText,
+                                        marginTop: "12px",
+                                      }}
+                                    >
+                                      Recommended Next Action:{" "}
+                                      {safeText(
+                                        message.response
+                                          .recommended_next_action,
+                                      )}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <textarea
+                        value={deliveryLeadMessage}
+                        onChange={(e) => setDeliveryLeadMessage(e.target.value)}
+                        placeholder="Ask the Delivery Lead: What is missing? Should this be a scoped app or catalog item? Update the requirement to include a rejection path..."
+                        style={styles.regenerateTextarea}
+                      />
+
+                      <div
+                        style={
+                          isMobile
+                            ? styles.mobileActionRow
+                            : styles.exportActions
+                        }
+                      >
+                        <button
+                          onClick={askDeliveryLead}
+                          disabled={deliveryLeadThinking || loading}
+                          style={{
+                            ...styles.button,
+                            opacity: deliveryLeadThinking || loading ? 0.65 : 1,
+                            cursor:
+                              deliveryLeadThinking || loading
+                                ? "not-allowed"
+                                : "pointer",
+                          }}
+                        >
+                          {deliveryLeadThinking
+                            ? "Thinking..."
+                            : "Ask Delivery Lead"}
+                        </button>
+
+                        {deliveryLeadPendingRequirementUpdate && (
+                          <button
+                            onClick={() =>
+                              applyDeliveryLeadRequirementUpdate(
+                                deliveryLeadPendingRequirementUpdate,
+                              )
+                            }
+                            style={styles.secondaryButton}
+                          >
+                            Apply Requirement Update
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            setDeliveryLeadChat([]);
+                            setDeliveryLeadPendingRequirementUpdate("");
+                          }}
+                          style={styles.secondaryButton}
+                        >
+                          Clear Chat
+                        </button>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+
+                {packageTab === "export" && (
+                  <Card
+                    title="Export Package"
+                    copyValue={buildMarkdown(result)}
+                    onCopy={copyToClipboard}
+                  >
+                    <div style={styles.stack}>
+                      <div style={styles.innerCard}>
+                        <p style={styles.label}>Export Options</p>
+                        <p style={styles.bodyText}>
+                          Export the full delivery package for review, delivery
+                          handoff, or copy-paste into your delivery tools.
+                        </p>
+                      </div>
+
+                      <div
+                        style={
+                          isMobile
+                            ? styles.mobileActionRow
+                            : styles.exportActions
+                        }
+                      >
+                        <button
+                          onClick={exportMarkdown}
+                          style={styles.secondaryButton}
+                        >
+                          Export Markdown
+                        </button>
+                        <button onClick={exportDocx} style={styles.button}>
+                          Export DOCX
+                        </button>
+                        <button
+                          onClick={() => copyToClipboard(buildMarkdown(result))}
+                          style={styles.secondaryButton}
+                        >
+                          Copy Full Package
+                        </button>
+                      </div>
+
+                      <details style={styles.detailsBox}>
+                        <summary style={styles.detailsSummary}>
+                          Preview Markdown Export
+                        </summary>
+                        <pre style={styles.mermaidCodeBlock}>
+                          {buildMarkdown(result)}
+                        </pre>
+                      </details>
+                    </div>
+                  </Card>
+                )}
+              </section>
             )}
-
-            {packageTab === "export" && (
-              <Card
-                title="Export Package"
-                copyValue={buildMarkdown(result)}
-                onCopy={copyToClipboard}
-              >
-                <div style={styles.stack}>
-                  <div style={styles.innerCard}>
-                    <p style={styles.label}>Export Options</p>
-                    <p style={styles.bodyText}>
-                      Export the full delivery package for review, delivery handoff, or copy-paste into your delivery tools.
-                    </p>
-                  </div>
-
-                  <div style={isMobile ? styles.mobileActionRow : styles.exportActions}>
-                    <button onClick={exportMarkdown} style={styles.secondaryButton}>
-                      Export Markdown
-                    </button>
-                    <button onClick={exportDocx} style={styles.button}>
-                      Export DOCX
-                    </button>
-                    <button
-                      onClick={() => copyToClipboard(buildMarkdown(result))}
-                      style={styles.secondaryButton}
-                    >
-                      Copy Full Package
-                    </button>
-                  </div>
-
-                  <details style={styles.detailsBox}>
-                    <summary style={styles.detailsSummary}>Preview Markdown Export</summary>
-                    <pre style={styles.mermaidCodeBlock}>{buildMarkdown(result)}</pre>
-                  </details>
-                </div>
-              </Card>
-            )}
-          </section>
-        )}
           </>
         )}
 
@@ -5048,40 +5837,60 @@ ${uat.expected_result}
                 siteAssistantChat.slice(-8).map((message, index) => (
                   <div
                     key={index}
-                    style={message.role === "user" ? styles.chatUserBubble : styles.chatLeadBubble}
+                    style={
+                      message.role === "user"
+                        ? styles.chatUserBubble
+                        : styles.chatLeadBubble
+                    }
                   >
-                    <p style={styles.label}>{message.role === "user" ? "You" : "Site Guide"}</p>
+                    <p style={styles.label}>
+                      {message.role === "user" ? "You" : "Site Guide"}
+                    </p>
                     <p style={styles.bodyText}>{safeText(message.content)}</p>
                   </div>
                 ))
               ) : (
                 <div style={styles.innerCard}>
                   <p style={styles.bodyText}>
-                    I can explain how to use this site: templates, requirement intake,
-                    Quick vs Full Package, saved projects, package tabs, technical notes,
-                    Delivery Lead chat, and exports.
+                    I can explain how to use this site: templates, requirement
+                    intake, Quick vs Full Package, saved projects, package tabs,
+                    technical notes, Delivery Lead chat, and exports.
                   </p>
                   <div style={styles.sitePromptGrid}>
                     <button
-                      onClick={() => setSiteAssistantMessage("How do I use this site?")}
+                      onClick={() =>
+                        setSiteAssistantMessage("How do I use this site?")
+                      }
                       style={styles.sitePromptButton}
                     >
                       How do I use this site?
                     </button>
                     <button
-                      onClick={() => setSiteAssistantMessage("What is Quick Package vs Full Detailed Package?")}
+                      onClick={() =>
+                        setSiteAssistantMessage(
+                          "What is Quick Package vs Full Detailed Package?",
+                        )
+                      }
                       style={styles.sitePromptButton}
                     >
                       Quick vs Full
                     </button>
                     <button
-                      onClick={() => setSiteAssistantMessage("How do I save and reload projects?")}
+                      onClick={() =>
+                        setSiteAssistantMessage(
+                          "How do I save and reload projects?",
+                        )
+                      }
                       style={styles.sitePromptButton}
                     >
                       Save projects
                     </button>
                     <button
-                      onClick={() => setSiteAssistantMessage("Where do I get technical notes and code guidance?")}
+                      onClick={() =>
+                        setSiteAssistantMessage(
+                          "Where do I get technical notes and code guidance?",
+                        )
+                      }
                       style={styles.sitePromptButton}
                     >
                       Technical notes
@@ -5122,7 +5931,10 @@ ${uat.expected_result}
               >
                 {siteAssistantThinking ? "Thinking..." : "Send"}
               </button>
-              <button onClick={() => setSiteAssistantChat([])} style={styles.secondaryButton}>
+              <button
+                onClick={() => setSiteAssistantChat([])}
+                style={styles.secondaryButton}
+              >
                 Clear
               </button>
               <button
@@ -5234,7 +6046,6 @@ function TabButton({
   );
 }
 
-
 function ScoreBox({
   label,
   score,
@@ -5250,7 +6061,9 @@ function ScoreBox({
     <div style={{ ...styles.scoreBox, background }}>
       <p style={styles.label}>{label}</p>
       <p style={{ ...styles.scoreNumber, color }}>{displayScore(score)}</p>
-      <p style={styles.scoreOutOf}>{isValidScore(score) ? "/ 100" : "Unavailable"}</p>
+      <p style={styles.scoreOutOf}>
+        {isValidScore(score) ? "/ 100" : "Unavailable"}
+      </p>
     </div>
   );
 }
@@ -5304,7 +6117,6 @@ function RegeneratePanel({
   );
 }
 
-
 function ReviewAgentPanel({
   agentTitle,
   review,
@@ -5315,7 +6127,9 @@ function ReviewAgentPanel({
   if (!review) {
     return (
       <div style={styles.innerCard}>
-        <p style={styles.muted}>Run the agent review board to see this reviewer feedback.</p>
+        <p style={styles.muted}>
+          Run the agent review board to see this reviewer feedback.
+        </p>
       </div>
     );
   }
@@ -5544,465 +6358,466 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   projectBar: {
-  background: "rgba(255,255,255,0.92)",
-  border: "1px solid #CBD5E1",
-  borderRadius: "22px",
-  padding: "20px",
-  boxShadow: "0 16px 42px rgba(15, 23, 42, 0.08)",
-  marginBottom: "22px",
-},
+    background: "rgba(255,255,255,0.92)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "22px",
+    padding: "20px",
+    boxShadow: "0 16px 42px rgba(15, 23, 42, 0.08)",
+    marginBottom: "22px",
+  },
 
-projectBarTop: {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  gap: "18px",
-  marginBottom: "16px",
-},
+  projectBarTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "18px",
+    marginBottom: "16px",
+  },
 
-projectBarTitle: {
-  margin: 0,
-  fontSize: "22px",
-  fontWeight: 850,
-  letterSpacing: "-0.02em",
-  color: "#0F172A",
-},
+  projectBarTitle: {
+    margin: 0,
+    fontSize: "22px",
+    fontWeight: 850,
+    letterSpacing: "-0.02em",
+    color: "#0F172A",
+  },
 
-projectActions: {
-  display: "flex",
-  gap: "10px",
-  alignItems: "center",
-  flexWrap: "wrap",
-},
+  projectActions: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
 
-projectControls: {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr auto",
-  gap: "14px",
-  alignItems: "end",
-},
+  projectControls: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr auto",
+    gap: "14px",
+    alignItems: "end",
+  },
 
-projectField: {
-  display: "flex",
-  flexDirection: "column",
-  gap: "7px",
-},
+  projectField: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "7px",
+  },
 
-projectLabel: {
-  color: "#64748B",
-  fontSize: "12px",
-  textTransform: "uppercase",
-  letterSpacing: "0.08em",
-  fontWeight: 850,
-},
+  projectLabel: {
+    color: "#64748B",
+    fontSize: "12px",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    fontWeight: 850,
+  },
 
-projectInput: {
-  width: "100%",
-  border: "1px solid #CBD5E1",
-  borderRadius: "14px",
-  background: "#FFFFFF",
-  color: "#0F172A",
-  padding: "13px 14px",
-  fontSize: "15px",
-  fontWeight: 700,
-  outline: "none",
-  boxSizing: "border-box",
-},
+  projectInput: {
+    width: "100%",
+    border: "1px solid #CBD5E1",
+    borderRadius: "14px",
+    background: "#FFFFFF",
+    color: "#0F172A",
+    padding: "13px 14px",
+    fontSize: "15px",
+    fontWeight: 700,
+    outline: "none",
+    boxSizing: "border-box",
+  },
 
-projectSelect: {
-  width: "100%",
-  border: "1px solid #CBD5E1",
-  borderRadius: "14px",
-  background: "#FFFFFF",
-  color: "#0F172A",
-  padding: "13px 14px",
-  fontSize: "15px",
-  fontWeight: 700,
-  outline: "none",
-  boxSizing: "border-box",
-},
+  projectSelect: {
+    width: "100%",
+    border: "1px solid #CBD5E1",
+    borderRadius: "14px",
+    background: "#FFFFFF",
+    color: "#0F172A",
+    padding: "13px 14px",
+    fontSize: "15px",
+    fontWeight: 700,
+    outline: "none",
+    boxSizing: "border-box",
+  },
 
-deleteButton: {
-  border: "1px solid #FCA5A5",
-  borderRadius: "14px",
-  background: "#FEF2F2",
-  color: "#B91C1C",
-  padding: "13px 18px",
-  fontSize: "14px",
-  fontWeight: 850,
-},
+  deleteButton: {
+    border: "1px solid #FCA5A5",
+    borderRadius: "14px",
+    background: "#FEF2F2",
+    color: "#B91C1C",
+    padding: "13px 18px",
+    fontSize: "14px",
+    fontWeight: 850,
+  },
 
-projectMeta: {
-  margin: "12px 0 0",
-  color: "#64748B",
-  fontSize: "13px",
-  fontWeight: 700,
-},
+  projectMeta: {
+    margin: "12px 0 0",
+    color: "#64748B",
+    fontSize: "13px",
+    fontWeight: 700,
+  },
 
-authBox: {
-  display: "grid",
-  gridTemplateColumns: "180px 180px auto auto",
-  gap: "10px",
-  alignItems: "center",
-},
+  authBox: {
+    display: "grid",
+    gridTemplateColumns: "180px 180px auto auto",
+    gap: "10px",
+    alignItems: "center",
+  },
 
-authBoxCompact: {
-  display: "grid",
-  gridTemplateColumns: "minmax(210px, 1fr) minmax(190px, 1fr) 96px 104px",
-  gap: "10px",
-  alignItems: "center",
-  minWidth: "690px",
-},
+  authBoxCompact: {
+    display: "grid",
+    gridTemplateColumns: "minmax(210px, 1fr) minmax(190px, 1fr) 96px 104px",
+    gap: "10px",
+    alignItems: "center",
+    minWidth: "690px",
+  },
 
-authInput: {
-  width: "100%",
-  border: "1px solid #CBD5E1",
-  borderRadius: "14px",
-  background: "rgba(255,255,255,0.94)",
-  color: "#0F172A",
-  padding: "14px 16px",
-  fontSize: "15px",
-  fontWeight: 700,
-  outline: "none",
-  boxSizing: "border-box",
-},
+  authInput: {
+    width: "100%",
+    border: "1px solid #CBD5E1",
+    borderRadius: "14px",
+    background: "rgba(255,255,255,0.94)",
+    color: "#0F172A",
+    padding: "14px 16px",
+    fontSize: "15px",
+    fontWeight: 700,
+    outline: "none",
+    boxSizing: "border-box",
+  },
 
-accountTopRight: {
-  display: "flex",
-  gap: "10px",
-  alignItems: "center",
-  justifyContent: "flex-end",
-  flexWrap: "wrap",
-},
+  accountTopRight: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+  },
 
-signedInPill: {
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-  border: "1px solid #CBD5E1",
-  borderRadius: "999px",
-  background: "#FFFFFF",
-  padding: "10px 14px",
-  color: "#334155",
-  fontSize: "13px",
-  fontWeight: 800,
-},
+  signedInPill: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    border: "1px solid #CBD5E1",
+    borderRadius: "999px",
+    background: "#FFFFFF",
+    padding: "10px 14px",
+    color: "#334155",
+    fontSize: "13px",
+    fontWeight: 800,
+  },
 
-signedInDot: {
-  width: "8px",
-  height: "8px",
-  borderRadius: "999px",
-  background: "#16A34A",
-},
+  signedInDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "999px",
+    background: "#16A34A",
+  },
 
-signedInText: {
-  color: "#16A34A",
-  fontWeight: 900,
-},
+  signedInText: {
+    color: "#16A34A",
+    fontWeight: 900,
+  },
 
-signedInEmail: {
-  color: "#475569",
-  fontWeight: 800,
-},
+  signedInEmail: {
+    color: "#475569",
+    fontWeight: 800,
+  },
 
-loginHeroShell: {
-  width: "100%",
-  maxWidth: "1220px",
-  margin: "54px auto 0",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  gap: "26px",
-},
+  loginHeroShell: {
+    width: "100%",
+    maxWidth: "1220px",
+    margin: "54px auto 0",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "26px",
+  },
 
-loginHeroCard: {
-  width: "100%",
-  display: "grid",
-  gridTemplateColumns: "0.92fr 1.08fr",
-  gap: "34px",
-  alignItems: "center",
-  background: "rgba(255,255,255,0.96)",
-  border: "1px solid #CBD5E1",
-  borderRadius: "32px",
-  padding: "44px",
-  boxShadow: "0 28px 84px rgba(15, 23, 42, 0.13)",
-  boxSizing: "border-box",
-},
+  loginHeroCard: {
+    width: "100%",
+    display: "grid",
+    gridTemplateColumns: "0.92fr 1.08fr",
+    gap: "34px",
+    alignItems: "center",
+    background: "rgba(255,255,255,0.96)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "32px",
+    padding: "44px",
+    boxShadow: "0 28px 84px rgba(15, 23, 42, 0.13)",
+    boxSizing: "border-box",
+  },
 
-loginHeroContent: {
-  display: "flex",
-  flexDirection: "column",
-  gap: "18px",
-},
+  loginHeroContent: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "18px",
+  },
 
-loginHeroBadge: {
-  alignSelf: "flex-start",
-  borderRadius: "999px",
-  background: "#DBEAFE",
-  color: "#1D4ED8",
-  padding: "8px 12px",
-  fontSize: "12px",
-  fontWeight: 900,
-  letterSpacing: "0.08em",
-  textTransform: "uppercase",
-},
+  loginHeroBadge: {
+    alignSelf: "flex-start",
+    borderRadius: "999px",
+    background: "#DBEAFE",
+    color: "#1D4ED8",
+    padding: "8px 12px",
+    fontSize: "12px",
+    fontWeight: 900,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+  },
 
-loginHeroTitle: {
-  margin: 0,
-  color: "#0F172A",
-  fontSize: "42px",
-  lineHeight: "1.08",
-  fontWeight: 950,
-  letterSpacing: "-0.05em",
-},
+  loginHeroTitle: {
+    margin: 0,
+    color: "#0F172A",
+    fontSize: "42px",
+    lineHeight: "1.08",
+    fontWeight: 950,
+    letterSpacing: "-0.05em",
+  },
 
-loginHeroText: {
-  margin: 0,
-  color: "#475569",
-  fontSize: "17px",
-  lineHeight: "1.75",
-},
+  loginHeroText: {
+    margin: 0,
+    color: "#475569",
+    fontSize: "17px",
+    lineHeight: "1.75",
+  },
 
-loginHeroFeatureList: {
-  display: "flex",
-  flexDirection: "column",
-  gap: "14px",
-  marginTop: "4px",
-},
+  loginHeroFeatureList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
+    marginTop: "4px",
+  },
 
-loginHeroFeature: {
-  display: "grid",
-  gridTemplateColumns: "42px 1fr",
-  gap: "14px",
-  alignItems: "center",
-  color: "#334155",
-  fontSize: "15px",
-  lineHeight: "1.65",
-  fontWeight: 650,
-},
+  loginHeroFeature: {
+    display: "grid",
+    gridTemplateColumns: "42px 1fr",
+    gap: "14px",
+    alignItems: "center",
+    color: "#334155",
+    fontSize: "15px",
+    lineHeight: "1.65",
+    fontWeight: 650,
+  },
 
-loginHeroFeatureIcon: {
-  width: "42px",
-  height: "42px",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: "14px",
-  background: "#EEF2FF",
-  color: "#4F46E5",
-  fontWeight: 950,
-  fontSize: "13px",
-},
+  loginHeroFeatureIcon: {
+    width: "42px",
+    height: "42px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "14px",
+    background: "#EEF2FF",
+    color: "#4F46E5",
+    fontWeight: 950,
+    fontSize: "13px",
+  },
 
-loginHeroSecurityNote: {
-  marginTop: "8px",
-  paddingTop: "18px",
-  borderTop: "1px solid #E2E8F0",
-  display: "flex",
-  gap: "10px",
-  alignItems: "center",
-  color: "#64748B",
-  fontSize: "14px",
-  fontWeight: 750,
-},
+  loginHeroSecurityNote: {
+    marginTop: "8px",
+    paddingTop: "18px",
+    borderTop: "1px solid #E2E8F0",
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    color: "#64748B",
+    fontSize: "14px",
+    fontWeight: 750,
+  },
 
-loginHeroShield: {
-  color: "#059669",
-  fontWeight: 950,
-},
+  loginHeroShield: {
+    color: "#059669",
+    fontWeight: 950,
+  },
 
-loginHeroVisual: {
-  position: "relative",
-  minHeight: "450px",
-  borderRadius: "26px",
-  background: "linear-gradient(135deg, #EFF6FF 0%, #FFFFFF 45%, #F5F3FF 100%)",
-  border: "1px solid #D8E3F8",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
-  overflow: "hidden",
-  padding: "42px 34px 34px",
-},
+  loginHeroVisual: {
+    position: "relative",
+    minHeight: "450px",
+    borderRadius: "26px",
+    background:
+      "linear-gradient(135deg, #EFF6FF 0%, #FFFFFF 45%, #F5F3FF 100%)",
+    border: "1px solid #D8E3F8",
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
+    overflow: "hidden",
+    padding: "42px 34px 34px",
+  },
 
-visualBrowserBar: {
-  position: "absolute",
-  top: "26px",
-  left: "34px",
-  right: "34px",
-  height: "34px",
-  borderRadius: "14px 14px 0 0",
-  background: "#0F172A",
-  display: "flex",
-  alignItems: "center",
-  gap: "7px",
-  padding: "0 14px",
-},
+  visualBrowserBar: {
+    position: "absolute",
+    top: "26px",
+    left: "34px",
+    right: "34px",
+    height: "34px",
+    borderRadius: "14px 14px 0 0",
+    background: "#0F172A",
+    display: "flex",
+    alignItems: "center",
+    gap: "7px",
+    padding: "0 14px",
+  },
 
-visualDot: {
-  width: "7px",
-  height: "7px",
-  borderRadius: "50%",
-  background: "#CBD5E1",
-},
+  visualDot: {
+    width: "7px",
+    height: "7px",
+    borderRadius: "50%",
+    background: "#CBD5E1",
+  },
 
-visualWorkspace: {
-  marginTop: "18px",
-  padding: "52px 22px 20px",
-  borderRadius: "0 0 20px 20px",
-  background: "rgba(255,255,255,0.86)",
-  border: "1px solid #E2E8F0",
-  display: "grid",
-  gridTemplateColumns: "1fr 1.1fr 1fr",
-  gap: "16px",
-},
+  visualWorkspace: {
+    marginTop: "18px",
+    padding: "52px 22px 20px",
+    borderRadius: "0 0 20px 20px",
+    background: "rgba(255,255,255,0.86)",
+    border: "1px solid #E2E8F0",
+    display: "grid",
+    gridTemplateColumns: "1fr 1.1fr 1fr",
+    gap: "16px",
+  },
 
-visualColumn: {
-  display: "flex",
-  flexDirection: "column",
-  gap: "10px",
-},
+  visualColumn: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+  },
 
-visualLabel: {
-  margin: "0 0 2px",
-  color: "#475569",
-  fontSize: "12px",
-  fontWeight: 900,
-},
+  visualLabel: {
+    margin: "0 0 2px",
+    color: "#475569",
+    fontSize: "12px",
+    fontWeight: 900,
+  },
 
-visualCardSmall: {
-  height: "42px",
-  borderRadius: "12px",
-  background: "#F1F5F9",
-  border: "1px solid #E2E8F0",
-},
+  visualCardSmall: {
+    height: "42px",
+    borderRadius: "12px",
+    background: "#F1F5F9",
+    border: "1px solid #E2E8F0",
+  },
 
-visualAssistantCard: {
-  borderRadius: "18px",
-  background: "#FFFFFF",
-  border: "1px solid #C7D2FE",
-  padding: "18px",
-  boxShadow: "0 18px 40px rgba(79, 70, 229, 0.12)",
-},
+  visualAssistantCard: {
+    borderRadius: "18px",
+    background: "#FFFFFF",
+    border: "1px solid #C7D2FE",
+    padding: "18px",
+    boxShadow: "0 18px 40px rgba(79, 70, 229, 0.12)",
+  },
 
-visualSpark: {
-  width: "36px",
-  height: "36px",
-  borderRadius: "14px",
-  background: "linear-gradient(135deg, #2563EB, #7C3AED)",
-  color: "#FFFFFF",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontWeight: 950,
-  marginBottom: "12px",
-},
+  visualSpark: {
+    width: "36px",
+    height: "36px",
+    borderRadius: "14px",
+    background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+    color: "#FFFFFF",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 950,
+    marginBottom: "12px",
+  },
 
-visualAssistantTitle: {
-  margin: "0 0 6px",
-  color: "#0F172A",
-  fontWeight: 900,
-  fontSize: "14px",
-},
+  visualAssistantTitle: {
+    margin: "0 0 6px",
+    color: "#0F172A",
+    fontWeight: 900,
+    fontSize: "14px",
+  },
 
-visualAssistantText: {
-  margin: 0,
-  color: "#64748B",
-  fontSize: "12px",
-  lineHeight: "1.55",
-},
+  visualAssistantText: {
+    margin: 0,
+    color: "#64748B",
+    fontSize: "12px",
+    lineHeight: "1.55",
+  },
 
-visualDeliverable: {
-  padding: "10px 12px",
-  borderRadius: "12px",
-  background: "#ECFDF5",
-  border: "1px solid #BBF7D0",
-  color: "#166534",
-  fontSize: "12px",
-  fontWeight: 850,
-},
+  visualDeliverable: {
+    padding: "10px 12px",
+    borderRadius: "12px",
+    background: "#ECFDF5",
+    border: "1px solid #BBF7D0",
+    color: "#166534",
+    fontSize: "12px",
+    fontWeight: 850,
+  },
 
-visualFlowGrid: {
-  margin: "22px auto 0",
-  maxWidth: "430px",
-  display: "grid",
-  gridTemplateColumns: "repeat(5, 1fr)",
-  gap: "10px",
-  alignItems: "center",
-},
+  visualFlowGrid: {
+    margin: "22px auto 0",
+    maxWidth: "430px",
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
+    gap: "10px",
+    alignItems: "center",
+  },
 
-visualFlowNode: {
-  padding: "12px 8px",
-  borderRadius: "16px",
-  background: "#FFFFFF",
-  border: "1px solid #CBD5E1",
-  color: "#334155",
-  textAlign: "center",
-  fontSize: "12px",
-  fontWeight: 900,
-},
+  visualFlowNode: {
+    padding: "12px 8px",
+    borderRadius: "16px",
+    background: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    color: "#334155",
+    textAlign: "center",
+    fontSize: "12px",
+    fontWeight: 900,
+  },
 
-visualFlowNodePrimary: {
-  padding: "14px 8px",
-  borderRadius: "18px",
-  background: "linear-gradient(135deg, #2563EB, #7C3AED)",
-  color: "#FFFFFF",
-  textAlign: "center",
-  fontSize: "14px",
-  fontWeight: 950,
-  boxShadow: "0 16px 32px rgba(37, 99, 235, 0.28)",
-},
+  visualFlowNodePrimary: {
+    padding: "14px 8px",
+    borderRadius: "18px",
+    background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+    color: "#FFFFFF",
+    textAlign: "center",
+    fontSize: "14px",
+    fontWeight: 950,
+    boxShadow: "0 16px 32px rgba(37, 99, 235, 0.28)",
+  },
 
-visualFlowNodeSuccess: {
-  padding: "12px 8px",
-  borderRadius: "16px",
-  background: "#D1FAE5",
-  border: "1px solid #A7F3D0",
-  color: "#047857",
-  textAlign: "center",
-  fontSize: "12px",
-  fontWeight: 900,
-},
+  visualFlowNodeSuccess: {
+    padding: "12px 8px",
+    borderRadius: "16px",
+    background: "#D1FAE5",
+    border: "1px solid #A7F3D0",
+    color: "#047857",
+    textAlign: "center",
+    fontSize: "12px",
+    fontWeight: 900,
+  },
 
-visualPackageCard: {
-  position: "absolute",
-  right: "28px",
-  bottom: "26px",
-  width: "190px",
-  borderRadius: "22px",
-  background: "rgba(255,255,255,0.94)",
-  border: "1px solid #C7D2FE",
-  padding: "18px",
-  boxShadow: "0 22px 50px rgba(15, 23, 42, 0.14)",
-},
+  visualPackageCard: {
+    position: "absolute",
+    right: "28px",
+    bottom: "26px",
+    width: "190px",
+    borderRadius: "22px",
+    background: "rgba(255,255,255,0.94)",
+    border: "1px solid #C7D2FE",
+    padding: "18px",
+    boxShadow: "0 22px 50px rgba(15, 23, 42, 0.14)",
+  },
 
-visualPackageTitle: {
-  margin: "0 0 10px",
-  color: "#0F172A",
-  fontWeight: 950,
-  fontSize: "15px",
-},
+  visualPackageTitle: {
+    margin: "0 0 10px",
+    color: "#0F172A",
+    fontWeight: 950,
+    fontSize: "15px",
+  },
 
-visualPackageLine: {
-  margin: "6px 0",
-  color: "#475569",
-  fontSize: "12px",
-  fontWeight: 800,
-},
+  visualPackageLine: {
+    margin: "6px 0",
+    color: "#475569",
+    fontSize: "12px",
+    fontWeight: 800,
+  },
 
-loginHeroPills: {
-  display: "flex",
-  flexWrap: "wrap",
-  justifyContent: "center",
-  gap: "12px",
-},
+  loginHeroPills: {
+    display: "flex",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: "12px",
+  },
 
-loginHeroPill: {
-  padding: "10px 18px",
-  borderRadius: "999px",
-  background: "rgba(255,255,255,0.9)",
-  border: "1px solid #CBD5E1",
-  color: "#334155",
-  fontSize: "13px",
-  fontWeight: 850,
-},
+  loginHeroPill: {
+    padding: "10px 18px",
+    borderRadius: "999px",
+    background: "rgba(255,255,255,0.9)",
+    border: "1px solid #CBD5E1",
+    color: "#334155",
+    fontSize: "13px",
+    fontWeight: 850,
+  },
 
   templateCard: {
     background: "rgba(255,255,255,0.92)",
@@ -6148,19 +6963,19 @@ loginHeroPill: {
     boxShadow: "inset 0 1px 4px rgba(15, 23, 42, 0.08)",
   },
   clarificationTextarea: {
-  width: "100%",
-  minHeight: "240px",
-  resize: "vertical",
-  border: "1px solid #94A3B8",
-  borderRadius: "16px",
-  background: "#FFFFFF",
-  padding: "16px",
-  color: "#0F172A",
-  fontSize: "15px",
-  lineHeight: "1.7",
-  outline: "none",
-  boxShadow: "inset 0 1px 4px rgba(15, 23, 42, 0.08)",
-},
+    width: "100%",
+    minHeight: "240px",
+    resize: "vertical",
+    border: "1px solid #94A3B8",
+    borderRadius: "16px",
+    background: "#FFFFFF",
+    padding: "16px",
+    color: "#0F172A",
+    fontSize: "15px",
+    lineHeight: "1.7",
+    outline: "none",
+    boxShadow: "inset 0 1px 4px rgba(15, 23, 42, 0.08)",
+  },
   analysisActions: {
     display: "flex",
     gap: "12px",
@@ -6312,19 +7127,19 @@ loginHeroPill: {
     fontWeight: 800,
   },
   packageNav: {
-  position: "sticky",
-  top: "0",
-  zIndex: 30,
-  display: "grid",
-  gridTemplateColumns: "repeat(8, minmax(0, 1fr))",
-  gap: "10px",
-  padding: "12px",
-  background: "rgba(255, 255, 255, 0.92)",
-  border: "1px solid #CBD5E1",
-  borderRadius: "20px",
-  boxShadow: "0 14px 40px rgba(15, 23, 42, 0.10)",
-  backdropFilter: "blur(12px)",
-},
+    position: "sticky",
+    top: "0",
+    zIndex: 30,
+    display: "grid",
+    gridTemplateColumns: "repeat(8, minmax(0, 1fr))",
+    gap: "10px",
+    padding: "12px",
+    background: "rgba(255, 255, 255, 0.92)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "20px",
+    boxShadow: "0 14px 40px rgba(15, 23, 42, 0.10)",
+    backdropFilter: "blur(12px)",
+  },
   mobilePackageNav: {
     position: "sticky",
     top: "0",
@@ -6415,38 +7230,38 @@ loginHeroPill: {
     marginBottom: "18px",
   },
   diagramShell: {
-  background: "#FFFFFF",
-  border: "1px solid #CBD5E1",
-  borderRadius: "18px",
-  padding: "24px",
-  overflowX: "auto",
-},
+    background: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    padding: "24px",
+    overflowX: "auto",
+  },
 
-detailsBox: {
-  background: "#F8FAFC",
-  border: "1px solid #CBD5E1",
-  borderRadius: "18px",
-  padding: "16px",
-},
+  detailsBox: {
+    background: "#F8FAFC",
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    padding: "16px",
+  },
 
-detailsSummary: {
-  cursor: "pointer",
-  color: "#2563EB",
-  fontWeight: 850,
-  fontSize: "15px",
-},
+  detailsSummary: {
+    cursor: "pointer",
+    color: "#2563EB",
+    fontWeight: 850,
+    fontSize: "15px",
+  },
 
-mermaidCodeBlock: {
-  marginTop: "14px",
-  whiteSpace: "pre-wrap",
-  wordBreak: "break-word",
-  background: "#0F172A",
-  color: "#E2E8F0",
-  padding: "18px",
-  borderRadius: "14px",
-  fontSize: "14px",
-  lineHeight: "1.7",
-},
+  mermaidCodeBlock: {
+    marginTop: "14px",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    background: "#0F172A",
+    color: "#E2E8F0",
+    padding: "18px",
+    borderRadius: "14px",
+    fontSize: "14px",
+    lineHeight: "1.7",
+  },
   cardTitle: {
     margin: 0,
     fontSize: "24px",
@@ -7193,6 +8008,18 @@ mermaidCodeBlock: {
     flexWrap: "wrap",
     justifyContent: "flex-end",
   },
+  workspaceSelect: {
+    minWidth: "260px",
+    border: "1px solid #CBD5E1",
+    borderRadius: "14px",
+    background: "#FFFFFF",
+    color: "#1D4ED8",
+    padding: "14px 16px",
+    fontSize: "15px",
+    fontWeight: 850,
+    outline: "none",
+    cursor: "pointer",
+  },
   activeUtilityButton: {
     border: "1px solid #2563EB",
     borderRadius: "14px",
@@ -7213,7 +8040,8 @@ mermaidCodeBlock: {
     marginBottom: "18px",
   },
   statusBanner: {
-    background: "linear-gradient(135deg, rgba(239,246,255,0.95), rgba(245,243,255,0.95))",
+    background:
+      "linear-gradient(135deg, rgba(239,246,255,0.95), rgba(245,243,255,0.95))",
     border: "1px solid #BFDBFE",
     borderRadius: "22px",
     padding: "18px 20px",
@@ -7340,5 +8168,4 @@ mermaidCodeBlock: {
     fontSize: "12px",
     fontWeight: 800,
   },
-
 };
