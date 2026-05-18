@@ -224,6 +224,25 @@ type DeliveryLeadChatMessage = {
   response?: DeliveryLeadChatResponse;
 };
 
+type SiteAssistantMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type ReviewAgentKey = "architect" | "developer" | "qa" | "delivery_lead";
+
+type ReviewAgentChatMessage = {
+  role: "user" | "agent";
+  content: string;
+};
+
+const REVIEW_AGENT_TABS: { id: ReviewAgentKey; label: string; title: string }[] = [
+  { id: "architect", label: "Architect", title: "Architect Review" },
+  { id: "developer", label: "Developer", title: "Developer Review" },
+  { id: "qa", label: "QA", title: "QA Review" },
+  { id: "delivery_lead", label: "Delivery Lead", title: "Delivery Lead Review" },
+];
+
 type ActiveTab = "stories" | "technical" | "qa";
 type PackageTab =
   | "overview"
@@ -459,6 +478,23 @@ export default function Home() {
   const [activeGenerationMode, setActiveGenerationMode] =
     useState<"quick" | "full" | null>(null);
   const [floatingChatOpen, setFloatingChatOpen] = useState(false);
+  const [siteAssistantMessage, setSiteAssistantMessage] = useState("");
+  const [siteAssistantChat, setSiteAssistantChat] = useState<SiteAssistantMessage[]>([]);
+  const [siteAssistantThinking, setSiteAssistantThinking] = useState(false);
+  const [activeReviewAgent, setActiveReviewAgent] =
+    useState<ReviewAgentKey>("architect");
+  const [reviewAgentMessage, setReviewAgentMessage] = useState("");
+  const [reviewAgentThinking, setReviewAgentThinking] = useState(false);
+  const [reviewAgentChats, setReviewAgentChats] = useState<
+    Record<ReviewAgentKey, ReviewAgentChatMessage[]>
+  >({
+    architect: [],
+    developer: [],
+    qa: [],
+    delivery_lead: [],
+  });
+  const [reviewAgentPendingRequirementUpdate, setReviewAgentPendingRequirementUpdate] =
+    useState("");
 
   const [projectName, setProjectName] = useState("");
   const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
@@ -799,6 +835,19 @@ export default function Home() {
     setDeliveryLeadPendingRequirementUpdate("");
     setActiveGenerationMode(null);
     setFloatingChatOpen(false);
+    setSiteAssistantMessage("");
+    setSiteAssistantChat([]);
+    setSiteAssistantThinking(false);
+    setActiveReviewAgent("architect");
+    setReviewAgentMessage("");
+    setReviewAgentThinking(false);
+    setReviewAgentChats({
+      architect: [],
+      developer: [],
+      qa: [],
+      delivery_lead: [],
+    });
+    setReviewAgentPendingRequirementUpdate("");
   }
 
   function newProject() {
@@ -882,6 +931,16 @@ export default function Home() {
     setDeliveryLeadChat([]);
     setDeliveryLeadThinking(false);
     setDeliveryLeadPendingRequirementUpdate("");
+    setActiveReviewAgent("architect");
+    setReviewAgentMessage("");
+    setReviewAgentThinking(false);
+    setReviewAgentChats({
+      architect: [],
+      developer: [],
+      qa: [],
+      delivery_lead: [],
+    });
+    setReviewAgentPendingRequirementUpdate("");
     setShowTemplates(false);
   }
 
@@ -1100,6 +1159,237 @@ export default function Home() {
       setLoading(false);
       setLoadingStage("");
     }
+  }
+
+  function getSiteAssistantAnswer(question: string) {
+    const normalizedQuestion = question.toLowerCase();
+
+    const workflowAnswer = `Use the site in this order:\n\n1. Start with a template or paste your rough requirement in Requirement Intake.\n2. Click Analyze Requirement if you want gaps and clarifying questions first.\n3. Use Quick Package for a fast draft, or Full Detailed Package when you need developer notes, QA, score, and review-ready output.\n4. Review the package tabs: Overview, Design, Stories, Technical, QA, Review, Delivery Lead, and Export.\n5. Save the project so you can reload it later.\n6. Export Markdown or DOCX when you want to share the package.`;
+
+    const quickFullAnswer = `Quick Package is for a fast first draft. It focuses on requirement summary, solution design, workflow, open questions, and core stories.\n\nFull Detailed Package is for delivery handoff. It adds developer notes, technical objects, QA test cases, UAT cases, quality scoring, process diagrams, and deeper delivery lead review.\n\nUse Quick early. Use Full when the requirement is stable enough for review or handoff.`;
+
+    const templateAnswer = `Templates help you start faster. Browse Template Library, choose a common workflow such as Vendor Onboarding, Project Intake, Access Request, HR Case Intake, GRC Issue Management, Contract Review, Policy Exception, or Custom App Request. After selecting a template, edit the requirement text before generating a package.`;
+
+    const saveAnswer = `To save work, enter a Current Project name and click Save Project. Saved projects are stored under your signed-in account. Use the Saved Projects dropdown to reload prior packages. Use Update Project when you are editing an already saved package.`;
+
+    const exportAnswer = `Use the Export tab or the top export buttons after generating a package. Markdown is useful for copying into Jira, Confluence, or notes. DOCX is better for stakeholder review, delivery handoff, or sending as a formal package.`;
+
+    const technicalAnswer = `Use the Technical tab after generating a Full Detailed Package. It organizes ServiceNow objects, Flow Designer notes, Business Rules, ACL/security notes, notifications, and deployment notes. Click technical cards to generate implementation guidance or code-style notes for a specific object or rule.`;
+
+    const deliveryLeadAnswer = `Use the Delivery Lead tab when you want package-specific guidance. Ask about missing requirements, scope, risks, MVP vs phase 2, ServiceNow approach, business rules, notification content, ACLs, or requirement updates. If the Delivery Lead suggests a requirement update, use Apply Requirement Update to push it into the main requirement box.`;
+
+    const reviewAnswer = `Use Run Agent Review after generating a package. It acts like an internal review board across architecture, development, QA, and delivery lead perspectives. It is useful before you export or share the package.`;
+
+    const uploadAnswer = `You can paste rough notes directly or upload supporting documents. The current MVP supports .txt, .pdf, and .docx files. Avoid scanned or image-only PDFs because text extraction may not work well.`;
+
+    if (normalizedQuestion.includes("quick") || normalizedQuestion.includes("full") || normalizedQuestion.includes("generation")) {
+      return quickFullAnswer;
+    }
+
+    if (normalizedQuestion.includes("template") || normalizedQuestion.includes("example")) {
+      return templateAnswer;
+    }
+
+    if (normalizedQuestion.includes("save") || normalizedQuestion.includes("reload") || normalizedQuestion.includes("project") || normalizedQuestion.includes("database")) {
+      return saveAnswer;
+    }
+
+    if (normalizedQuestion.includes("export") || normalizedQuestion.includes("docx") || normalizedQuestion.includes("markdown") || normalizedQuestion.includes("download")) {
+      return exportAnswer;
+    }
+
+    if (normalizedQuestion.includes("technical") || normalizedQuestion.includes("code") || normalizedQuestion.includes("business rule") || normalizedQuestion.includes("flow") || normalizedQuestion.includes("acl")) {
+      return technicalAnswer;
+    }
+
+    if (normalizedQuestion.includes("delivery lead") || normalizedQuestion.includes("requirement update") || normalizedQuestion.includes("missing") || normalizedQuestion.includes("scope") || normalizedQuestion.includes("risk")) {
+      return deliveryLeadAnswer;
+    }
+
+    if (normalizedQuestion.includes("review") || normalizedQuestion.includes("score") || normalizedQuestion.includes("quality")) {
+      return reviewAnswer;
+    }
+
+    if (normalizedQuestion.includes("upload") || normalizedQuestion.includes("document") || normalizedQuestion.includes("pdf") || normalizedQuestion.includes("docx") || normalizedQuestion.includes("file")) {
+      return uploadAnswer;
+    }
+
+    if (normalizedQuestion.includes("how") || normalizedQuestion.includes("use") || normalizedQuestion.includes("start") || normalizedQuestion.includes("help")) {
+      return workflowAnswer;
+    }
+
+    return `I can help you use this site. Common things you can ask me:\n\n- How do I generate a package?\n- What is Quick vs Full Package?\n- How do I save and reload projects?\n- How do templates work?\n- Where do I review technical notes or QA?\n- How do I export the package?\n\nFor questions about the actual generated requirement or package content, use the Delivery Lead tab.`;
+  }
+
+  async function askSiteAssistant() {
+    if (!siteAssistantMessage.trim()) {
+      alert("Ask a site question first.");
+      return;
+    }
+
+    const userQuestion = siteAssistantMessage.trim();
+    const nextChat: SiteAssistantMessage[] = [
+      ...siteAssistantChat,
+      {
+        role: "user",
+        content: userQuestion,
+      },
+    ];
+
+    setSiteAssistantChat(nextChat);
+    setSiteAssistantMessage("");
+    setSiteAssistantThinking(true);
+
+    window.setTimeout(() => {
+      setSiteAssistantChat([
+        ...nextChat,
+        {
+          role: "assistant",
+          content: getSiteAssistantAnswer(userQuestion),
+        },
+      ]);
+      setSiteAssistantThinking(false);
+    }, 250);
+  }
+
+
+  function getReviewFeedback(agent: ReviewAgentKey): AgentReviewerFeedback | null {
+    if (!result?.agent_review) return null;
+
+    if (agent === "architect") return result.agent_review.architect_review;
+    if (agent === "developer") return result.agent_review.developer_review;
+    if (agent === "qa") return result.agent_review.qa_review;
+
+    return result.agent_review.delivery_lead_review;
+  }
+
+  function getReviewAgentLabel(agent: ReviewAgentKey) {
+    if (agent === "architect") return "Architect";
+    if (agent === "developer") return "Developer";
+    if (agent === "qa") return "QA Lead";
+
+    return "Delivery Lead";
+  }
+
+  function getReviewAgentFocus(agent: ReviewAgentKey) {
+    if (agent === "architect") {
+      return "Act as the Architect reviewer. Focus on ServiceNow application architecture, scoped app approach, data model, workflow structure, integrations, extensibility, and platform best practices.";
+    }
+
+    if (agent === "developer") {
+      return "Act as the Developer reviewer. Focus on ServiceNow implementation details, tables, fields, business rules, flow designer, ACLs, notifications, scripts, technical risks, and build sequencing.";
+    }
+
+    if (agent === "qa") {
+      return "Act as the QA reviewer. Focus on test coverage, UAT scenarios, edge cases, regression areas, data needs, acceptance criteria, and release readiness.";
+    }
+
+    return "Act as the Delivery Lead reviewer. Focus on delivery readiness, MVP vs phase 2, missing requirements, stakeholder decisions, risk management, and recommended next actions.";
+  }
+
+  async function askReviewAgent() {
+    if (!reviewAgentMessage.trim()) {
+      alert(`Ask the ${getReviewAgentLabel(activeReviewAgent)} a question first.`);
+      return;
+    }
+
+    if (!result?.agent_review) {
+      alert("Run Agent Review first.");
+      return;
+    }
+
+    const userQuestion = reviewAgentMessage.trim();
+    const agentLabel = getReviewAgentLabel(activeReviewAgent);
+    const agentFocus = getReviewAgentFocus(activeReviewAgent);
+    const activeFeedback = getReviewFeedback(activeReviewAgent);
+
+    const nextAgentChat: ReviewAgentChatMessage[] = [
+      ...reviewAgentChats[activeReviewAgent],
+      {
+        role: "user",
+        content: userQuestion,
+      },
+    ];
+
+    setReviewAgentChats({
+      ...reviewAgentChats,
+      [activeReviewAgent]: nextAgentChat,
+    });
+    setReviewAgentMessage("");
+    setReviewAgentThinking(true);
+    setLoadingStage(`${agentLabel} is reviewing your question...`);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/delivery_lead_chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: `${agentFocus}
+
+User question:
+${userQuestion}
+
+Use the current package and this review feedback to answer as the ${agentLabel}. If the user asks to change the requirement, return a clear suggested_requirement_update.
+
+${agentLabel} feedback:
+${JSON.stringify(activeFeedback, null, 2)}`,
+          requirement: buildRequirementWithClarifications(),
+          current_package: result,
+          chat_history: nextAgentChat,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Review agent chat failed:", response.status, errorText);
+        throw new Error(`Review agent chat failed: ${response.status}`);
+      }
+
+      const rawData: DeliveryLeadChatResponse = await response.json();
+      const answer = safeText(rawData.answer || rawData.delivery_lead_recommendation);
+
+      const normalizedSuggestedUpdate = safeText(rawData.suggested_requirement_update);
+      if (normalizedSuggestedUpdate.trim()) {
+        setReviewAgentPendingRequirementUpdate(normalizedSuggestedUpdate);
+      }
+
+      setReviewAgentChats({
+        ...reviewAgentChats,
+        [activeReviewAgent]: [
+          ...nextAgentChat,
+          {
+            role: "agent",
+            content:
+              answer ||
+              `${agentLabel} reviewed this, but no detailed answer was returned. Try asking for a specific requirement change, risk, or implementation recommendation.`,
+          },
+        ],
+      });
+    } catch (error) {
+      console.error(error);
+      alert(`${agentLabel} chat failed. Check backend logs.`);
+    } finally {
+      setReviewAgentThinking(false);
+      setLoadingStage("");
+    }
+  }
+
+  function applyReviewAgentRequirementUpdate(updateText: string) {
+    if (!updateText.trim()) return;
+
+    const confirmed = window.confirm(
+      `Apply this ${getReviewAgentLabel(activeReviewAgent)} update to the main requirement box?`
+    );
+
+    if (!confirmed) return;
+
+    setRequirement(updateText);
+    setClarificationAnswers("");
+    setIntakeAnalysis(null);
+    setReviewAgentPendingRequirementUpdate("");
+    setPackageTab("design");
   }
 
   async function askDeliveryLead() {
@@ -3342,22 +3632,40 @@ ${uat.expected_result}
               >
                 {result.agent_review ? (
                   <div style={styles.stack}>
-                    <div style={styles.innerCard}>
-                      <p style={styles.label}>Overall Review Summary</p>
-                      <p style={styles.bodyText}>
-                        {result.agent_review.overall_review_summary}
-                      </p>
-                      <p style={{ ...styles.accentText, marginTop: "12px" }}>
-                        Final Verdict: {result.agent_review.final_verdict}
-                      </p>
+                    <div style={styles.reviewSummaryGrid}>
+                      <div style={styles.innerCard}>
+                        <p style={styles.label}>Overall Review Summary</p>
+                        <p style={styles.bodyText}>
+                          {result.agent_review.overall_review_summary}
+                        </p>
+                        <p style={{ ...styles.accentText, marginTop: "12px" }}>
+                          Final Verdict: {result.agent_review.final_verdict}
+                        </p>
+                      </div>
+
+                      <div style={styles.innerCard}>
+                        <p style={styles.label}>How to Use This Review</p>
+                        <p style={styles.bodyText}>
+                          Start with the overall verdict and priority fixes. Then open a specialist
+                          tab below to review Architect, Developer, QA, or Delivery Lead feedback.
+                          You can ask that agent questions and apply requirement updates when needed.
+                        </p>
+                      </div>
                     </div>
 
                     {result.agent_review.priority_fixes?.length > 0 && (
                       <div style={styles.innerCard}>
-                        <p style={styles.label}>Priority Fixes</p>
-                        <div style={styles.stack}>
+                        <div style={styles.cardTitleRow}>
+                          <div>
+                            <p style={styles.label}>Priority Fixes</p>
+                            <h3 style={styles.itemTitle}>Fix these before build handoff</h3>
+                          </div>
+                          <Badge>{result.agent_review.priority_fixes.length} fixes</Badge>
+                        </div>
+
+                        <div style={styles.priorityFixGrid}>
                           {result.agent_review.priority_fixes.map((fix, index) => (
-                            <div key={index} style={styles.riskBox}>
+                            <div key={index} style={styles.priorityFixCard}>
                               <p style={styles.riskTitle}>
                                 {fix.priority}: {fix.fix}
                               </p>
@@ -3370,23 +3678,130 @@ ${uat.expected_result}
                       </div>
                     )}
 
-                    <div style={responsiveTwoGrid}>
-                      <ReviewerCard
-                        title="Architect Review"
-                        review={result.agent_review.architect_review}
+                    <div style={styles.reviewAgentShell}>
+                      <div style={styles.reviewAgentTabs}>
+                        {REVIEW_AGENT_TABS.map((tab) => (
+                          <button
+                            key={tab.id}
+                            onClick={() => {
+                              setActiveReviewAgent(tab.id);
+                              setReviewAgentMessage("");
+                              setReviewAgentPendingRequirementUpdate("");
+                            }}
+                            style={
+                              activeReviewAgent === tab.id
+                                ? styles.activeReviewAgentTab
+                                : styles.inactiveReviewAgentTab
+                            }
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <ReviewAgentPanel
+                        agentTitle={
+                          REVIEW_AGENT_TABS.find((tab) => tab.id === activeReviewAgent)?.title ||
+                          "Agent Review"
+                        }
+                        review={getReviewFeedback(activeReviewAgent)}
                       />
-                      <ReviewerCard
-                        title="Developer Review"
-                        review={result.agent_review.developer_review}
-                      />
-                      <ReviewerCard
-                        title="QA Review"
-                        review={result.agent_review.qa_review}
-                      />
-                      <ReviewerCard
-                        title="Delivery Lead Review"
-                        review={result.agent_review.delivery_lead_review}
-                      />
+
+                      <div style={styles.reviewAgentChatBox}>
+                        <div style={styles.cardTitleRow}>
+                          <div>
+                            <p style={styles.label}>Talk to {getReviewAgentLabel(activeReviewAgent)}</p>
+                            <h3 style={styles.itemTitle}>
+                              Ask follow-ups or request requirement changes
+                            </h3>
+                          </div>
+                          <Badge>{reviewAgentChats[activeReviewAgent]?.length || 0} messages</Badge>
+                        </div>
+
+                        <div style={styles.agentChatHistory}>
+                          {reviewAgentChats[activeReviewAgent]?.length ? (
+                            reviewAgentChats[activeReviewAgent].map((message, index) => (
+                              <div
+                                key={index}
+                                style={
+                                  message.role === "user"
+                                    ? styles.agentUserMessage
+                                    : styles.agentResponseMessage
+                                }
+                              >
+                                <p style={styles.label}>
+                                  {message.role === "user"
+                                    ? "You"
+                                    : getReviewAgentLabel(activeReviewAgent)}
+                                </p>
+                                <p style={styles.bodyText}>{message.content}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={styles.innerCard}>
+                              <p style={styles.bodyText}>
+                                Ask this reviewer about their concerns, what to fix first, or how to
+                                update the original requirement. Example: “Rewrite the requirement
+                                to address your top data model concern.”
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {reviewAgentPendingRequirementUpdate && (
+                          <div style={styles.requirementUpdateBox}>
+                            <p style={styles.label}>Suggested Requirement Update</p>
+                            <p style={styles.bodyText}>{reviewAgentPendingRequirementUpdate}</p>
+                            <button
+                              onClick={() =>
+                                applyReviewAgentRequirementUpdate(
+                                  reviewAgentPendingRequirementUpdate
+                                )
+                              }
+                              style={{ ...styles.button, marginTop: "12px" }}
+                            >
+                              Apply to Requirement
+                            </button>
+                          </div>
+                        )}
+
+                        <textarea
+                          value={reviewAgentMessage}
+                          onChange={(e) => setReviewAgentMessage(e.target.value)}
+                          placeholder={`Ask ${getReviewAgentLabel(activeReviewAgent)} what to fix, clarify, or update...`}
+                          style={styles.deliveryLeadTextarea}
+                        />
+
+                        <div style={styles.analysisActions}>
+                          <button
+                            onClick={askReviewAgent}
+                            disabled={reviewAgentThinking || loading}
+                            style={{
+                              ...styles.button,
+                              opacity: reviewAgentThinking || loading ? 0.65 : 1,
+                              cursor:
+                                reviewAgentThinking || loading ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {reviewAgentThinking
+                              ? "Thinking..."
+                              : `Ask ${getReviewAgentLabel(activeReviewAgent)}`}
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setReviewAgentChats({
+                                ...reviewAgentChats,
+                                [activeReviewAgent]: [],
+                              });
+                              setReviewAgentPendingRequirementUpdate("");
+                            }}
+                            style={styles.secondaryButton}
+                          >
+                            Clear Agent Chat
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <button
@@ -3422,7 +3837,7 @@ ${uat.expected_result}
                 )}
               </Card>
             )}
-            
+
             {packageTab === "delivery_lead" && (
               <Card title="Delivery Lead Copilot">
                 <div style={styles.stack}>
@@ -3740,10 +4155,10 @@ ${uat.expected_result}
           <button
             onClick={() => setFloatingChatOpen(true)}
             style={styles.floatingChatButton}
-            aria-label="Open Delivery Lead chat"
+            aria-label="Open site help chat"
           >
-            <span style={styles.floatingChatIcon}>✦</span>
-            Ask Delivery Lead
+            <span style={styles.floatingChatIcon}>?</span>
+            Site Help
           </button>
         )}
 
@@ -3751,8 +4166,8 @@ ${uat.expected_result}
           <div style={styles.floatingChatPanel}>
             <div style={styles.floatingChatHeader}>
               <div>
-                <p style={styles.label}>Delivery Lead Copilot</p>
-                <h3 style={styles.modalTitle}>Ask about this site or package</h3>
+                <p style={styles.label}>Site Help Assistant</p>
+                <h3 style={styles.modalTitle}>How to use this site</h3>
               </div>
               <button
                 style={styles.closeButton}
@@ -3763,45 +4178,95 @@ ${uat.expected_result}
             </div>
 
             <div style={styles.miniChatBody}>
-              {deliveryLeadChat.length ? (
-                deliveryLeadChat.slice(-6).map((message, index) => (
+              {siteAssistantChat.length ? (
+                siteAssistantChat.slice(-8).map((message, index) => (
                   <div
                     key={index}
                     style={message.role === "user" ? styles.chatUserBubble : styles.chatLeadBubble}
                   >
-                    <p style={styles.label}>{message.role === "user" ? "You" : "Delivery Lead"}</p>
+                    <p style={styles.label}>{message.role === "user" ? "You" : "Site Guide"}</p>
                     <p style={styles.bodyText}>{safeText(message.content)}</p>
                   </div>
                 ))
               ) : (
                 <div style={styles.innerCard}>
                   <p style={styles.bodyText}>
-                    Ask about using the site, refining your requirement, package gaps, business rules, email notifications, ACLs, or how to improve the generated package.
+                    I can explain how to use this site: templates, requirement intake,
+                    Quick vs Full Package, saved projects, package tabs, technical notes,
+                    Delivery Lead chat, and exports.
                   </p>
+                  <div style={styles.sitePromptGrid}>
+                    <button
+                      onClick={() => setSiteAssistantMessage("How do I use this site?")}
+                      style={styles.sitePromptButton}
+                    >
+                      How do I use this site?
+                    </button>
+                    <button
+                      onClick={() => setSiteAssistantMessage("What is Quick Package vs Full Detailed Package?")}
+                      style={styles.sitePromptButton}
+                    >
+                      Quick vs Full
+                    </button>
+                    <button
+                      onClick={() => setSiteAssistantMessage("How do I save and reload projects?")}
+                      style={styles.sitePromptButton}
+                    >
+                      Save projects
+                    </button>
+                    <button
+                      onClick={() => setSiteAssistantMessage("Where do I get technical notes and code guidance?")}
+                      style={styles.sitePromptButton}
+                    >
+                      Technical notes
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {siteAssistantThinking && (
+                <div style={styles.chatLeadBubble}>
+                  <p style={styles.label}>Site Guide</p>
+                  <p style={styles.bodyText}>Thinking...</p>
                 </div>
               )}
             </div>
 
             <textarea
-              value={deliveryLeadMessage}
-              onChange={(e) => setDeliveryLeadMessage(e.target.value)}
-              placeholder="Ask the Delivery Lead anything about this package or site..."
+              value={siteAssistantMessage}
+              onChange={(e) => setSiteAssistantMessage(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  askSiteAssistant();
+                }
+              }}
+              placeholder="Ask how to use templates, packages, saving, exports, tabs, or technical notes..."
               style={styles.miniChatTextarea}
             />
             <div style={styles.exportActions}>
               <button
-                onClick={askDeliveryLead}
-                disabled={deliveryLeadThinking || loading}
+                onClick={askSiteAssistant}
+                disabled={siteAssistantThinking}
                 style={{
                   ...styles.button,
-                  opacity: deliveryLeadThinking || loading ? 0.65 : 1,
-                  cursor: deliveryLeadThinking || loading ? "not-allowed" : "pointer",
+                  opacity: siteAssistantThinking ? 0.65 : 1,
+                  cursor: siteAssistantThinking ? "not-allowed" : "pointer",
                 }}
               >
-                {deliveryLeadThinking ? "Thinking..." : "Send"}
+                {siteAssistantThinking ? "Thinking..." : "Send"}
               </button>
-              <button onClick={() => setDeliveryLeadChat([])} style={styles.secondaryButton}>
+              <button onClick={() => setSiteAssistantChat([])} style={styles.secondaryButton}>
                 Clear
+              </button>
+              <button
+                onClick={() => {
+                  setFloatingChatOpen(false);
+                  setPackageTab("delivery_lead");
+                }}
+                style={styles.secondaryButton}
+              >
+                Open Delivery Lead Tab
               </button>
             </div>
           </div>
@@ -3973,6 +4438,72 @@ function RegeneratePanel({
   );
 }
 
+
+function ReviewAgentPanel({
+  agentTitle,
+  review,
+}: {
+  agentTitle: string;
+  review: AgentReviewerFeedback | null;
+}) {
+  if (!review) {
+    return (
+      <div style={styles.innerCard}>
+        <p style={styles.muted}>Run the agent review board to see this reviewer feedback.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.reviewAgentPanel}>
+      <div style={styles.cardTitleRow}>
+        <div>
+          <p style={styles.label}>Specialist Review</p>
+          <h3 style={styles.itemTitle}>{agentTitle}</h3>
+        </div>
+      </div>
+
+      <div style={styles.reviewAgentContentGrid}>
+        <div style={styles.innerCard}>
+          <p style={styles.label}>What Looks Good</p>
+          <ul style={styles.list}>
+            {review.what_looks_good?.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div style={styles.innerCard}>
+          <p style={styles.label}>Concerns</p>
+          <ul style={styles.list}>
+            {review.concerns?.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div style={styles.innerCard}>
+          <p style={styles.label}>Recommended Improvements</p>
+          <ul style={styles.list}>
+            {review.recommended_improvements?.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div style={styles.innerCard}>
+          <p style={styles.label}>Questions for Business</p>
+          <ul style={styles.list}>
+            {review.questions_for_business?.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReviewerCard({
   title,
   review,
@@ -4070,7 +4601,7 @@ const styles: Record<string, React.CSSProperties> = {
       "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
   },
   container: {
-    maxWidth: "1440px",
+    maxWidth: "1360px",
     margin: "0 auto",
     padding: "36px",
   },
@@ -4633,7 +5164,7 @@ loginHeroPill: {
 
   templateGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
     gap: "14px",
     marginTop: "18px",
   },
@@ -4646,6 +5177,8 @@ loginHeroPill: {
     textAlign: "left",
     cursor: "pointer",
     boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)",
+    minWidth: 0,
+    overflow: "hidden",
   },
 
   templateTileTop: {
@@ -4654,6 +5187,7 @@ loginHeroPill: {
     gap: "10px",
     alignItems: "flex-start",
     marginBottom: "10px",
+    flexWrap: "wrap",
   },
 
   templateName: {
@@ -4661,7 +5195,9 @@ loginHeroPill: {
     color: "#0F172A",
     fontSize: "16px",
     fontWeight: 850,
-    lineHeight: "1.4",
+    lineHeight: "1.35",
+    overflowWrap: "anywhere",
+    maxWidth: "100%",
   },
 
   templateCategory: {
@@ -4672,7 +5208,9 @@ loginHeroPill: {
     padding: "4px 8px",
     fontSize: "11px",
     fontWeight: 800,
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
+    lineHeight: "1.2",
+    maxWidth: "100%",
   },
 
   templateDescription: {
@@ -4680,6 +5218,7 @@ loginHeroPill: {
     color: "#475569",
     fontSize: "14px",
     lineHeight: "1.6",
+    minHeight: "68px",
   },
 
   templateUse: {
@@ -5444,6 +5983,103 @@ mermaidCodeBlock: {
     outline: "none",
     boxSizing: "border-box",
   },
+  reviewSummaryGrid: {
+    display: "grid",
+    gridTemplateColumns: "1.4fr 0.8fr",
+    gap: "18px",
+  },
+  priorityFixGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: "14px",
+  },
+  priorityFixCard: {
+    background: "#FFFBEB",
+    border: "1px solid #FACC15",
+    borderRadius: "18px",
+    padding: "18px",
+    minWidth: 0,
+  },
+  reviewAgentShell: {
+    background: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    borderRadius: "22px",
+    padding: "18px",
+    boxShadow: "0 12px 34px rgba(15, 23, 42, 0.06)",
+  },
+  reviewAgentTabs: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: "10px",
+    marginBottom: "16px",
+  },
+  activeReviewAgentTab: {
+    border: "1px solid #2563EB",
+    background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+    color: "#FFFFFF",
+    borderRadius: "14px",
+    padding: "12px 14px",
+    fontSize: "14px",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  inactiveReviewAgentTab: {
+    border: "1px solid #CBD5E1",
+    background: "#FFFFFF",
+    color: "#334155",
+    borderRadius: "14px",
+    padding: "12px 14px",
+    fontSize: "14px",
+    fontWeight: 850,
+    cursor: "pointer",
+  },
+  reviewAgentPanel: {
+    background: "#F8FAFC",
+    border: "1px solid #CBD5E1",
+    borderRadius: "20px",
+    padding: "18px",
+    marginBottom: "16px",
+  },
+  reviewAgentContentGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "14px",
+  },
+  reviewAgentChatBox: {
+    background: "#F8FAFC",
+    border: "1px solid #CBD5E1",
+    borderRadius: "20px",
+    padding: "18px",
+  },
+  agentChatHistory: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "12px",
+    marginBottom: "14px",
+    maxHeight: "360px",
+    overflowY: "auto",
+  },
+  agentUserMessage: {
+    background: "#EFF6FF",
+    border: "1px solid #BFDBFE",
+    borderRadius: "16px",
+    padding: "14px",
+    marginLeft: "12%",
+  },
+  agentResponseMessage: {
+    background: "#FFFFFF",
+    border: "1px solid #CBD5E1",
+    borderRadius: "16px",
+    padding: "14px",
+    marginRight: "12%",
+  },
+  requirementUpdateBox: {
+    background: "#FFFBEB",
+    border: "1px solid #FACC15",
+    borderRadius: "18px",
+    padding: "16px",
+    marginBottom: "14px",
+  },
   mobileContainer: {
     padding: "18px",
     maxWidth: "100%",
@@ -5488,6 +6124,24 @@ mermaidCodeBlock: {
   mobileScoreGrid: {
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: "12px",
+  },
+
+  sitePromptGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "8px",
+    marginTop: "14px",
+  },
+  sitePromptButton: {
+    border: "1px solid #CBD5E1",
+    borderRadius: "12px",
+    background: "#FFFFFF",
+    color: "#2563EB",
+    padding: "10px 12px",
+    fontSize: "13px",
+    fontWeight: 850,
+    cursor: "pointer",
+    textAlign: "left",
   },
 
 };
