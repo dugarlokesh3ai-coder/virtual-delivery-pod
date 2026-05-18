@@ -1036,6 +1036,26 @@ ${update}`;
     };
   }
 
+  async function withDbTimeout<T>(
+    operation: PromiseLike<T>,
+    label: string,
+    timeoutMs = 20000,
+  ): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${timeoutMs / 1000}s.`));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([operation, timeoutPromise]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
   async function persistProjectDraft({
     autosave = false,
   }: { autosave?: boolean } = {}) {
@@ -1175,29 +1195,30 @@ ${update}`;
     if (projectSaving) return;
 
     const resolvedProjectName = projectName.trim() || buildDefaultProjectName();
+    const wasUpdating = !!activeProjectId;
+
     setProjectSaving(true);
+    setAutoSaveState(wasUpdating ? "Updating project..." : "Saving project...");
 
     try {
       let savedRecord: any = null;
-      const wasUpdating = !!activeProjectId;
 
       if (activeProjectId) {
-        const { data: existingRecord, error: existingError } = await supabase
-          .from("delivery_projects")
-          .select("*")
-          .eq("id", activeProjectId)
-          .eq("user_id", user.id)
-          .maybeSingle();
+        const { data: existingRecord, error: existingError } =
+          await withDbTimeout(
+            supabase
+              .from("delivery_projects")
+              .select("*")
+              .eq("id", activeProjectId)
+              .eq("user_id", user.id)
+              .maybeSingle(),
+            "Read existing project",
+          );
 
         if (existingError) {
-          console.error(
-            "Unable to read existing project before update",
-            existingError,
-          );
-          alert(
+          throw new Error(
             `Unable to read existing project before update: ${existingError.message}`,
           );
-          return;
         }
 
         if (!existingRecord) {
@@ -1205,10 +1226,11 @@ ${update}`;
             "This saved project could not be found for your account. Create a new saved copy instead?",
           );
 
-          setActiveProjectId(null);
-
           if (!createNewCopy) {
-            await loadSavedProjectsFromDb(user.id);
+            setActiveProjectId(null);
+            loadSavedProjectsFromDb(user.id).catch((error) =>
+              console.error("Refresh saved projects failed", error),
+            );
             return;
           }
 
@@ -1217,19 +1239,21 @@ ${update}`;
             versionLabel: "Initial project save",
           });
 
-          const { data: insertedData, error: insertError } = await supabase
-            .from("delivery_projects")
-            .insert({
-              ...insertPayload,
-              user_id: user.id,
-            })
-            .select("*")
-            .single();
+          const { data: insertedData, error: insertError } =
+            await withDbTimeout(
+              supabase
+                .from("delivery_projects")
+                .insert({
+                  ...insertPayload,
+                  user_id: user.id,
+                })
+                .select("*")
+                .single(),
+              "Create new saved project copy",
+            );
 
           if (insertError) {
-            console.error("Unable to save new project copy", insertError);
-            alert(`Unable to save new project copy: ${insertError.message}`);
-            return;
+            throw new Error(`Unable to save new project copy: ${insertError.message}`);
           }
 
           savedRecord = insertedData;
@@ -1254,18 +1278,23 @@ ${update}`;
           ].slice(0, 15);
           updatePayload.last_autosaved_at = lastAutoSavedAt;
 
-          const { data, error } = await supabase
-            .from("delivery_projects")
-            .update(updatePayload)
-            .eq("id", activeProjectId)
-            .eq("user_id", user.id)
-            .select("*")
-            .maybeSingle();
+          const { data, error } = await withDbTimeout(
+            supabase
+              .from("delivery_projects")
+              .update(updatePayload)
+              .eq("id", activeProjectId)
+              .eq("user_id", user.id)
+              .select("*")
+              .maybeSingle(),
+            "Update project",
+          );
 
           if (error) {
-            console.error("Unable to update project", error);
-            alert(`Unable to update project: ${error.message}`);
-            return;
+            throw new Error(`Unable to update project: ${error.message}`);
+          }
+
+          if (!data) {
+            throw new Error("Update finished but no project row was returned.");
           }
 
           savedRecord = data;
@@ -1276,27 +1305,27 @@ ${update}`;
           versionLabel: "Initial project save",
         });
 
-        const { data, error } = await supabase
-          .from("delivery_projects")
-          .insert({
-            ...insertPayload,
-            user_id: user.id,
-          })
-          .select("*")
-          .single();
+        const { data, error } = await withDbTimeout(
+          supabase
+            .from("delivery_projects")
+            .insert({
+              ...insertPayload,
+              user_id: user.id,
+            })
+            .select("*")
+            .single(),
+          "Save new project",
+        );
 
         if (error) {
-          console.error("Unable to save project", error);
-          alert(`Unable to save project: ${error.message}`);
-          return;
+          throw new Error(`Unable to save project: ${error.message}`);
         }
 
         savedRecord = data;
       }
 
       if (!savedRecord) {
-        alert("Project was not saved. No database record was returned.");
-        return;
+        throw new Error("Project was not saved. No database record was returned.");
       }
 
       const savedProject: SavedProject = mapDbProject(savedRecord);
@@ -1321,17 +1350,19 @@ ${update}`;
         return [savedProject, ...previousProjects];
       });
 
-      await loadSavedProjectsFromDb(user.id);
-      alert(
-        wasUpdating
-          ? "Project updated. Previous saved state was added to Version History."
-          : "Project saved.",
+      setAutoSaveState(wasUpdating ? "Project updated" : "Project saved");
+
+      loadSavedProjectsFromDb(user.id).catch((error) =>
+        console.error("Refresh saved projects failed", error),
       );
-    } catch (error) {
+
+      window.setTimeout(() => {
+        setAutoSaveState("Auto-save idle");
+      }, 3000);
+    } catch (error: any) {
       console.error("Project save/update failed", error);
-      alert(
-        "Project save/update failed. Check browser console and Supabase logs.",
-      );
+      setAutoSaveState("Save failed");
+      alert(error?.message || "Project save/update failed. Check browser console and Supabase logs.");
     } finally {
       setProjectSaving(false);
     }
