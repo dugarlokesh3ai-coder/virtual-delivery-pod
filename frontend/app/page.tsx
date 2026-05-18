@@ -544,6 +544,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("stories");
   const [packageTab, setPackageTab] = useState<PackageTab>("overview");
   const [files, setFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [loadingStage, setLoadingStage] = useState("");
 
   const [intakeAnalysis, setIntakeAnalysis] = useState<IntakeAnalysis | null>(
@@ -1449,7 +1450,7 @@ ${update}`;
     setRequirement(project.requirement || "");
     setClarificationAnswers(project.clarification_answers || "");
     setResult(project.result);
-    setFiles([]);
+    clearUploadedFiles();
     setIntakeAnalysis(null);
     setActiveProjectId(project.id);
     setActiveTab("stories");
@@ -1469,13 +1470,21 @@ ${update}`;
     setDeliveryLeadPendingRequirementUpdate("");
   }
 
+  function clearUploadedFiles() {
+    setFiles([]);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
   function clearWorkspace() {
     setActiveProjectId(null);
     setProjectName("");
 
     setRequirement("");
     setClarificationAnswers("");
-    setFiles([]);
+    clearUploadedFiles();
 
     setIntakeAnalysis(null);
     setResult(null);
@@ -1590,7 +1599,7 @@ ${update}`;
     setShowComparePanel(false);
     setRequirement(template.requirement);
     setClarificationAnswers("");
-    setFiles([]);
+    clearUploadedFiles();
     setIntakeAnalysis(null);
     setResult(null);
     setActiveProjectId(null);
@@ -1917,7 +1926,7 @@ ${update}`;
 
     const reviewAnswer = `Use Run Agent Review after generating a package. It acts like an internal review board across architecture, development, QA, and delivery lead perspectives. It is useful before you export or share the package.`;
 
-    const uploadAnswer = `You can paste rough notes directly or upload supporting documents. The current MVP supports .txt, .pdf, and .docx files. Avoid scanned or image-only PDFs because text extraction may not work well.`;
+    const uploadAnswer = `You can paste rough notes directly or upload supporting documents. You can attach multiple files at once. Supported uploads include .txt, .pdf, .docx, .pptx, .ppt, and common image files such as .png, .jpg, .jpeg, .webp, .gif, .bmp, .tif, and .tiff. Image-based PDFs and images require the backend OCR/document reader configuration.`;
 
     if (
       normalizedQuestion.includes("quick") ||
@@ -3943,15 +3952,16 @@ ${uat.expected_result}
                 <div>
                   <p style={styles.uploadTitle}>Upload supporting documents</p>
                   <p style={styles.muted}>
-                    Supported for MVP: .txt, .pdf, .docx. Avoid
-                    scanned/image-only PDFs for now.
+                    Supported: .txt, .pdf, .docx, .pptx, .ppt, and common image files.
+                    You can attach multiple documents. Image-based PDFs/images are read by backend OCR when configured.
                   </p>
                 </div>
 
                 <input
+                  ref={fileInputRef}
                   type="file"
                   multiple
-                  accept=".txt,.pdf,.docx"
+                  accept=".txt,.pdf,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.gif,.bmp,.tif,.tiff"
                   onChange={(e) => setFiles(Array.from(e.target.files || []))}
                   style={styles.fileInput}
                 />
@@ -3964,6 +3974,14 @@ ${uat.expected_result}
                       {file.name}
                     </div>
                   ))}
+
+                  <button
+                    type="button"
+                    onClick={clearUploadedFiles}
+                    style={styles.clearFilesButton}
+                  >
+                    Clear uploaded files
+                  </button>
                 </div>
               )}
 
@@ -7253,6 +7271,16 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#1D4ED8",
     fontSize: "13px",
     fontWeight: 700,
+  },
+  clearFilesButton: {
+    border: "1px solid #CBD5E1",
+    borderRadius: "999px",
+    background: "#FFFFFF",
+    color: "#B91C1C",
+    padding: "8px 12px",
+    fontSize: "13px",
+    fontWeight: 800,
+    cursor: "pointer",
   },
   textareaFooter: {
     display: "flex",

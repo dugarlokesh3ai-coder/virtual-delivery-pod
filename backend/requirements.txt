@@ -26,3 +26,6 @@ tqdm==4.67.3
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.46.0
+python-pptx>=1.0.2
+PyMuPDF>=1.24.0
+Pillow>=10.0.0
