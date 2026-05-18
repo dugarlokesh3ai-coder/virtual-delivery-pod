@@ -11,6 +11,18 @@ Rules:
 - Priority fixes must be actionable and ordered.
 - Final verdict should reflect real build readiness.
 
+Review whether the package is overbuilt.
+
+Each reviewer must check:
+- Did the package evaluate OOB ServiceNow modules first?
+- Is a custom scoped app actually justified?
+- Are licensing assumptions stated?
+- Are maintenance and upgrade impacts called out?
+- Is technical debt identified?
+- Are code/build artifacts appropriate for the stated readiness level?
+
+If custom development is recommended too early, flag it as a priority concern.
+
 Return JSON exactly in this structure:
 {
   "overall_review_summary": "Summary of review findings.",

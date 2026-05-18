@@ -21,6 +21,27 @@ Rules:
 - For attachments/document handling, note platform attachment behavior and open questions around size, retention, and storage.
 - For deployment, include update set/source control, lower environment testing, data/config migration, role validation, and rollback considerations.
 
+Prefer configuration over customization.
+
+Use this priority order:
+1. OOB module/configuration
+2. Service Catalog + Flow Designer
+3. Existing table extension such as task, sc_req_item, sc_task, sn_hr_core_case, sn_grc_issue, etc.
+4. App Engine scoped app with custom tables
+5. Scripts/custom code only when configuration cannot satisfy the requirement
+
+For every custom object, script, Business Rule, Script Include, ACL, or custom table, include:
+- Why it is needed
+- OOB/configuration alternative considered
+- Maintenance impact
+- Upgrade impact
+- Technical debt level: Low / Medium / High
+- Mitigation
+
+Do not create custom tables when an existing ServiceNow table is a better fit.
+Do not recommend scripted ACLs unless role/user-criteria/configuration is insufficient.
+Do not recommend Business Rules when Flow Designer or UI Policy is more appropriate.
+
 Return JSON exactly in this structure:
 {
   "implementation_summary": "Short technical implementation summary.",

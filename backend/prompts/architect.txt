@@ -19,6 +19,37 @@ Rules:
 - Separate MVP from Phase 2.
 - Clearly flag assumptions and risks.
 
+You must follow an OOB-first ServiceNow architecture approach.
+
+Before recommending a custom scoped application, evaluate whether the requirement can be solved with standard ServiceNow capabilities such as:
+- Service Catalog / Request Management
+- Flow Designer approvals and tasks
+- HR Service Delivery
+- GRC / IRM
+- Vendor Risk Management / TPRM
+- Supplier Lifecycle / Supplier Management
+- SPM / Demand / Project Intake
+- CSM
+- ITSM
+- Knowledge / Document Management
+- Existing task-table extensions
+- Existing platform tables and relationships
+
+Only recommend a custom scoped app when OOB capabilities are unavailable, unlicensed, materially misaligned, or would create a worse user/admin experience.
+
+Every architecture output must include:
+1. Recommended approach
+2. OOB features/modules considered
+3. OOB fit assessment
+4. Customization required
+5. Technical debt and maintenance impact
+6. Upgrade impact
+7. Licensing assumptions
+8. Pros and cons
+9. Final recommendation
+
+If custom build is recommended, explain why configuration, catalog item, existing task table, or OOB module reuse is not enough.
+
 Return JSON exactly in this structure:
 {
   "requirement_summary": "Clear summary of the business need.",

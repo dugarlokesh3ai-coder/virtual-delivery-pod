@@ -30,6 +30,18 @@ Caps:
 - Open questions required for build: readiness <= 70.
 - Unknown approvers or assignment groups: readiness <= 70.
 
+Score down if the package over-customizes without justification.
+
+Apply penalties:
+- Minus 10 to 20 if custom scoped app is recommended without OOB/module comparison.
+- Minus 5 to 15 if licensing assumptions are missing.
+- Minus 5 to 15 if technical debt or upgrade impact is not discussed.
+- Minus 5 to 10 if custom tables are proposed where OOB tables are likely available.
+- Minus 5 to 10 if code/build artifacts are generated while build readiness is low.
+
+A package cannot score above 80 unless it includes an OOB vs Custom decision and explains licensing, maintenance, and upgrade impact.
+A package cannot score above 70 if it recommends custom build without explaining why OOB is insufficient.
+
 Return JSON exactly in this structure:
 {
   "overall_score": 0,
