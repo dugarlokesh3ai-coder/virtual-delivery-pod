@@ -163,11 +163,39 @@ PLATFORM_FIT_FALLBACK = {
     "build_readiness_verdict": "Needs Discovery",
 }
 
+
+BUILD_READINESS_GATE_FALLBACK = {
+    "verdict": "Needs Discovery",
+    "reason": "Build readiness gate was not returned by the architecture agent.",
+    "must_resolve_before_build": [
+        "Confirm OOB/module fit, licensing, data model, security, routing, and integration boundaries before build handoff."
+    ],
+    "safe_to_generate_code": False,
+}
+
+SENSITIVE_DATA_CONTROLS_FALLBACK = {
+    "sensitive_data_present": False,
+    "data_types": [],
+    "field_level_security": [],
+    "attachment_security": [],
+    "notification_privacy": [],
+    "audit_retention": [],
+    "encryption_or_masking": [],
+    "open_questions": [],
+}
+
+PLATFORM_OBJECT_ACCURACY_FALLBACK = [
+    "Validate ServiceNow table/object names in the customer instance before build. Use known OOB patterns such as sc_req_item, sc_task, and sysapproval_approver instead of invented table names."
+]
+
 ARCHITECTURE_FALLBACK = {
     "requirement_summary": "Architecture could not be generated. Check backend logs.",
     "solution_design": "",
     "recommended_app_type": "",
     "platform_fit_decision": PLATFORM_FIT_FALLBACK,
+    "build_readiness_gate": BUILD_READINESS_GATE_FALLBACK,
+    "sensitive_data_controls": SENSITIVE_DATA_CONTROLS_FALLBACK,
+    "platform_object_accuracy_notes": PLATFORM_OBJECT_ACCURACY_FALLBACK,
     "tables": [],
     "workflow_steps": [],
     "risks": [],
@@ -328,6 +356,9 @@ def build_architecture_from_package(current_package: dict):
             or current_package.get("service_now_platform_fit")
             or PLATFORM_FIT_FALLBACK
         ),
+        "build_readiness_gate": current_package.get("build_readiness_gate") or BUILD_READINESS_GATE_FALLBACK,
+        "sensitive_data_controls": current_package.get("sensitive_data_controls") or SENSITIVE_DATA_CONTROLS_FALLBACK,
+        "platform_object_accuracy_notes": current_package.get("platform_object_accuracy_notes", PLATFORM_OBJECT_ACCURACY_FALLBACK),
         "tables": current_package.get("tables", []),
         "workflow_steps": current_package.get("workflow_steps", []),
         "risks": current_package.get("risks", []),
@@ -367,6 +398,9 @@ def build_package_response(
         "platform_fit_decision": architecture.get("platform_fit_decision") or PLATFORM_FIT_FALLBACK,
         "oob_vs_custom_decision": architecture.get("platform_fit_decision") or PLATFORM_FIT_FALLBACK,
         "service_now_platform_fit": architecture.get("platform_fit_decision") or PLATFORM_FIT_FALLBACK,
+        "build_readiness_gate": architecture.get("build_readiness_gate") or BUILD_READINESS_GATE_FALLBACK,
+        "sensitive_data_controls": architecture.get("sensitive_data_controls") or SENSITIVE_DATA_CONTROLS_FALLBACK,
+        "platform_object_accuracy_notes": architecture.get("platform_object_accuracy_notes", PLATFORM_OBJECT_ACCURACY_FALLBACK),
         "tables": architecture.get("tables", []),
         "workflow_steps": architecture.get("workflow_steps", []),
         "risks": architecture.get("risks", []),
@@ -640,6 +674,12 @@ async def upgrade_package(request: UpgradePackageRequest):
     return {
         **current_package,
         "generation_mode": "full",
+        "platform_fit_decision": architecture.get("platform_fit_decision") or PLATFORM_FIT_FALLBACK,
+        "oob_vs_custom_decision": architecture.get("platform_fit_decision") or PLATFORM_FIT_FALLBACK,
+        "service_now_platform_fit": architecture.get("platform_fit_decision") or PLATFORM_FIT_FALLBACK,
+        "build_readiness_gate": architecture.get("build_readiness_gate") or BUILD_READINESS_GATE_FALLBACK,
+        "sensitive_data_controls": architecture.get("sensitive_data_controls") or SENSITIVE_DATA_CONTROLS_FALLBACK,
+        "platform_object_accuracy_notes": architecture.get("platform_object_accuracy_notes", PLATFORM_OBJECT_ACCURACY_FALLBACK),
         "delivery_lead_review": delivery_lead_review,
         "process_diagram": process_diagram,
         "developer": developer_output,

@@ -65,6 +65,25 @@ type PlatformFitDecision = {
   build_readiness_verdict?: any;
 };
 
+
+type BuildReadinessGate = {
+  verdict?: any;
+  reason?: any;
+  must_resolve_before_build?: any[];
+  safe_to_generate_code?: any;
+};
+
+type SensitiveDataControls = {
+  sensitive_data_present?: any;
+  data_types?: any[];
+  field_level_security?: any[];
+  attachment_security?: any[];
+  notification_privacy?: any[];
+  audit_retention?: any[];
+  encryption_or_masking?: any[];
+  open_questions?: any[];
+};
+
 type ProcessDiagram = {
   title: string;
   summary: string;
@@ -176,6 +195,9 @@ type DeliveryResult = {
   platform_fit_decision?: PlatformFitDecision | null;
   oob_vs_custom_decision?: PlatformFitDecision | null;
   service_now_platform_fit?: PlatformFitDecision | null;
+  build_readiness_gate?: BuildReadinessGate | null;
+  sensitive_data_controls?: SensitiveDataControls | null;
+  platform_object_accuracy_notes?: any[];
   tables: TableItem[];
   workflow_steps: string[];
   risks: RiskItem[];
@@ -462,6 +484,85 @@ function getOobOptions(decision: PlatformFitDecision | null) {
         : safeList(decision.oob_modules_considered)
   ) as PlatformFitOption[];
 }
+
+
+function getBuildReadinessGate(
+  data: DeliveryResult | null | undefined,
+): BuildReadinessGate | null {
+  const raw = (data as any)?.build_readiness_gate || null;
+  if (!raw || typeof raw !== "object") return null;
+  return raw as BuildReadinessGate;
+}
+
+function getSensitiveDataControls(
+  data: DeliveryResult | null | undefined,
+): SensitiveDataControls | null {
+  const raw = (data as any)?.sensitive_data_controls || null;
+  if (!raw || typeof raw !== "object") return null;
+  return raw as SensitiveDataControls;
+}
+
+function getPlatformObjectAccuracyNotes(
+  data: DeliveryResult | null | undefined,
+): any[] {
+  return safeList((data as any)?.platform_object_accuracy_notes);
+}
+
+function isBuildBlockedByGate(data: DeliveryResult | null | undefined) {
+  const gate = getBuildReadinessGate(data);
+  if (!gate) return false;
+
+  const verdict = safeText(gate.verdict).toLowerCase();
+  const safeToGenerateCode = gate.safe_to_generate_code;
+
+  return (
+    (verdict.includes("needs discovery") || verdict.includes("not ready")) &&
+    safeToGenerateCode === false
+  );
+}
+
+function buildReadinessGateMarkdown(data: DeliveryResult | null | undefined) {
+  const gate = getBuildReadinessGate(data);
+
+  if (!gate) {
+    return `## Build Readiness Gate\n\nNo build-readiness gate was returned by the backend.`;
+  }
+
+  return `## Build Readiness Gate\n\n**Verdict:** ${safeText(gate.verdict) || "Not provided"}\n\n**Safe to Generate Code:** ${safeText(gate.safe_to_generate_code) || "Not provided"}\n\n### Reason\n${safeText(gate.reason) || "Not provided"}\n\n### Must Resolve Before Build\n${safeList(gate.must_resolve_before_build)
+    .map((item) => `- ${safeText(item)}`)
+    .join("\n") || "- Not provided"}`;
+}
+
+function sensitiveDataControlsMarkdown(data: DeliveryResult | null | undefined) {
+  const controls = getSensitiveDataControls(data);
+
+  if (!controls) {
+    return `## Sensitive Data Controls\n\nNo sensitive-data controls were returned by the backend.`;
+  }
+
+  return `## Sensitive Data Controls\n\n**Sensitive Data Present:** ${safeText(controls.sensitive_data_present) || "Not provided"}\n\n### Data Types\n${safeList(controls.data_types)
+    .map((item) => `- ${safeText(item)}`)
+    .join("\n") || "- Not provided"}\n\n### Field-Level Security\n${safeList(controls.field_level_security)
+    .map((item) => `- ${safeText(item)}`)
+    .join("\n") || "- Not provided"}\n\n### Attachment Security\n${safeList(controls.attachment_security)
+    .map((item) => `- ${safeText(item)}`)
+    .join("\n") || "- Not provided"}\n\n### Notification Privacy\n${safeList(controls.notification_privacy)
+    .map((item) => `- ${safeText(item)}`)
+    .join("\n") || "- Not provided"}\n\n### Audit / Retention\n${safeList(controls.audit_retention)
+    .map((item) => `- ${safeText(item)}`)
+    .join("\n") || "- Not provided"}\n\n### Encryption / Masking\n${safeList(controls.encryption_or_masking)
+    .map((item) => `- ${safeText(item)}`)
+    .join("\n") || "- Not provided"}\n\n### Open Questions\n${safeList(controls.open_questions)
+    .map((item) => `- ${safeText(item)}`)
+    .join("\n") || "- Not provided"}`;
+}
+
+function platformObjectAccuracyMarkdown(data: DeliveryResult | null | undefined) {
+  const notes = getPlatformObjectAccuracyNotes(data);
+
+  return `## Platform Object Accuracy Notes\n\n${notes.length ? notes.map((item) => `- ${safeText(item)}`).join("\n") : "- Not provided"}`;
+}
+
 
 function buildPlatformFitMarkdown(data: DeliveryResult | null | undefined) {
   const decision = getPlatformFitDecision(data);
@@ -2615,6 +2716,12 @@ ${data.recommended_app_type}
 
 ${buildPlatformFitMarkdown(data)}
 
+${buildReadinessGateMarkdown(data)}
+
+${sensitiveDataControlsMarkdown(data)}
+
+${platformObjectAccuracyMarkdown(data)}
+
 ## Solution Design
 ${data.solution_design}
 
@@ -2736,6 +2843,14 @@ ${uat.expected_result}
   }
 
   async function generateCodeForCard(card: any, title: string) {
+    if (isBuildBlockedByGate(result)) {
+      const gate = getBuildReadinessGate(result);
+      alert(
+        `This package is not build-ready. Resolve discovery gaps before generating implementation/code.\n\nVerdict: ${safeText(gate?.verdict)}\nReason: ${safeText(gate?.reason)}`,
+      );
+      return;
+    }
+
     setCodeModalOpen(true);
     setCodeLoading(true);
     setSelectedCodeTitle(title);
@@ -2834,6 +2949,30 @@ ${uat.expected_result}
           solution_design: output.solution_design || result.solution_design,
           recommended_app_type:
             output.recommended_app_type || result.recommended_app_type,
+          platform_fit_decision:
+            output.platform_fit_decision ||
+            output.oob_vs_custom_decision ||
+            result.platform_fit_decision ||
+            result.oob_vs_custom_decision ||
+            result.service_now_platform_fit,
+          oob_vs_custom_decision:
+            output.platform_fit_decision ||
+            output.oob_vs_custom_decision ||
+            result.oob_vs_custom_decision ||
+            result.platform_fit_decision ||
+            result.service_now_platform_fit,
+          service_now_platform_fit:
+            output.platform_fit_decision ||
+            output.oob_vs_custom_decision ||
+            result.service_now_platform_fit ||
+            result.platform_fit_decision,
+          build_readiness_gate:
+            output.build_readiness_gate || result.build_readiness_gate,
+          sensitive_data_controls:
+            output.sensitive_data_controls || result.sensitive_data_controls,
+          platform_object_accuracy_notes:
+            output.platform_object_accuracy_notes ||
+            result.platform_object_accuracy_notes,
           tables: output.tables || result.tables,
           workflow_steps: output.workflow_steps || result.workflow_steps,
           risks: output.risks || result.risks,
@@ -3167,6 +3306,74 @@ ${uat.expected_result}
           "No platform-fit decision was returned by the backend. Update the architect prompt/backend response to include platform_fit_decision.",
         ),
       );
+    }
+
+
+    const buildReadinessGate = getBuildReadinessGate(result);
+    children.push(docHeading("Build Readiness Gate"));
+    if (buildReadinessGate) {
+      children.push(docParagraph(`Verdict: ${safeText(buildReadinessGate.verdict) || "Not provided"}`));
+      children.push(docParagraph(`Safe to Generate Code: ${safeText(buildReadinessGate.safe_to_generate_code) || "Not provided"}`));
+      children.push(docParagraph(`Reason: ${safeText(buildReadinessGate.reason) || "Not provided"}`));
+      children.push(docHeading("Must Resolve Before Build", HeadingLevel.HEADING_2));
+      safeList(buildReadinessGate.must_resolve_before_build).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+    } else {
+      children.push(docParagraph("No build-readiness gate was returned by the backend."));
+    }
+
+    const sensitiveDataControls = getSensitiveDataControls(result);
+    children.push(docHeading("Sensitive Data Controls"));
+    if (sensitiveDataControls) {
+      children.push(docParagraph(`Sensitive Data Present: ${safeText(sensitiveDataControls.sensitive_data_present) || "Not provided"}`));
+
+      children.push(docHeading("Data Types", HeadingLevel.HEADING_2));
+      safeList(sensitiveDataControls.data_types).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+
+      children.push(docHeading("Field-Level Security", HeadingLevel.HEADING_2));
+      safeList(sensitiveDataControls.field_level_security).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+
+      children.push(docHeading("Attachment Security", HeadingLevel.HEADING_2));
+      safeList(sensitiveDataControls.attachment_security).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+
+      children.push(docHeading("Notification Privacy", HeadingLevel.HEADING_2));
+      safeList(sensitiveDataControls.notification_privacy).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+
+      children.push(docHeading("Audit / Retention", HeadingLevel.HEADING_2));
+      safeList(sensitiveDataControls.audit_retention).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+
+      children.push(docHeading("Encryption / Masking", HeadingLevel.HEADING_2));
+      safeList(sensitiveDataControls.encryption_or_masking).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+
+      children.push(docHeading("Open Security Questions", HeadingLevel.HEADING_2));
+      safeList(sensitiveDataControls.open_questions).forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+    } else {
+      children.push(docParagraph("No sensitive-data control assessment was returned by the backend."));
+    }
+
+    children.push(docHeading("Platform Object Accuracy Notes"));
+    const platformObjectAccuracyNotes = getPlatformObjectAccuracyNotes(result);
+    if (platformObjectAccuracyNotes.length) {
+      platformObjectAccuracyNotes.forEach((item) =>
+        children.push(docBullet(safeText(item))),
+      );
+    } else {
+      children.push(docParagraph("No platform-object accuracy notes were returned by the backend."));
     }
 
     children.push(docHeading("Solution Design"));
@@ -4992,6 +5199,21 @@ ${uat.expected_result}
                       onCopy={copyToClipboard}
                     />
 
+                    <BuildReadinessGateCard
+                      gate={getBuildReadinessGate(result)}
+                      onCopy={copyToClipboard}
+                    />
+
+                    <SensitiveDataControlsCard
+                      controls={getSensitiveDataControls(result)}
+                      onCopy={copyToClipboard}
+                    />
+
+                    <PlatformObjectAccuracyCard
+                      notes={getPlatformObjectAccuracyNotes(result)}
+                      onCopy={copyToClipboard}
+                    />
+
                     <Card
                       title="Open Questions / Build Gaps"
                       copyValue={result.open_questions?.join("\n")}
@@ -6773,6 +6995,207 @@ function PlatformFitDecisionCard({
     </Card>
   );
 }
+
+
+function BuildReadinessGateCard({
+  gate,
+  onCopy,
+}: {
+  gate: BuildReadinessGate | null;
+  onCopy: (value: string) => void;
+}) {
+  const verdict = safeText(gate?.verdict) || "Not provided";
+  const isBlocked =
+    verdict.toLowerCase().includes("needs discovery") ||
+    verdict.toLowerCase().includes("not ready");
+
+  return (
+    <Card
+      title="Build Readiness Gate"
+      copyValue={buildReadinessGateMarkdown({ build_readiness_gate: gate } as any)}
+      onCopy={onCopy}
+    >
+      {gate ? (
+        <div style={styles.stack}>
+          <div
+            style={{
+              ...styles.innerCard,
+              background: isBlocked ? "#FFF7ED" : "#F8FAFC",
+              borderColor: isBlocked ? "#FDBA74" : "#CBD5E1",
+            }}
+          >
+            <div style={styles.rowBetween}>
+              <div>
+                <p style={styles.label}>Verdict</p>
+                <p
+                  style={{
+                    ...styles.accentText,
+                    color: isBlocked ? "#9A3412" : "#2563EB",
+                  }}
+                >
+                  {verdict}
+                </p>
+              </div>
+              <Badge>
+                Safe to generate code: {safeText(gate.safe_to_generate_code)}
+              </Badge>
+            </div>
+            <p style={styles.bodyText}>{safeText(gate.reason)}</p>
+          </div>
+
+          <div style={styles.innerCard}>
+            <p style={styles.label}>Must Resolve Before Build</p>
+            {safeList(gate.must_resolve_before_build).length ? (
+              <ul style={styles.list}>
+                {safeList(gate.must_resolve_before_build).map((item, index) => (
+                  <li key={index}>{safeText(item)}</li>
+                ))}
+              </ul>
+            ) : (
+              <p style={styles.muted}>No blockers returned.</p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p style={styles.muted}>
+          No build-readiness gate was returned by the backend.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+function SensitiveDataControlsCard({
+  controls,
+  onCopy,
+}: {
+  controls: SensitiveDataControls | null;
+  onCopy: (value: string) => void;
+}) {
+  return (
+    <Card
+      title="Sensitive Data Controls"
+      copyValue={sensitiveDataControlsMarkdown({ sensitive_data_controls: controls } as any)}
+      onCopy={onCopy}
+    >
+      {controls ? (
+        <div style={styles.stack}>
+          <div style={styles.innerCard}>
+            <div style={styles.rowBetween}>
+              <div>
+                <p style={styles.label}>Sensitive Data Present</p>
+                <p style={styles.accentText}>
+                  {safeText(controls.sensitive_data_present) || "Not provided"}
+                </p>
+              </div>
+              <Badge>{safeList(controls.data_types).length} data types</Badge>
+            </div>
+            {safeList(controls.data_types).length > 0 && (
+              <ul style={styles.list}>
+                {safeList(controls.data_types).map((item, index) => (
+                  <li key={index}>{safeText(item)}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div style={styles.platformDecisionGrid}>
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Field-Level Security</p>
+              <ul style={styles.list}>
+                {safeList(controls.field_level_security).length
+                  ? safeList(controls.field_level_security).map((item, index) => (
+                      <li key={index}>{safeText(item)}</li>
+                    ))
+                  : <li>Not provided.</li>}
+              </ul>
+            </div>
+
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Attachment Security</p>
+              <ul style={styles.list}>
+                {safeList(controls.attachment_security).length
+                  ? safeList(controls.attachment_security).map((item, index) => (
+                      <li key={index}>{safeText(item)}</li>
+                    ))
+                  : <li>Not provided.</li>}
+              </ul>
+            </div>
+          </div>
+
+          <div style={styles.platformDecisionGrid}>
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Notification Privacy</p>
+              <ul style={styles.list}>
+                {safeList(controls.notification_privacy).length
+                  ? safeList(controls.notification_privacy).map((item, index) => (
+                      <li key={index}>{safeText(item)}</li>
+                    ))
+                  : <li>Not provided.</li>}
+              </ul>
+            </div>
+
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Audit / Retention / Masking</p>
+              <ul style={styles.list}>
+                {[...safeList(controls.audit_retention), ...safeList(controls.encryption_or_masking)].length
+                  ? [...safeList(controls.audit_retention), ...safeList(controls.encryption_or_masking)].map((item, index) => (
+                      <li key={index}>{safeText(item)}</li>
+                    ))
+                  : <li>Not provided.</li>}
+              </ul>
+            </div>
+          </div>
+
+          {safeList(controls.open_questions).length > 0 && (
+            <div style={styles.innerCard}>
+              <p style={styles.label}>Open Security Questions</p>
+              <ul style={styles.list}>
+                {safeList(controls.open_questions).map((item, index) => (
+                  <li key={index}>{safeText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p style={styles.muted}>
+          No sensitive-data control assessment was returned by the backend.
+        </p>
+      )}
+    </Card>
+  );
+}
+
+function PlatformObjectAccuracyCard({
+  notes,
+  onCopy,
+}: {
+  notes: any[];
+  onCopy: (value: string) => void;
+}) {
+  return (
+    <Card
+      title="Platform Object Accuracy Notes"
+      copyValue={platformObjectAccuracyMarkdown({ platform_object_accuracy_notes: notes } as any)}
+      onCopy={onCopy}
+    >
+      {notes.length ? (
+        <ul style={styles.list}>
+          {notes.map((item, index) => (
+            <li key={index}>{safeText(item)}</li>
+          ))}
+        </ul>
+      ) : (
+        <p style={styles.muted}>
+          No platform-object accuracy notes returned. The backend should flag
+          request/RITM vs task vs approval vs case modeling decisions here.
+        </p>
+      )}
+    </Card>
+  );
+}
+
 
 function RegeneratePanel({
   section,
