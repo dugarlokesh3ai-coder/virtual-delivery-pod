@@ -252,6 +252,14 @@ type ConsolidatedDecision = {
   blocks_build_readiness?: any;
 };
 
+type DecisionTask = {
+  parentIndex: number;
+  taskIndex: number;
+  decision: ConsolidatedDecision;
+  area: string;
+  question: string;
+};
+
 type AgentReview = {
   overall_review_summary: string;
   architect_review: AgentReviewerFeedback;
@@ -579,6 +587,70 @@ function getConsolidatedDecisions(
   review: AgentReview | null | undefined,
 ): ConsolidatedDecision[] {
   return safeList((review as any)?.consolidated_decisions_needed) as ConsolidatedDecision[];
+}
+
+function normalizeDecisionQuestion(question: string) {
+  return question
+    .replace(/^can\s+(the\s+)?business\s+(please\s+)?/i, "")
+    .replace(/^please\s+/i, "")
+    .replace(/\?+$/g, "")
+    .trim();
+}
+
+function makeQuestionSentence(text: string) {
+  const cleaned = text.trim().replace(/^[,;:\-\s]+/, "").replace(/[.;]+$/g, "");
+  if (!cleaned) return "";
+  return `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)}?`;
+}
+
+function splitDecisionIntoTasks(
+  decision: ConsolidatedDecision,
+  parentIndex: number,
+): DecisionTask[] {
+  const rawQuestion = safeText(decision.question);
+  const area = safeText(decision.decision_area) || `Decision ${parentIndex + 1}`;
+
+  if (!rawQuestion) {
+    return [
+      {
+        parentIndex,
+        taskIndex: 0,
+        decision,
+        area,
+        question: "Business decision not provided.",
+      },
+    ];
+  }
+
+  const normalized = normalizeDecisionQuestion(rawQuestion)
+    .replace(/\s+and\s+(?=(?:finalize|define|clarify|decide|confirm|validate|identify|provide|establish|determine|obtain|document|specify)\b)/gi, ", ")
+    .replace(/;\s+(?=(?:finalize|define|clarify|decide|confirm|validate|identify|provide|establish|determine|obtain|document|specify)\b)/gi, ", ");
+
+  const parts = normalized
+    .split(/,\s+(?=(?:finalize|define|clarify|decide|confirm|validate|identify|provide|establish|determine|obtain|document|specify)\b)/i)
+    .map((part) => makeQuestionSentence(part))
+    .filter(Boolean);
+
+  const questions =
+    parts.length > 1
+      ? parts
+      : [makeQuestionSentence(normalized) || rawQuestion];
+
+  return questions.map((question, taskIndex) => ({
+    parentIndex,
+    taskIndex,
+    decision,
+    area,
+    question,
+  }));
+}
+
+function getDecisionTasks(
+  review: AgentReview | null | undefined,
+): DecisionTask[] {
+  return getConsolidatedDecisions(review).flatMap((decision, index) =>
+    splitDecisionIntoTasks(decision, index),
+  );
 }
 
 function buildConsolidatedDecisionsMarkdown(
@@ -1383,27 +1455,27 @@ ${update}`;
   }
 
   function buildDecisionAnswerUpdate(
-    decision: ConsolidatedDecision,
-    index: number,
+    task: DecisionTask,
+    displayIndex: number,
     answer: string,
   ) {
-    const area = safeText(decision.decision_area) || `Decision ${index + 1}`;
-    const question = safeText(decision.question) || "Business decision";
+    const area = task.area || `Decision ${displayIndex + 1}`;
+    const question = task.question || "Business decision";
 
     return `Business decision resolved - ${area}:
 Question: ${question}
 Answer: ${answer.trim()}`;
   }
 
-  function applyDecisionAnswer(decision: ConsolidatedDecision, index: number) {
-    const answer = (decisionAnswers[index] || "").trim();
+  function applyDecisionAnswer(task: DecisionTask, displayIndex: number) {
+    const answer = (decisionAnswers[displayIndex] || "").trim();
 
     if (!answer) {
       alert("Add an answer before applying this decision.");
       return;
     }
 
-    const updateText = buildDecisionAnswerUpdate(decision, index, answer);
+    const updateText = buildDecisionAnswerUpdate(task, displayIndex, answer);
 
     setRequirement((currentText) =>
       mergeRequirementUpdate(currentText, updateText),
@@ -1414,25 +1486,25 @@ Answer: ${answer.trim()}`;
     setIntakeExpanded(false);
 
     const nextIndex = Math.min(
-      index + 1,
-      Math.max(getConsolidatedDecisions(result?.agent_review).length - 1, 0),
+      displayIndex + 1,
+      Math.max(getDecisionTasks(result?.agent_review).length - 1, 0),
     );
     setActiveDecisionIndex(nextIndex);
 
     addDiagnostic({
       area: "Business decision",
       status: "success",
-      message: `Applied decision ${index + 1} to the requirement.`,
+      message: `Applied decision ${displayIndex + 1} to the requirement.`,
     });
   }
 
   function applyAllDecisionAnswers() {
-    const decisions = getConsolidatedDecisions(result?.agent_review);
-    const answeredUpdates = decisions
-      .map((decision, index) => {
+    const tasks = getDecisionTasks(result?.agent_review);
+    const answeredUpdates = tasks
+      .map((task, index) => {
         const answer = (decisionAnswers[index] || "").trim();
         if (!answer) return "";
-        return buildDecisionAnswerUpdate(decision, index, answer);
+        return buildDecisionAnswerUpdate(task, index, answer);
       })
       .filter(Boolean);
 
@@ -3772,11 +3844,12 @@ ${uat.expected_result}
   const buildReadinessGate = getBuildReadinessGate(result);
   const platformFitDecision = getPlatformFitDecision(result);
   const consolidatedDecisions = getConsolidatedDecisions(result?.agent_review);
-  const blockingDecisionCount = consolidatedDecisions.filter(
-    (decision) => decision.blocks_build_readiness === true,
+  const decisionTasks = getDecisionTasks(result?.agent_review);
+  const blockingDecisionCount = decisionTasks.filter(
+    (task) => task.decision.blocks_build_readiness === true,
   ).length;
   const unresolvedCount =
-    consolidatedDecisions.length ||
+    decisionTasks.length ||
     result?.delivery_lead_review?.missing_requirements?.length ||
     result?.open_questions?.length ||
     0;
@@ -4148,21 +4221,19 @@ ${uat.expected_result}
 
                 <div style={styles.projectField}>
                   <label style={styles.projectLabel}>Status</label>
-                  <div style={styles.compactStatusFlow}>
+                  <select
+                    value={projectStatus}
+                    onChange={(event) =>
+                      setProjectStatus(event.target.value as ProjectStatus)
+                    }
+                    style={styles.workspaceSelectCompact}
+                  >
                     {PROJECT_STATUS_OPTIONS.map((status) => (
-                      <button
-                        key={status}
-                        onClick={() => setProjectStatus(status)}
-                        style={
-                          projectStatus === status
-                            ? styles.compactStatusStepActive
-                            : styles.compactStatusStep
-                        }
-                      >
+                      <option key={status} value={status}>
                         {status}
-                      </button>
+                      </option>
                     ))}
-                  </div>
+                  </select>
                 </div>
 
                 <button
@@ -4916,7 +4987,7 @@ ${uat.expected_result}
                           style={styles.warningPillButton}
                           title="Open the Review tab and jump to the decision log"
                         >
-                          {unresolvedCount} decision{unresolvedCount === 1 ? "" : "s"} to resolve →
+                          {unresolvedCount} decision{unresolvedCount === 1 ? "" : "s"} to answer →
                         </button>
                       )}
                     </div>
@@ -5833,30 +5904,32 @@ ${uat.expected_result}
                           </div>
                         )}
 
-                        {getConsolidatedDecisions(result.agent_review).length > 0 && (
+                        {decisionTasks.length > 0 && (
                           <div id="business-decisions" style={styles.innerCard}>
                             <div style={styles.cardTitleRow}>
                               <div>
                                 <p style={styles.label}>Business Decisions Needed</p>
-                                <h3 style={styles.itemTitle}>Answer one decision at a time</h3>
+                                <h3 style={styles.itemTitle}>
+                                  Answer {decisionTasks.length} decision{decisionTasks.length === 1 ? "" : "s"} one at a time
+                                </h3>
                                 <p style={styles.muted}>
-                                  Reviewer questions are deduplicated below. Pick a numbered decision, answer it once, apply it to the requirement, then regenerate the package.
+                                  The review board may group several blockers together. This view splits them into separate numbered decisions so users can answer one item, apply it, then move to the next.
                                 </p>
                               </div>
                               <Badge>
-                                {getConsolidatedDecisions(result.agent_review).length} decisions
+                                {decisionTasks.length} decision{decisionTasks.length === 1 ? "" : "s"}
                               </Badge>
                             </div>
 
                             <div style={isMobile ? styles.mobileDecisionLayout : styles.decisionLayout}>
                               <div style={styles.decisionList}>
-                                {getConsolidatedDecisions(result.agent_review).map((decision, index) => {
+                                {decisionTasks.map((task, index) => {
                                   const answered = !!(decisionAnswers[index] || "").trim();
                                   const active = activeDecisionIndex === index;
 
                                   return (
                                     <button
-                                      key={index}
+                                      key={`${task.parentIndex}-${task.taskIndex}`}
                                       type="button"
                                       onClick={() => setActiveDecisionIndex(index)}
                                       style={
@@ -5867,8 +5940,14 @@ ${uat.expected_result}
                                     >
                                       <span style={styles.decisionNumber}>{index + 1}</span>
                                       <span style={styles.decisionListText}>
-                                        <strong>{safeText(decision.decision_area) || "Business Decision"}</strong>
-                                        <span>{answered ? "Answered" : safeText(decision.blocks_build_readiness) === "true" ? "Blocks build" : "Needs answer"}</span>
+                                        <strong>{task.question}</strong>
+                                        <span>
+                                          {answered
+                                            ? "Answered"
+                                            : safeText(task.decision.blocks_build_readiness) === "true"
+                                              ? "Blocks build"
+                                              : "Needs answer"}
+                                        </span>
                                       </span>
                                     </button>
                                   );
@@ -5876,11 +5955,10 @@ ${uat.expected_result}
                               </div>
 
                               {(() => {
-                                const decisions = getConsolidatedDecisions(result.agent_review);
-                                const boundedIndex = Math.min(activeDecisionIndex, decisions.length - 1);
-                                const decision = decisions[boundedIndex];
+                                const boundedIndex = Math.min(activeDecisionIndex, decisionTasks.length - 1);
+                                const task = decisionTasks[boundedIndex];
 
-                                if (!decision) return null;
+                                if (!task) return null;
 
                                 return (
                                   <div style={styles.decisionDetailCard}>
@@ -5888,23 +5966,27 @@ ${uat.expected_result}
                                       <div>
                                         <p style={styles.label}>Decision {boundedIndex + 1}</p>
                                         <h4 style={styles.decisionQuestion}>
-                                          {safeText(decision.question) || "Question not provided"}
+                                          {task.question}
                                         </h4>
                                       </div>
                                       <Badge>
-                                        {safeText(decision.blocks_build_readiness) === "true" ? "Blocks build" : "Decision"}
+                                        {safeText(task.decision.blocks_build_readiness) === "true" ? "Blocks build" : "Decision"}
                                       </Badge>
                                     </div>
 
                                     <div style={styles.decisionMetaGrid}>
                                       <div style={styles.decisionMetaBox}>
+                                        <strong>Decision area</strong>
+                                        <span>{task.area}</span>
+                                      </div>
+                                      <div style={styles.decisionMetaBox}>
                                         <strong>Why it matters</strong>
-                                        <span>{safeText(decision.why_it_matters) || "Not provided"}</span>
+                                        <span>{safeText(task.decision.why_it_matters) || "Not provided"}</span>
                                       </div>
                                       <div style={styles.decisionMetaBox}>
                                         <strong>Impacted reviewers</strong>
                                         <span>
-                                          {safeList(decision.impacted_reviewers)
+                                          {safeList(task.decision.impacted_reviewers)
                                             .map((item) => safeText(item))
                                             .filter(Boolean)
                                             .join(", ") || "Not provided"}
@@ -5913,7 +5995,7 @@ ${uat.expected_result}
                                       <div style={styles.decisionMetaBox}>
                                         <strong>Default if unanswered</strong>
                                         <span>
-                                          {safeText(decision.recommended_default_if_unanswered) ||
+                                          {safeText(task.decision.recommended_default_if_unanswered) ||
                                             "Treat as unresolved."}
                                         </span>
                                       </div>
@@ -5926,7 +6008,7 @@ ${uat.expected_result}
                                         onChange={(event) =>
                                           updateDecisionAnswer(boundedIndex, event.target.value)
                                         }
-                                        placeholder="Example: Use Service Catalog + Flow Designer for MVP. GRC/IRM licensing will be evaluated in parallel. Escalate approvals after 7 business days..."
+                                        placeholder="Answer only this decision. Example: Use Service Catalog + Flow Designer for MVP. GRC/IRM licensing will be evaluated in parallel."
                                         style={styles.decisionAnswerTextarea}
                                       />
                                     </label>
@@ -5934,7 +6016,7 @@ ${uat.expected_result}
                                     <div style={styles.decisionActionRow}>
                                       <button
                                         type="button"
-                                        onClick={() => applyDecisionAnswer(decision, boundedIndex)}
+                                        onClick={() => applyDecisionAnswer(task, boundedIndex)}
                                         style={styles.button}
                                       >
                                         Apply this answer
@@ -5948,15 +6030,27 @@ ${uat.expected_result}
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => setActiveDecisionIndex(Math.min(boundedIndex + 1, decisions.length - 1))}
-                                        disabled={boundedIndex >= decisions.length - 1}
+                                        onClick={() => setActiveDecisionIndex(Math.max(boundedIndex - 1, 0))}
+                                        disabled={boundedIndex <= 0}
                                         style={{
                                           ...styles.tertiaryButton,
-                                          opacity: boundedIndex >= decisions.length - 1 ? 0.45 : 1,
-                                          cursor: boundedIndex >= decisions.length - 1 ? "not-allowed" : "pointer",
+                                          opacity: boundedIndex <= 0 ? 0.45 : 1,
+                                          cursor: boundedIndex <= 0 ? "not-allowed" : "pointer",
                                         }}
                                       >
-                                        Next decision
+                                        Previous
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveDecisionIndex(Math.min(boundedIndex + 1, decisionTasks.length - 1))}
+                                        disabled={boundedIndex >= decisionTasks.length - 1}
+                                        style={{
+                                          ...styles.tertiaryButton,
+                                          opacity: boundedIndex >= decisionTasks.length - 1 ? 0.45 : 1,
+                                          cursor: boundedIndex >= decisionTasks.length - 1 ? "not-allowed" : "pointer",
+                                        }}
+                                      >
+                                        Next
                                       </button>
                                     </div>
 
