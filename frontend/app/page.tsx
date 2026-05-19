@@ -9521,17 +9521,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "18px",
     padding: "18px",
   },
-  regenerationNotice: {
-    marginBottom: "20px",
-    padding: "16px",
-    borderRadius: "18px",
-    border: "1px solid #FACC15",
-    background: "#FFFBEB",
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "16px",
-    alignItems: "center",
-  },
   packageSummaryActions: {
     display: "flex",
     gap: "12px",
