@@ -235,6 +235,7 @@ AGENT_REVIEW_FALLBACK = {
         "recommended_improvements": [],
         "questions_for_business": [],
     },
+    "consolidated_decisions_needed": [],
     "priority_fixes": [],
     "final_verdict": "Review unavailable.",
 }

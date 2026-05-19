@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from agents._common import _chat_json, _safe_dict
 
@@ -7,7 +7,7 @@ FALLBACK_ARCHITECT_PROMPT = """
 You are a senior ServiceNow solution architect.
 Create a practical architecture/design package from the requirement.
 Prefer ServiceNow configuration and OOB capability before customization.
-Do not invent integrations unless explicitly mentioned.
+Do not invent integrations or table names unless explicitly mentioned.
 Return only valid JSON matching the requested structure.
 """
 
@@ -16,8 +16,8 @@ ARCHITECT_OUTPUT_SCHEMA = """
 Return JSON exactly in this structure:
 {
   "requirement_summary": "Short summary of the requirement.",
-  "solution_design": "Practical ServiceNow solution design.",
-  "recommended_app_type": "Service Catalog Item / Existing OOB Module / Custom Scoped Application / Custom scoped application with a Service Catalog intake front door",
+  "solution_design": "Practical ServiceNow solution design. This field is mandatory; never leave it blank.",
+  "recommended_app_type": "Service Catalog Item / Existing OOB Module / Custom Scoped Application / Custom scoped application with a Service Catalog intake front door / Needs Discovery",
   "platform_fit_decision": {
     "recommended_approach": "Recommended OOB/configuration/custom approach.",
     "oob_options_considered": [
@@ -65,7 +65,7 @@ Return JSON exactly in this structure:
     "open_questions": []
   },
   "platform_object_accuracy_notes": [
-    "Notes about request/RITM vs task vs approval vs case vs vendor/supplier record modeling."
+    "Notes about request/RITM vs task vs approval vs case vs downstream master record modeling."
   ],
   "tables": [
     {
@@ -93,8 +93,8 @@ Return JSON exactly in this structure:
 def _fallback_architecture() -> Dict[str, Any]:
     return {
         "requirement_summary": "Architecture could not be generated.",
-        "solution_design": "Unable to generate solution design. Check backend logs.",
-        "recommended_app_type": "Needs review",
+        "solution_design": "Architecture output was unavailable. Re-run the Architect Agent before treating this package as build-ready.",
+        "recommended_app_type": "Needs Discovery",
         "platform_fit_decision": {
             "recommended_approach": "Needs architect review.",
             "oob_options_considered": [],
@@ -153,6 +153,69 @@ def _ensure_dict(value: Any, fallback: Dict[str, Any]) -> Dict[str, Any]:
     return value if isinstance(value, dict) else fallback
 
 
+def _non_empty_text(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    bad_values = {
+        "unable to generate solution design. check backend logs.",
+        "check backend logs.",
+        "",
+    }
+    return "" if text.lower() in bad_values else text
+
+
+def _list_text(values: List[Any], limit: int = 5) -> str:
+    items = []
+    for value in values[:limit]:
+        if isinstance(value, dict):
+            table = value.get("table_name") or value.get("name") or value.get("option") or value.get("risk")
+            purpose = value.get("purpose") or value.get("rationale") or value.get("mitigation") or ""
+            item = f"{table}: {purpose}" if table else purpose
+        else:
+            item = str(value)
+        item = item.strip()
+        if item:
+            items.append(item)
+    return "; ".join(items)
+
+
+def _build_solution_design_fallback(output: Dict[str, Any], fallback: Dict[str, Any]) -> str:
+    summary = _non_empty_text(output.get("requirement_summary")) or fallback["requirement_summary"]
+    app_type = _non_empty_text(output.get("recommended_app_type")) or fallback["recommended_app_type"]
+    platform_fit = _ensure_dict(output.get("platform_fit_decision"), fallback["platform_fit_decision"])
+    recommended = _non_empty_text(platform_fit.get("recommended_approach")) or "Use the ServiceNow pattern identified in the platform fit decision."
+    workflow = _list_text(_ensure_list(output.get("workflow_steps")), 6)
+    tables = _list_text(_ensure_list(output.get("tables")), 6)
+    gate = _ensure_dict(output.get("build_readiness_gate"), fallback["build_readiness_gate"])
+    verdict = _non_empty_text(gate.get("verdict")) or "Needs Discovery"
+
+    parts = [
+        f"Recommended design: {recommended}",
+        f"App type: {app_type}.",
+        f"Requirement summary: {summary}",
+    ]
+    if tables:
+        parts.append(f"Primary ServiceNow objects: {tables}.")
+    if workflow:
+        parts.append(f"Core workflow: {workflow}.")
+    parts.append(f"Build readiness: {verdict}. Do not treat this design as production-ready until unresolved platform, security, routing, licensing, and data-model decisions are confirmed.")
+    return " ".join(parts)
+
+
+def _normalize_platform_notes(notes: List[Any]) -> List[str]:
+    normalized = [str(item).strip() for item in notes if str(item).strip()]
+    required = [
+        "Use sysapproval_approver for approval records generated by Flow Designer approval actions; do not model approvals as custom task tables.",
+        "Use platform audit history/sys_audit for audited field changes, sysapproval_approver for approval decisions, and sys_journal_field only for comments/work notes or other journal entries.",
+        "Treat before-query Business Rules as a last resort after ACLs, user criteria, report/list filters, and role/group visibility controls.",
+    ]
+    for item in required:
+        if not any(item.lower() in existing.lower() for existing in normalized):
+            normalized.append(item)
+    return normalized
+
+
 def generate_architecture(requirement: str) -> Dict[str, Any]:
     # IMPORTANT: do not use an f-string for the schema block. The JSON braces in
     # the schema cause runtime formatting errors in f-strings and make the
@@ -176,9 +239,21 @@ def generate_architecture(requirement: str) -> Dict[str, Any]:
 
     output = _safe_dict(output)
 
+    solution_design = (
+        _non_empty_text(output.get("solution_design"))
+        or _non_empty_text(output.get("architecture_summary"))
+        or _non_empty_text(output.get("design_summary"))
+        or _build_solution_design_fallback(output, fallback)
+    )
+
+    platform_notes = _normalize_platform_notes(
+        _ensure_list(output.get("platform_object_accuracy_notes"))
+        or fallback["platform_object_accuracy_notes"]
+    )
+
     return {
         "requirement_summary": output.get("requirement_summary") or fallback["requirement_summary"],
-        "solution_design": output.get("solution_design") or fallback["solution_design"],
+        "solution_design": solution_design,
         "recommended_app_type": output.get("recommended_app_type") or fallback["recommended_app_type"],
         "platform_fit_decision": _ensure_dict(
             output.get("platform_fit_decision"), fallback["platform_fit_decision"]
@@ -189,9 +264,7 @@ def generate_architecture(requirement: str) -> Dict[str, Any]:
         "sensitive_data_controls": _ensure_dict(
             output.get("sensitive_data_controls"), fallback["sensitive_data_controls"]
         ),
-        "platform_object_accuracy_notes": _ensure_list(
-            output.get("platform_object_accuracy_notes")
-        ) or fallback["platform_object_accuracy_notes"],
+        "platform_object_accuracy_notes": platform_notes,
         "tables": _ensure_list(output.get("tables")),
         "workflow_steps": _ensure_list(output.get("workflow_steps")),
         "risks": _ensure_list(output.get("risks")) or fallback["risks"],
