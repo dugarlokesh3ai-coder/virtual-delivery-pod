@@ -7404,17 +7404,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     whiteSpace: "nowrap",
   },
-  regenerationNotice: {
-    border: "1px solid #F59E0B",
-    background: "#FFFBEB",
-    borderRadius: "18px",
-    padding: "16px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "14px",
-    marginBottom: "14px",
-  },
   overviewHeroGrid: {
     display: "grid",
     gridTemplateColumns: "1.1fr 0.9fr",
