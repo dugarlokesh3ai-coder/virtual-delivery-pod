@@ -795,6 +795,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("stories");
   const [packageTab, setPackageTab] = useState<PackageTab>("overview");
+  const packageContentRef = useRef<HTMLDivElement | null>(null);
+  const [packageChromeExpanded, setPackageChromeExpanded] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [loadingStage, setLoadingStage] = useState("");
@@ -1118,6 +1120,17 @@ export default function Home() {
 
     setWorkspacePanel(panel);
     setShowComparePanel(false);
+  }
+
+  function selectPackageTab(tab: PackageTab) {
+    setPackageTab(tab);
+
+    window.setTimeout(() => {
+      packageContentRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
   }
 
   function getWorkspacePanelLabel(panel: WorkspacePanel) {
@@ -3656,19 +3669,23 @@ ${uat.expected_result}
     result?.generation_mode === "quick"
       ? "Quick Readiness Score"
       : "Delivery Quality Score";
-  const buildGate = getBuildReadinessGate(result);
-  const buildGateVerdict = safeText(buildGate?.verdict) || "Not assessed";
-  const buildGateBlocks =
-    buildGateVerdict.toLowerCase().includes("needs discovery") ||
-    buildGateVerdict.toLowerCase().includes("not ready");
+
+  const buildReadinessGate = getBuildReadinessGate(result);
+  const platformFitDecision = getPlatformFitDecision(result);
   const consolidatedDecisions = getConsolidatedDecisions(result?.agent_review);
-  const buildBlockerCount = safeList(buildGate?.must_resolve_before_build).length;
-  const reviewQuestionCount = result?.agent_review
-    ? REVIEW_AGENT_TABS.reduce((total, tab) => {
-        const feedback = getReviewFeedback(tab.id);
-        return total + safeList(feedback?.questions_for_business).length;
-      }, 0)
-    : 0;
+  const blockingDecisionCount = consolidatedDecisions.filter(
+    (decision) => decision.blocks_build_readiness === true,
+  ).length;
+  const unresolvedCount =
+    consolidatedDecisions.length ||
+    result?.delivery_lead_review?.missing_requirements?.length ||
+    result?.open_questions?.length ||
+    0;
+  const packageHealthLabel =
+    safeText(buildReadinessGate?.verdict) ||
+    safeText(result?.quality_score?.build_readiness_verdict) ||
+    safeText(result?.quality_score?.rating) ||
+    "Not assessed";
 
   return (
     <main style={styles.page}>
@@ -4778,38 +4795,36 @@ ${uat.expected_result}
 
             {result && (
               <section style={styles.packageWorkspace}>
-                <div style={styles.packageSummaryCard}>
-                  <div>
-                    <p style={styles.label}>Generated Package</p>
-                    <h2 style={styles.packageTitle}>
+                <div style={styles.packageCommandBar}>
+                  <div style={styles.packageCommandLeft}>
+                    <p style={styles.label}>Package Workspace</p>
+                    <h2 style={styles.packageTitleCompact}>
                       {projectName || "Current Delivery Package"}
                     </h2>
-                    <p style={styles.muted}>
-                      Use the section tabs to review, refine, and export the
-                      package without scrolling through the full output.
-                    </p>
-                    {(!result.developer ||
-                      !result.qa ||
-                      !result.quality_score) && (
-                      <div style={{ marginTop: "14px" }}>
-                        <button
-                          onClick={upgradeQuickPackageToFull}
-                          disabled={loading}
-                          style={{
-                            ...styles.button,
-                            opacity: loading ? 0.65 : 1,
-                            cursor: loading ? "not-allowed" : "pointer",
-                          }}
-                        >
-                          {loading
-                            ? "Upgrading..."
-                            : "Upgrade to Full Detailed Package"}
-                        </button>
-                      </div>
-                    )}
+                    <div style={styles.packagePillRow}>
+                      <span style={styles.softPill}>{result.generation_mode === "quick" ? "Quick package" : "Full package"}</span>
+                      <span style={styles.softPill}>{packageScoreLabel}: {displayScore(result.quality_score?.overall_score)}</span>
+                      <span style={styles.softPill}>Readiness: {packageHealthLabel}</span>
+                      {unresolvedCount > 0 && (
+                        <span style={styles.warningPill}>{unresolvedCount} items to resolve</span>
+                      )}
+                    </div>
                   </div>
 
-                  <div style={{ marginTop: "12px" }}>
+                  <div style={styles.packageCommandActions}>
+                    {(!result.developer || !result.qa || !result.quality_score) && (
+                      <button
+                        onClick={upgradeQuickPackageToFull}
+                        disabled={loading}
+                        style={{
+                          ...styles.button,
+                          opacity: loading ? 0.65 : 1,
+                          cursor: loading ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {loading ? "Upgrading..." : "Make Full"}
+                      </button>
+                    )}
                     <button
                       onClick={runAgentReview}
                       disabled={loading}
@@ -4819,182 +4834,76 @@ ${uat.expected_result}
                         cursor: loading ? "not-allowed" : "pointer",
                       }}
                     >
-                      {loading ? "Reviewing..." : "Run Agent Review"}
+                      {loading ? "Reviewing..." : result.agent_review ? "Refresh Review" : "Run Review"}
+                    </button>
+                    <button onClick={() => selectPackageTab("review")} style={styles.secondaryButton}>
+                      Decisions
+                    </button>
+                    <button onClick={() => selectPackageTab("delivery_lead")} style={styles.secondaryButton}>
+                      Ask Lead
+                    </button>
+                    <button onClick={() => selectPackageTab("export")} style={styles.secondaryButton}>
+                      Export
+                    </button>
+                    <button
+                      onClick={() => setPackageChromeExpanded(!packageChromeExpanded)}
+                      style={styles.tertiaryButton}
+                    >
+                      {packageChromeExpanded ? "Hide details" : "Show details"}
                     </button>
                   </div>
+                </div>
 
-                  <div
-                    style={
-                      isMobile ? styles.mobileSnapshotGrid : styles.snapshotGrid
-                    }
-                  >
+                {packageNeedsRegeneration && (
+                  <div style={styles.regenerationNotice}>
+                    <div>
+                      <p style={styles.riskTitle}>Requirement changed after package generation</p>
+                      <p style={styles.bodyText}>Regenerate the package before exporting or using it for handoff.</p>
+                    </div>
+                    <button onClick={() => generatePackage("full")} disabled={loading} style={styles.button}>
+                      {loading ? "Regenerating..." : "Regenerate Full Package"}
+                    </button>
+                  </div>
+                )}
+
+                {packageChromeExpanded && (
+                  <div style={isMobile ? styles.mobileSnapshotGrid : styles.snapshotGrid}>
                     <div style={styles.snapshotMetric}>
                       <p style={styles.label}>{packageScoreLabel}</p>
-                      <p style={styles.snapshotNumber}>
-                        {displayScore(result.quality_score?.overall_score)}
-                      </p>
-                      <p style={styles.snapshotText}>
-                        {hasScore
-                          ? "/ 100"
-                          : result.generation_mode === "quick"
-                            ? "not scored yet"
-                            : "unavailable"}
-                      </p>
+                      <p style={styles.snapshotNumber}>{displayScore(result.quality_score?.overall_score)}</p>
+                      <p style={styles.snapshotText}>{hasScore ? "/ 100" : "unavailable"}</p>
                     </div>
                     <div style={styles.snapshotMetric}>
                       <p style={styles.label}>Stories</p>
-                      <p style={styles.snapshotNumber}>
-                        {result.stories?.length || 0}
-                      </p>
+                      <p style={styles.snapshotNumber}>{result.stories?.length || 0}</p>
                       <p style={styles.snapshotText}>generated</p>
                     </div>
                     <div style={styles.snapshotMetric}>
                       <p style={styles.label}>Test Cases</p>
-                      <p style={styles.snapshotNumber}>
-                        {result.generation_mode === "quick"
-                          ? "—"
-                          : result.qa?.test_cases?.length || 0}
-                      </p>
-                      <p style={styles.snapshotText}>
-                        {result.generation_mode === "quick"
-                          ? "full package only"
-                          : "QA cases"}
-                      </p>
+                      <p style={styles.snapshotNumber}>{result.generation_mode === "quick" ? "—" : result.qa?.test_cases?.length || 0}</p>
+                      <p style={styles.snapshotText}>{result.generation_mode === "quick" ? "full only" : "QA cases"}</p>
                     </div>
                     <div style={styles.snapshotMetric}>
                       <p style={styles.label}>Tech Objects</p>
-                      <p style={styles.snapshotNumber}>
-                        {result.generation_mode === "quick"
-                          ? "—"
-                          : result.developer?.service_now_objects?.length || 0}
-                      </p>
-                      <p style={styles.snapshotText}>
-                        {result.generation_mode === "quick"
-                          ? "full package only"
-                          : "objects"}
-                      </p>
+                      <p style={styles.snapshotNumber}>{result.generation_mode === "quick" ? "—" : result.developer?.service_now_objects?.length || 0}</p>
+                      <p style={styles.snapshotText}>{result.generation_mode === "quick" ? "full only" : "objects"}</p>
                     </div>
                     <div style={styles.snapshotMetric}>
                       <p style={styles.label}>Open Questions</p>
-                      <p style={styles.snapshotNumber}>
-                        {result.open_questions?.length || 0}
-                      </p>
+                      <p style={styles.snapshotNumber}>{result.open_questions?.length || 0}</p>
                       <p style={styles.snapshotText}>items</p>
                     </div>
                   </div>
-                </div>
-
-                <section style={styles.packageActionCenter}>
-                  <div style={styles.actionCenterHeader}>
-                    <div>
-                      <p style={styles.label}>Next Best Actions</p>
-                      <h3 style={styles.actionCenterTitle}>One place to move the package forward</h3>
-                      <p style={styles.muted}>
-                        Resolve business decisions once, regenerate only when needed, then export from the Export tab.
-                      </p>
-                    </div>
-                    <Badge>
-                      {result.generation_mode === "quick" ? "Quick draft" : "Full package"}
-                    </Badge>
-                  </div>
-
-                  <div style={isMobile ? styles.mobileOneColumnGrid : styles.actionCenterGrid}>
-                    <button
-                      type="button"
-                      onClick={() => setPackageTab("design")}
-                      style={{
-                        ...styles.actionTile,
-                        ...(buildGateBlocks ? styles.actionTileWarning : {}),
-                      }}
-                    >
-                      <span style={styles.actionTileLabel}>Build readiness</span>
-                      <strong style={styles.actionTileTitle}>{buildGateVerdict}</strong>
-                      <span style={styles.actionTileMeta}>
-                        {buildBlockerCount
-                          ? `${buildBlockerCount} blocker${buildBlockerCount === 1 ? "" : "s"}`
-                          : "Open design gate"}
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (result.agent_review) {
-                          setPackageTab("review");
-                        } else {
-                          runAgentReview();
-                        }
-                      }}
-                      style={{
-                        ...styles.actionTile,
-                        ...(consolidatedDecisions.length ? styles.actionTileWarning : {}),
-                      }}
-                    >
-                      <span style={styles.actionTileLabel}>Business decisions</span>
-                      <strong style={styles.actionTileTitle}>
-                        {result.agent_review
-                          ? `${consolidatedDecisions.length} consolidated`
-                          : "Run review"}
-                      </strong>
-                      <span style={styles.actionTileMeta}>
-                        {result.agent_review
-                          ? `${reviewQuestionCount} raw reviewer questions deduped`
-                          : "Find duplicated gaps before asking business"}
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPackageTab("delivery_lead")}
-                      style={styles.actionTile}
-                    >
-                      <span style={styles.actionTileLabel}>Clarify / update</span>
-                      <strong style={styles.actionTileTitle}>Ask Delivery Lead</strong>
-                      <span style={styles.actionTileMeta}>Apply answers back to the requirement</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPackageTab("export")}
-                      style={styles.actionTile}
-                    >
-                      <span style={styles.actionTileLabel}>Final artifact</span>
-                      <strong style={styles.actionTileTitle}>Export package</strong>
-                      <span style={styles.actionTileMeta}>DOCX and Markdown live in one tab</span>
-                    </button>
-                  </div>
-
-                  {packageNeedsRegeneration && (
-                    <div style={styles.inlineWarning}>
-                      <div>
-                        <p style={styles.riskTitle}>Requirement changed after package generation</p>
-                        <p style={styles.bodyText}>
-                          Regenerate before using the package for review, build planning, or export.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => generatePackage(result.generation_mode === "quick" ? "quick" : "full")}
-                        disabled={loading}
-                        style={{
-                          ...styles.button,
-                          opacity: loading ? 0.65 : 1,
-                          cursor: loading ? "not-allowed" : "pointer",
-                        }}
-                      >
-                        {loading ? "Regenerating..." : "Regenerate Package"}
-                      </button>
-                    </div>
-                  )}
-                </section>
+                )}
 
                 <div
+                  ref={packageContentRef}
                   style={isMobile ? styles.mobilePackageNav : styles.packageNav}
                 >
                   {PACKAGE_TABS.map((tab) => (
                     <button
                       key={tab.id}
-                      onClick={() => setPackageTab(tab.id)}
+                      onClick={() => selectPackageTab(tab.id)}
                       style={
                         packageTab === tab.id
                           ? styles.activePackageTab
@@ -5009,344 +4918,129 @@ ${uat.expected_result}
                 {packageTab === "overview" && (
                   <div style={styles.results}>
                     <Card
-                      title="Delivery Lead Review"
-                      copyValue={JSON.stringify(
-                        result.delivery_lead_review,
-                        null,
-                        2,
-                      )}
+                      title="Executive Overview"
+                      copyValue={buildMarkdownExport()}
                       onCopy={copyToClipboard}
                     >
-                      {result.delivery_lead_review ? (
-                        <div style={styles.stack}>
+                      <div style={styles.stack}>
+                        <div style={styles.overviewHeroGrid}>
                           <div style={styles.innerCard}>
-                            <p style={styles.label}>Understanding</p>
-                            <p style={styles.bodyText}>
-                              {result.delivery_lead_review.understanding}
-                            </p>
+                            <p style={styles.label}>Requirement Summary</p>
+                            <p style={styles.bodyText}>{result.requirement_summary || result.delivery_lead_review?.understanding}</p>
                           </div>
-
-                          <div style={responsiveTwoGrid}>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>MVP Scope</p>
-                              <ul style={styles.list}>
-                                {result.delivery_lead_review.mvp_scope?.map(
-                                  (item, index) => (
-                                    <li key={index}>{item}</li>
-                                  ),
-                                )}
-                              </ul>
-                            </div>
-
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Phase 2 Scope</p>
-                              <ul style={styles.list}>
-                                {result.delivery_lead_review.phase_2_scope?.map(
-                                  (item, index) => (
-                                    <li key={index}>{item}</li>
-                                  ),
-                                )}
-                              </ul>
-                            </div>
-                          </div>
-
-                          <div style={responsiveTwoGrid}>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Clarifying Questions</p>
-                              <ul style={styles.list}>
-                                {result.delivery_lead_review.clarifying_questions?.map(
-                                  (question, index) => (
-                                    <li key={index}>{question}</li>
-                                  ),
-                                )}
-                              </ul>
-                            </div>
-
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Recommended Next Steps</p>
-                              <ul style={styles.list}>
-                                {result.delivery_lead_review.recommended_next_steps?.map(
-                                  (step, index) => (
-                                    <li key={index}>{step}</li>
-                                  ),
-                                )}
-                              </ul>
-                            </div>
-                          </div>
-
-                          {result.delivery_lead_review.missing_requirements
-                            ?.length > 0 && (
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>
-                                Missing / Weak Requirements
-                              </p>
-                              <div style={styles.stack}>
-                                {result.delivery_lead_review.missing_requirements.map(
-                                  (item, index) => (
-                                    <div key={index} style={styles.riskBox}>
-                                      <p style={styles.riskTitle}>{item.gap}</p>
-                                      <p style={styles.bodyText}>
-                                        <strong>Why it matters:</strong>{" "}
-                                        {item.why_it_matters}
-                                      </p>
-                                    </div>
-                                  ),
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          {result.delivery_lead_review.assumptions?.length >
-                            0 && (
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Assumptions</p>
-                              <ul style={styles.list}>
-                                {result.delivery_lead_review.assumptions.map(
-                                  (item, index) => (
-                                    <li key={index}>{item}</li>
-                                  ),
-                                )}
-                              </ul>
-                            </div>
-                          )}
-
-                          <RegeneratePanel
-                            section="delivery_lead_review"
-                            instruction={regenerateInstruction}
-                            setInstruction={setRegenerateInstruction}
-                            regeneratingSection={regeneratingSection}
-                            onRegenerate={regenerateSection}
-                          />
-                        </div>
-                      ) : (
-                        <p style={styles.muted}>
-                          No Delivery Lead review generated.
-                        </p>
-                      )}
-                    </Card>
-
-                    <Card
-                      title={packageScoreTitle}
-                      copyValue={JSON.stringify(result.quality_score, null, 2)}
-                      onCopy={copyToClipboard}
-                    >
-                      {result.quality_score ? (
-                        <div style={styles.stack}>
-                          {!hasUsableQualityScore(result.quality_score) && (
-                            <div style={styles.riskBox}>
-                              <p style={styles.riskTitle}>Score unavailable</p>
-                              <p style={styles.bodyText}>
-                                {result.quality_score.summary ||
-                                  "The backend did not return a usable score. Regenerate the score or check the quality score agent."}
-                              </p>
-                            </div>
-                          )}
-
-                          <div style={responsiveScoreGrid}>
-                            <ScoreBox
-                              label="Overall"
-                              score={result.quality_score.overall_score}
-                              color={getScoreColor(
-                                result.quality_score.overall_score,
-                              )}
-                              background={getScoreBackground(
-                                result.quality_score.overall_score,
-                              )}
-                            />
-                            <ScoreBox
-                              label="Completeness"
-                              score={result.quality_score.completeness_score}
-                              color={getScoreColor(
-                                result.quality_score.completeness_score,
-                              )}
-                              background={getScoreBackground(
-                                result.quality_score.completeness_score,
-                              )}
-                            />
-                            <ScoreBox
-                              label="Risk"
-                              score={result.quality_score.risk_score}
-                              color={getScoreColor(
-                                result.quality_score.risk_score,
-                              )}
-                              background={getScoreBackground(
-                                result.quality_score.risk_score,
-                              )}
-                            />
-                            <ScoreBox
-                              label="Readiness"
-                              score={result.quality_score.readiness_score}
-                              color={getScoreColor(
-                                result.quality_score.readiness_score,
-                              )}
-                              background={getScoreBackground(
-                                result.quality_score.readiness_score,
-                              )}
-                            />
-                          </div>
-
                           <div style={styles.innerCard}>
-                            <p style={styles.label}>Rating</p>
+                            <p style={styles.label}>Recommended Approach</p>
                             <p style={styles.accentText}>
-                              {result.quality_score.rating}
+                              {safeText(platformFitDecision?.recommended_approach) || result.recommended_app_type || "Not provided"}
                             </p>
-                            <p style={styles.bodyText}>
-                              {result.quality_score.summary}
-                            </p>
+                            <p style={styles.bodyText}>{safeText(platformFitDecision?.final_recommendation)}</p>
                           </div>
+                        </div>
 
-                          {result.quality_score.build_readiness_verdict && (
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>
-                                Build Readiness Verdict
-                              </p>
-                              <p style={styles.accentText}>
-                                {result.quality_score.build_readiness_verdict}
-                              </p>
-                            </div>
-                          )}
+                        <div style={styles.nextStepGrid}>
+                          <button onClick={() => selectPackageTab("design")} style={styles.nextStepCardButton}>
+                            <span style={styles.label}>1 · Architecture</span>
+                            <strong>Review platform fit</strong>
+                            <span>OOB vs custom, readiness, security, object model.</span>
+                          </button>
+                          <button onClick={() => selectPackageTab("review")} style={styles.nextStepCardButton}>
+                            <span style={styles.label}>2 · Decisions</span>
+                            <strong>{consolidatedDecisions.length ? `${consolidatedDecisions.length} consolidated decisions` : "Run agent review"}</strong>
+                            <span>{blockingDecisionCount ? `${blockingDecisionCount} blocking decisions` : "De-duplicate reviewer questions."}</span>
+                          </button>
+                          <button onClick={() => selectPackageTab("delivery_lead")} style={styles.nextStepCardButton}>
+                            <span style={styles.label}>3 · Clarify</span>
+                            <strong>Ask Delivery Lead</strong>
+                            <span>Apply answers back to the requirement.</span>
+                          </button>
+                          <button onClick={() => selectPackageTab("export")} style={styles.nextStepCardButton}>
+                            <span style={styles.label}>4 · Handoff</span>
+                            <strong>Export package</strong>
+                            <span>DOCX and Markdown stay in the Export tab.</span>
+                          </button>
+                        </div>
 
-                          {result.quality_score.score_rationale && (
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Score Rationale</p>
-                              <p style={styles.bodyText}>
-                                <strong>Completeness:</strong>{" "}
-                                {
-                                  result.quality_score.score_rationale
-                                    .completeness
-                                }
-                              </p>
-                              <p style={styles.bodyText}>
-                                <strong>Risk:</strong>{" "}
-                                {result.quality_score.score_rationale.risk}
-                              </p>
-                              <p style={styles.bodyText}>
-                                <strong>Readiness:</strong>{" "}
-                                {result.quality_score.score_rationale.readiness}
-                              </p>
-                            </div>
-                          )}
-
-                          {result.quality_score.score_caps_applied?.length ? (
-                            <div style={styles.riskBox}>
-                              <p style={styles.riskTitle}>
-                                Score Caps / Penalties Applied
-                              </p>
-                              <ul style={styles.list}>
-                                {result.quality_score.score_caps_applied.map(
-                                  (item, index) => (
-                                    <li key={index}>{item}</li>
-                                  ),
-                                )}
-                              </ul>
-                            </div>
-                          ) : null}
-
-                          <div style={responsiveTwoGrid}>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Strengths</p>
-                              <ul style={styles.list}>
-                                {result.quality_score.strengths?.map(
-                                  (item, index) => (
-                                    <li key={index}>{item}</li>
-                                  ),
-                                )}
-                              </ul>
-                            </div>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Weaknesses</p>
-                              <ul style={styles.list}>
-                                {result.quality_score.weaknesses?.map(
-                                  (item, index) => (
-                                    <li key={index}>{item}</li>
-                                  ),
-                                )}
-                              </ul>
-                            </div>
+                        <div style={responsiveTwoGrid}>
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>Build Readiness</p>
+                            <p style={styles.accentText}>{packageHealthLabel}</p>
+                            <p style={styles.bodyText}>{safeText(buildReadinessGate?.reason) || result.quality_score?.summary}</p>
+                            {safeList(buildReadinessGate?.must_resolve_before_build).length > 0 && (
+                              <details style={styles.detailsBox}>
+                                <summary style={styles.detailsSummary}>Show blockers</summary>
+                                <ul style={styles.list}>
+                                  {safeList(buildReadinessGate?.must_resolve_before_build).map((item, index) => (
+                                    <li key={index}>{safeText(item)}</li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
                           </div>
 
                           <div style={styles.innerCard}>
-                            <p style={styles.label}>Recommended Fixes</p>
+                            <p style={styles.label}>MVP Scope Preview</p>
                             <ul style={styles.list}>
-                              {result.quality_score.recommended_fixes?.map(
-                                (item, index) => (
-                                  <li key={index}>{item}</li>
-                                ),
-                              )}
+                              {result.delivery_lead_review?.mvp_scope?.slice(0, 5).map((item, index) => (
+                                <li key={index}>{item}</li>
+                              ))}
                             </ul>
+                            {(result.delivery_lead_review?.mvp_scope?.length || 0) > 5 && (
+                              <button onClick={() => selectPackageTab("delivery_lead")} style={styles.inlineLinkButton}>
+                                View full Delivery Lead scope →
+                              </button>
+                            )}
                           </div>
-
-                          <RegeneratePanel
-                            section="quality_score"
-                            instruction={regenerateInstruction}
-                            setInstruction={setRegenerateInstruction}
-                            regeneratingSection={regeneratingSection}
-                            onRegenerate={regenerateSection}
-                          />
                         </div>
-                      ) : (
-                        <p style={styles.muted}>No quality score generated.</p>
-                      )}
-                    </Card>
 
-                    <Card
-                      title="Process / State Flow Diagram"
-                      copyValue={result.process_diagram?.mermaid_code || ""}
-                      onCopy={copyToClipboard}
-                    >
-                      {result.process_diagram ? (
-                        <div style={styles.stack}>
+                        <div style={responsiveTwoGrid}>
                           <div style={styles.innerCard}>
-                            <p style={styles.label}>
-                              {result.process_diagram.title}
-                            </p>
-                            <p style={styles.bodyText}>
-                              {result.process_diagram.summary}
-                            </p>
+                            <p style={styles.label}>Business Decisions Needed</p>
+                            {consolidatedDecisions.length ? (
+                              <div style={styles.stackSmall}>
+                                {consolidatedDecisions.slice(0, 4).map((decision, index) => (
+                                  <div key={index} style={styles.decisionMiniCard}>
+                                    <strong>{safeText(decision.decision_area) || `Decision ${index + 1}`}</strong>
+                                    <span>{safeText(decision.question)}</span>
+                                  </div>
+                                ))}
+                                <button onClick={() => selectPackageTab("review")} style={styles.inlineLinkButton}>
+                                  Resolve all decisions in Review →
+                                </button>
+                              </div>
+                            ) : (
+                              <div>
+                                <p style={styles.bodyText}>Run Agent Review to consolidate duplicate questions from Architect, Developer, QA, and Delivery Lead.</p>
+                                <button onClick={runAgentReview} disabled={loading} style={styles.secondaryButton}>
+                                  {loading ? "Reviewing..." : "Run Agent Review"}
+                                </button>
+                              </div>
+                            )}
                           </div>
 
-                          <div style={styles.diagramShell}>
-                            <MermaidDiagram
-                              chart={result.process_diagram.mermaid_code}
-                            />
-                          </div>
-
-                          <details style={styles.detailsBox}>
-                            <summary style={styles.detailsSummary}>
-                              View Mermaid Code
-                            </summary>
-                            <pre style={styles.mermaidCodeBlock}>
-                              {result.process_diagram.mermaid_code}
-                            </pre>
-                          </details>
-
-                          {result.process_diagram.diagram_notes?.length > 0 && (
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Diagram Notes</p>
-                              <ul style={styles.list}>
-                                {result.process_diagram.diagram_notes.map(
-                                  (note, index) => (
-                                    <li key={index}>{note}</li>
-                                  ),
-                                )}
-                              </ul>
+                          <div style={styles.innerCard}>
+                            <p style={styles.label}>Quality Snapshot</p>
+                            <div style={styles.compactScoreRow}>
+                              <ScoreBox
+                                label="Overall"
+                                score={result.quality_score?.overall_score}
+                                color={getScoreColor(result.quality_score?.overall_score)}
+                                background={getScoreBackground(result.quality_score?.overall_score)}
+                              />
+                              <ScoreBox
+                                label="Readiness"
+                                score={result.quality_score?.readiness_score}
+                                color={getScoreColor(result.quality_score?.readiness_score)}
+                                background={getScoreBackground(result.quality_score?.readiness_score)}
+                              />
                             </div>
-                          )}
-
-                          <RegeneratePanel
-                            section="process_diagram"
-                            instruction={regenerateInstruction}
-                            setInstruction={setRegenerateInstruction}
-                            regeneratingSection={regeneratingSection}
-                            onRegenerate={regenerateSection}
-                          />
+                            <p style={styles.bodyText}>{result.quality_score?.summary}</p>
+                          </div>
                         </div>
-                      ) : (
-                        <p style={styles.muted}>No diagram generated.</p>
-                      )}
+                      </div>
                     </Card>
                   </div>
                 )}
+
 
                 {packageTab === "design" && (
                   <div style={styles.results}>
@@ -6109,9 +5803,6 @@ ${uat.expected_result}
                               )?.title || "Agent Review"
                             }
                             review={getReviewFeedback(activeReviewAgent)}
-                            businessQuestionsAreConsolidated={
-                              getConsolidatedDecisions(result.agent_review).length > 0
-                            }
                           />
 
                           <div style={styles.reviewAgentChatBox}>
@@ -7489,11 +7180,9 @@ function RegeneratePanel({
 function ReviewAgentPanel({
   agentTitle,
   review,
-  businessQuestionsAreConsolidated = false,
 }: {
   agentTitle: string;
   review: AgentReviewerFeedback | null;
-  businessQuestionsAreConsolidated?: boolean;
 }) {
   if (!review) {
     return (
@@ -7544,21 +7233,11 @@ function ReviewAgentPanel({
 
         <div style={styles.innerCard}>
           <p style={styles.label}>Questions for Business</p>
-          {businessQuestionsAreConsolidated ? (
-            <div style={styles.decisionRedirect}>
-              <p style={styles.bodyText}>
-                Business questions from all reviewers are consolidated above so the user only answers each decision once. Use this reviewer chat for role-specific follow-up, rewrites, or risk analysis.
-              </p>
-            </div>
-          ) : safeList(review.questions_for_business).length ? (
-            <ul style={styles.list}>
-              {review.questions_for_business?.map((item, index) => (
-                <li key={index}>{item}</li>
-              ))}
-            </ul>
-          ) : (
-            <p style={styles.muted}>No role-specific business questions returned.</p>
-          )}
+          <ul style={styles.list}>
+            {review.questions_for_business?.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
         </div>
       </div>
     </div>
@@ -7653,6 +7332,148 @@ function MermaidDiagram({ chart }: { chart: string }) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+
+  packageCommandBar: {
+    background: "rgba(255,255,255,0.95)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "22px",
+    padding: "18px",
+    boxShadow: "0 16px 42px rgba(15, 23, 42, 0.08)",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "18px",
+    marginBottom: "14px",
+    position: "sticky",
+    top: 0,
+    zIndex: 20,
+  },
+  packageCommandLeft: {
+    minWidth: 0,
+  },
+  packageTitleCompact: {
+    margin: "2px 0 8px",
+    fontSize: "24px",
+    lineHeight: 1.2,
+    fontWeight: 900,
+    color: "#0F172A",
+    letterSpacing: "-0.03em",
+  },
+  packagePillRow: {
+    display: "flex",
+    gap: "8px",
+    flexWrap: "wrap",
+    alignItems: "center",
+  },
+  softPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: "999px",
+    background: "#EFF6FF",
+    color: "#1D4ED8",
+    padding: "6px 10px",
+    fontSize: "12px",
+    fontWeight: 850,
+  },
+  warningPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: "999px",
+    background: "#FFF7ED",
+    color: "#9A3412",
+    border: "1px solid #FDBA74",
+    padding: "6px 10px",
+    fontSize: "12px",
+    fontWeight: 850,
+  },
+  packageCommandActions: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+    alignItems: "center",
+  },
+  tertiaryButton: {
+    border: "0",
+    borderRadius: "12px",
+    background: "#F1F5F9",
+    color: "#334155",
+    padding: "12px 16px",
+    fontSize: "14px",
+    fontWeight: 850,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  regenerationNotice: {
+    border: "1px solid #F59E0B",
+    background: "#FFFBEB",
+    borderRadius: "18px",
+    padding: "16px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "14px",
+    marginBottom: "14px",
+  },
+  overviewHeroGrid: {
+    display: "grid",
+    gridTemplateColumns: "1.1fr 0.9fr",
+    gap: "14px",
+  },
+  nextStepGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: "12px",
+  },
+  nextStepCardButton: {
+    border: "1px solid #CBD5E1",
+    background: "#FFFFFF",
+    borderRadius: "18px",
+    padding: "16px",
+    textAlign: "left",
+    color: "#334155",
+    cursor: "pointer",
+    display: "flex",
+    flexDirection: "column",
+    gap: "7px",
+    minHeight: "130px",
+    fontSize: "14px",
+    lineHeight: 1.5,
+  },
+  inlineLinkButton: {
+    border: "0",
+    background: "transparent",
+    color: "#2563EB",
+    padding: 0,
+    marginTop: "8px",
+    fontSize: "14px",
+    fontWeight: 850,
+    cursor: "pointer",
+    textAlign: "left",
+  },
+  stackSmall: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+  },
+  decisionMiniCard: {
+    border: "1px solid #E2E8F0",
+    background: "#F8FAFC",
+    borderRadius: "14px",
+    padding: "12px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+    color: "#334155",
+    fontSize: "14px",
+    lineHeight: 1.5,
+  },
+  compactScoreRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "10px",
+    marginBottom: "12px",
+  },
   page: {
     minHeight: "100vh",
     background:
@@ -9568,87 +9389,6 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#FFFFFF",
     border: "1px solid #CBD5E1",
     borderRadius: "16px",
-    padding: "14px",
-  },
-  packageActionCenter: {
-    background: "rgba(255,255,255,0.96)",
-    border: "1px solid #C7D2FE",
-    borderRadius: "22px",
-    padding: "18px",
-    boxShadow: "0 16px 42px rgba(79, 70, 229, 0.10)",
-    marginBottom: "18px",
-  },
-  actionCenterHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "16px",
-    marginBottom: "14px",
-  },
-  actionCenterTitle: {
-    margin: "0 0 6px",
-    color: "#0F172A",
-    fontSize: "20px",
-    fontWeight: 900,
-    letterSpacing: "-0.02em",
-  },
-  actionCenterGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-    gap: "12px",
-  },
-  actionTile: {
-    border: "1px solid #CBD5E1",
-    borderRadius: "18px",
-    background: "#FFFFFF",
-    color: "#0F172A",
-    padding: "16px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "7px",
-    textAlign: "left",
-    cursor: "pointer",
-    minHeight: "116px",
-    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.06)",
-  },
-  actionTileWarning: {
-    border: "1px solid #FACC15",
-    background: "#FFFBEB",
-  },
-  actionTileLabel: {
-    color: "#64748B",
-    fontSize: "11px",
-    textTransform: "uppercase",
-    letterSpacing: "0.12em",
-    fontWeight: 900,
-  },
-  actionTileTitle: {
-    color: "#1D4ED8",
-    fontSize: "18px",
-    lineHeight: "1.25",
-    fontWeight: 900,
-  },
-  actionTileMeta: {
-    color: "#475569",
-    fontSize: "13px",
-    lineHeight: "1.45",
-    fontWeight: 700,
-  },
-  inlineWarning: {
-    marginTop: "14px",
-    border: "1px solid #FACC15",
-    background: "#FFFBEB",
-    borderRadius: "18px",
-    padding: "14px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "14px",
-  },
-  decisionRedirect: {
-    background: "#EFF6FF",
-    border: "1px dashed #93C5FD",
-    borderRadius: "14px",
     padding: "14px",
   },
 
