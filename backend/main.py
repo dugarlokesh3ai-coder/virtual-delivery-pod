@@ -411,6 +411,7 @@ def build_story_output_from_package(current_package: dict):
 
     return {
         "epic": current_package.get("epic", ""),
+        "story_groups": current_package.get("story_groups", []),
         "stories": current_package.get("stories", []),
         "assumptions": current_package.get("story_assumptions", []),
         "dependencies": current_package.get("story_dependencies", []),
@@ -446,6 +447,7 @@ def build_package_response(
         "risks": architecture.get("risks", []),
         "open_questions": architecture.get("open_questions", []),
         "epic": story_output.get("epic", ""),
+        "story_groups": story_output.get("story_groups", []),
         "stories": story_output.get("stories", []),
         "story_assumptions": story_output.get("assumptions", []),
         "story_dependencies": story_output.get("dependencies", []),

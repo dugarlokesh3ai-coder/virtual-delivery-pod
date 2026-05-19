@@ -17,6 +17,7 @@ FALLBACK_CODE_GENERATOR_PROMPT = """
 You are a senior ServiceNow developer.
 Generate practical implementation guidance for the selected technical card.
 Prefer configuration and Flow Designer before custom scripting.
+Use related_story_ids, epic, implementation_type, configuration_or_code, build_sequence, and technical_debt_level when provided.
 When code is useful, provide ServiceNow-oriented examples and explain where they belong.
 Do not invent external integrations.
 Return plain text. Do not return JSON unless explicitly asked.
@@ -34,6 +35,7 @@ Full Package Context:
 {full_context}
 
 Create implementation guidance/code notes for this card.
+Explicitly reference related story IDs and build sequence if available.
 """
 
     try:
@@ -42,7 +44,7 @@ Create implementation guidance/code notes for this card.
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a senior ServiceNow developer. Return clear implementation guidance.",
+                    "content": "You are a senior ServiceNow developer. Return clear implementation guidance aligned to the related story IDs.",
                 },
                 {
                     "role": "user",

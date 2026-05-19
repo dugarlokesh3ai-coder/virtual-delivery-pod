@@ -92,24 +92,50 @@ type ProcessDiagram = {
 };
 
 type StoryItem = {
+  story_id?: string;
+  epic?: string;
   title: string;
   persona: string;
   story: string;
   acceptance_criteria: string[];
   priority: string;
+  implementation_type?: string;
+  related_service_now_objects?: any[];
+  developer_notes_needed?: any[];
+  qa_focus?: any[];
+  dependencies?: any[];
+  build_sequence?: any;
   notes: string;
+};
+
+type StoryGroup = {
+  epic_name: string;
+  epic_summary?: string;
+  stories: StoryItem[];
 };
 
 type ServiceNowObject = {
   object_type: string;
   name: string;
   purpose: string;
+  related_story_ids?: any[];
+  implementation_type?: any;
+  configuration_or_code?: any;
+  build_sequence?: any;
+  technical_debt_level?: any;
+  epic?: any;
 };
 
 type FlowDesignerNote = {
   flow_name: string;
   trigger: string;
   steps: string[];
+  related_story_ids?: any[];
+  implementation_type?: any;
+  configuration_or_code?: any;
+  build_sequence?: any;
+  technical_debt_level?: any;
+  epic?: any;
 };
 
 type BusinessRule = {
@@ -117,6 +143,12 @@ type BusinessRule = {
   when: string;
   condition: string;
   purpose: string;
+  related_story_ids?: any[];
+  implementation_type?: any;
+  configuration_or_code?: any;
+  build_sequence?: any;
+  technical_debt_level?: any;
+  epic?: any;
 };
 
 type DeveloperOutput = {
@@ -124,6 +156,8 @@ type DeveloperOutput = {
   service_now_objects: ServiceNowObject[];
   flow_designer_notes: FlowDesignerNote[];
   business_rules: BusinessRule[];
+  build_sequence?: any[];
+  epic_build_map?: any[];
   ui_policies: any[];
   acl_notes: string[];
   notification_notes: string[];
@@ -139,6 +173,8 @@ type TestCase = {
   steps: string[];
   expected_result: string;
   priority: string;
+  related_story_ids?: any[];
+  epic?: any;
 };
 
 type UATCase = {
@@ -147,6 +183,8 @@ type UATCase = {
   persona: string;
   steps: string[];
   expected_result: string;
+  related_story_ids?: any[];
+  epic?: any;
 };
 
 type QAOutput = {
@@ -203,6 +241,7 @@ type DeliveryResult = {
   risks: RiskItem[];
   open_questions: string[];
   epic: string;
+  story_groups?: StoryGroup[];
   stories: StoryItem[];
   story_assumptions: string[];
   story_dependencies: string[];
@@ -904,6 +943,146 @@ function getRoleHourItems(plan: ProjectManagerPlan | null | undefined, roleInput
   });
 }
 
+
+const DELIVERY_EPIC_ORDER = [
+  "Architecture / Platform Decision",
+  "Data Model / Tables / Fields",
+  "Forms / UX / Catalog Experience",
+  "Workflow / Routing / Approvals",
+  "Security / Roles / ACLs",
+  "Notifications / Communications",
+  "Reporting / Dashboards",
+  "Admin / Configuration",
+  "Integration / Data Migration",
+  "Testing / Deployment / Cutover",
+  "Hypercare / Maintenance",
+];
+
+function normalizeEpicName(value: any) {
+  return safeText(value).trim() || "General Delivery";
+}
+
+function inferEpicFromText(value: any) {
+  const text = safeText(value).toLowerCase();
+  if (/(architecture|platform|oob|module|license|scope|approach)/.test(text)) return "Architecture / Platform Decision";
+  if (/(table|field|data model|choice|record|dictionary|mapping)/.test(text)) return "Data Model / Tables / Fields";
+  if (/(form|portal|catalog|ux|ui|submit|variable|layout)/.test(text)) return "Forms / UX / Catalog Experience";
+  if (/(flow|workflow|approval|route|routing|state|sla|task|assignment)/.test(text)) return "Workflow / Routing / Approvals";
+  if (/(acl|role|security|access|privacy|sensitive|encrypt|attachment)/.test(text)) return "Security / Roles / ACLs";
+  if (/(notification|email|reminder|communication|message)/.test(text)) return "Notifications / Communications";
+  if (/(report|dashboard|metric|analytics|kpi)/.test(text)) return "Reporting / Dashboards";
+  if (/(admin|configuration|lookup|mapping|maintain|setup)/.test(text)) return "Admin / Configuration";
+  if (/(integration|migration|api|import|external)/.test(text)) return "Integration / Data Migration";
+  if (/(test|uat|sit|deployment|cutover|rollback|release)/.test(text)) return "Testing / Deployment / Cutover";
+  if (/(hypercare|maintenance|support|post go live|post-go-live)/.test(text)) return "Hypercare / Maintenance";
+  return "General Delivery";
+}
+
+function getStoryId(story: any, index: number, epicName?: string) {
+  if (story?.story_id) return safeText(story.story_id);
+  const epic = normalizeEpicName(epicName || story?.epic || inferEpicFromText(`${story?.title} ${story?.story}`));
+  const prefixMap: Record<string, string> = {
+    "Architecture / Platform Decision": "ARCH",
+    "Data Model / Tables / Fields": "DATA",
+    "Forms / UX / Catalog Experience": "UX",
+    "Workflow / Routing / Approvals": "WF",
+    "Security / Roles / ACLs": "SEC",
+    "Notifications / Communications": "NOTIF",
+    "Reporting / Dashboards": "RPT",
+    "Admin / Configuration": "ADMIN",
+    "Integration / Data Migration": "INT",
+    "Testing / Deployment / Cutover": "TEST",
+    "Hypercare / Maintenance": "HC",
+  };
+  const prefix = prefixMap[epic] || "GEN";
+  return `${prefix}-${String(index + 1).padStart(3, "0")}`;
+}
+
+function sortStoryGroups(groups: StoryGroup[]) {
+  return [...groups].sort((a, b) => {
+    const aIndex = DELIVERY_EPIC_ORDER.indexOf(a.epic_name);
+    const bIndex = DELIVERY_EPIC_ORDER.indexOf(b.epic_name);
+    if (aIndex >= 0 && bIndex >= 0) return aIndex - bIndex;
+    if (aIndex >= 0) return -1;
+    if (bIndex >= 0) return 1;
+    return a.epic_name.localeCompare(b.epic_name);
+  });
+}
+
+function getNormalizedStoryGroups(data: DeliveryResult | null | undefined): StoryGroup[] {
+  if (!data) return [];
+  const rawGroups = safeList((data as any).story_groups).filter((group) => group && typeof group === "object");
+
+  if (rawGroups.length) {
+    return sortStoryGroups(
+      rawGroups.map((group: any) => ({
+        epic_name: normalizeEpicName(group.epic_name || group.name || group.epic),
+        epic_summary: safeText(group.epic_summary || group.summary),
+        stories: safeList(group.stories).map((story: any, index: number) => ({
+          ...story,
+          story_id: getStoryId(story, index, group.epic_name),
+          epic: normalizeEpicName(story.epic || group.epic_name),
+        })) as StoryItem[],
+      })),
+    );
+  }
+
+  const grouped = new Map<string, StoryItem[]>();
+  safeList(data.stories).forEach((story: any, index: number) => {
+    const epic = normalizeEpicName(story.epic || inferEpicFromText(`${story.title} ${story.story} ${story.notes}`));
+    const normalizedStory = {
+      ...story,
+      story_id: getStoryId(story, index, epic),
+      epic,
+    } as StoryItem;
+    grouped.set(epic, [...(grouped.get(epic) || []), normalizedStory]);
+  });
+
+  return sortStoryGroups(
+    Array.from(grouped.entries()).map(([epic_name, stories]) => ({
+      epic_name,
+      epic_summary: `${stories.length} story${stories.length === 1 ? "" : "ies"} aligned to ${epic_name}.`,
+      stories,
+    })),
+  );
+}
+
+function getStoryEpicOptions(data: DeliveryResult | null | undefined) {
+  return ["All", ...getNormalizedStoryGroups(data).map((group) => group.epic_name)];
+}
+
+function getStoryIdsByEpic(data: DeliveryResult | null | undefined, epicName: string) {
+  const group = getNormalizedStoryGroups(data).find((item) => item.epic_name === epicName);
+  return new Set((group?.stories || []).map((story, index) => getStoryId(story, index, epicName)));
+}
+
+function listText(values: any[]) {
+  return values.map((item) => safeText(item)).filter(Boolean).join(", ");
+}
+
+function getRelatedStoryIds(item: any) {
+  return safeList(item?.related_story_ids || item?.story_ids || item?.stories).map((value) => safeText(value)).filter(Boolean);
+}
+
+function itemMatchesSelectedEpic(item: any, selectedEpic: string, data: DeliveryResult | null | undefined) {
+  if (selectedEpic === "All") return true;
+  const directEpic = normalizeEpicName(item?.epic || item?.delivery_epic || inferEpicFromText(`${item?.name} ${item?.purpose} ${item?.flow_name}`));
+  if (directEpic === selectedEpic) return true;
+  const selectedStoryIds = getStoryIdsByEpic(data, selectedEpic);
+  const itemStoryIds = getRelatedStoryIds(item);
+  return itemStoryIds.some((storyId) => selectedStoryIds.has(storyId));
+}
+
+function getTechnicalEpicOptions(data: DeliveryResult | null | undefined) {
+  const options = new Set<string>(getStoryEpicOptions(data));
+  const developer = data?.developer;
+  safeList(developer?.service_now_objects).forEach((item) => options.add(normalizeEpicName(item.epic || inferEpicFromText(`${item.name} ${item.purpose}`))));
+  safeList(developer?.flow_designer_notes).forEach((item) => options.add(normalizeEpicName(item.epic || inferEpicFromText(`${item.flow_name} ${item.trigger}`))));
+  safeList(developer?.business_rules).forEach((item) => options.add(normalizeEpicName(item.epic || inferEpicFromText(`${item.name} ${item.purpose}`))));
+  const clean = Array.from(options).filter(Boolean);
+  return ["All", ...clean.filter((item) => item !== "All")];
+}
+
 function buildPlatformFitMarkdown(data: DeliveryResult | null | undefined) {
   const decision = getPlatformFitDecision(data);
 
@@ -1097,6 +1276,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>("stories");
   const [packageTab, setPackageTab] = useState<PackageTab>("overview");
+  const [selectedStoryEpic, setSelectedStoryEpic] = useState("All");
+  const [selectedTechnicalEpic, setSelectedTechnicalEpic] = useState("All");
   const packageContentRef = useRef<HTMLDivElement | null>(null);
   const [packageChromeExpanded, setPackageChromeExpanded] = useState(false);
   const [intakeExpanded, setIntakeExpanded] = useState(true);
@@ -3334,19 +3515,25 @@ ${data.open_questions?.map((q) => `- ${q}`).join("\n")}
 ${data.epic}
 
 ## Stories
-${data.stories
-  ?.map(
-    (s) => `### ${s.title}
+${getNormalizedStoryGroups(data)
+  .map((group) => `### ${group.epic_name}
+${group.epic_summary || ""}
+
+${group.stories
+    .map((s, index) => `#### ${getStoryId(s, index, group.epic_name)} - ${s.title}
 
 ${s.story}
 
 **Priority:** ${s.priority}
 
+**Implementation:** ${safeText(s.implementation_type) || "Not specified"}
+
+**Related Objects:** ${listText(safeList(s.related_service_now_objects)) || "Not specified"}
+
 **Acceptance Criteria:**
-${s.acceptance_criteria?.map((a) => `- ${a}`).join("\n")}
-`,
-  )
-  .join("\n")}
+${s.acceptance_criteria?.map((a) => `- ${a}`).join("\n")}`)
+    .join("\n\n")}`)
+  .join("\n\n")}
 
 ## Technical Notes
 
@@ -5757,343 +5944,343 @@ ${uat.expected_result}
                 )}
 
                 {packageTab === "stories" && (
-                  <Card
-                    title="Stories"
-                    copyValue={JSON.stringify(result.stories, null, 2)}
-                    onCopy={copyToClipboard}
-                  >
-                    <div style={styles.stack}>
-                      {result.epic && (
-                        <div style={styles.innerCard}>
-                          <p style={styles.label}>Epic</p>
-                          <p style={styles.accentText}>{result.epic}</p>
-                        </div>
-                      )}
+                  (() => {
+                    const storyGroups = getNormalizedStoryGroups(result);
+                    const epicOptions = getStoryEpicOptions(result);
+                    const visibleGroups = selectedStoryEpic === "All"
+                      ? storyGroups
+                      : storyGroups.filter((group) => group.epic_name === selectedStoryEpic);
+                    const totalStories = storyGroups.reduce((sum, group) => sum + group.stories.length, 0);
 
-                      {result.stories?.length ? (
-                        <div style={responsiveTwoGrid}>
-                          {result.stories.map((story, index) => (
-                            <div key={index} style={styles.innerCard}>
-                              <div style={styles.rowBetween}>
-                                <h3 style={styles.itemTitle}>{story.title}</h3>
-                                <Badge>{story.priority}</Badge>
-                              </div>
-
-                              <p style={styles.bodyText}>{story.story}</p>
-
-                              {story.acceptance_criteria?.length > 0 && (
-                                <>
-                                  <p style={styles.label}>
-                                    Acceptance Criteria
-                                  </p>
-                                  <ul style={styles.list}>
-                                    {story.acceptance_criteria.map(
-                                      (criteria, i) => (
-                                        <li key={i}>{criteria}</li>
-                                      ),
-                                    )}
-                                  </ul>
-                                </>
-                              )}
-
-                              <button
-                                style={styles.smallCopyButton}
-                                onClick={() =>
-                                  copyToClipboard(
-                                    JSON.stringify(story, null, 2),
-                                  )
-                                }
-                              >
-                                Copy Story
-                              </button>
+                    return (
+                      <Card
+                        title="Stories by Delivery Epic"
+                        copyValue={JSON.stringify({ story_groups: storyGroups, stories: result.stories }, null, 2)}
+                        onCopy={copyToClipboard}
+                      >
+                        <div style={styles.stack}>
+                          {result.epic && (
+                            <div style={styles.innerCard}>
+                              <p style={styles.label}>Overall Epic</p>
+                              <p style={styles.accentText}>{result.epic}</p>
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p style={styles.muted}>No stories generated.</p>
-                      )}
+                          )}
 
-                      <RegeneratePanel
-                        section="stories"
-                        instruction={regenerateInstruction}
-                        setInstruction={setRegenerateInstruction}
-                        regeneratingSection={regeneratingSection}
-                        onRegenerate={regenerateSection}
-                      />
-                    </div>
-                  </Card>
-                )}
-
-                {packageTab === "technical" && (
-                  <Card
-                    title="Technical Workbench"
-                    copyValue={JSON.stringify(result.developer, null, 2)}
-                    onCopy={copyToClipboard}
-                  >
-                    <div style={styles.stack}>
-                      {result.developer ? (
-                        <>
                           <div style={styles.technicalHero}>
                             <div>
-                              <p style={styles.label}>Implementation Summary</p>
+                              <p style={styles.label}>Delivery Backlog</p>
+                              <h3 style={styles.itemTitle}>{totalStories} stories grouped by build epic</h3>
                               <p style={styles.bodyText}>
-                                {result.developer.implementation_summary}
+                                Stories are grouped so BSA, developer, QA, and PM outputs can move together by architecture, data model, UX, workflow, security, notifications, reporting, and release work.
                               </p>
                             </div>
                             <div style={styles.technicalStatsGrid}>
                               <div style={styles.technicalStat}>
-                                <p style={styles.label}>Objects</p>
-                                <p style={styles.snapshotNumber}>
-                                  {result.developer.service_now_objects
-                                    ?.length || 0}
-                                </p>
+                                <p style={styles.label}>Epics</p>
+                                <p style={styles.snapshotNumber}>{storyGroups.length}</p>
                               </div>
                               <div style={styles.technicalStat}>
-                                <p style={styles.label}>Flows</p>
-                                <p style={styles.snapshotNumber}>
-                                  {result.developer.flow_designer_notes
-                                    ?.length || 0}
-                                </p>
+                                <p style={styles.label}>Stories</p>
+                                <p style={styles.snapshotNumber}>{totalStories}</p>
                               </div>
                               <div style={styles.technicalStat}>
-                                <p style={styles.label}>Rules</p>
-                                <p style={styles.snapshotNumber}>
-                                  {result.developer.business_rules?.length || 0}
-                                </p>
+                                <p style={styles.label}>Filter</p>
+                                <select
+                                  value={selectedStoryEpic}
+                                  onChange={(event) => setSelectedStoryEpic(event.target.value)}
+                                  style={{ ...styles.input, padding: "8px 10px", minWidth: "190px" }}
+                                >
+                                  {epicOptions.map((option) => (
+                                    <option key={option} value={option}>{option}</option>
+                                  ))}
+                                </select>
                               </div>
                             </div>
                           </div>
 
-                          {result.developer.service_now_objects?.length > 0 && (
-                            <div style={styles.techSection}>
-                              <div style={styles.techSectionHeader}>
-                                <div>
-                                  <p style={styles.label}>Build Inventory</p>
-                                  <h3 style={styles.itemTitle}>
-                                    ServiceNow Objects
-                                  </h3>
+                          {visibleGroups.length ? (
+                            <div style={styles.stack}>
+                              {visibleGroups.map((group, groupIndex) => (
+                                <div key={group.epic_name || groupIndex} style={styles.techSection}>
+                                  <div style={styles.techSectionHeader}>
+                                    <div>
+                                      <p style={styles.label}>Epic</p>
+                                      <h3 style={styles.itemTitle}>{group.epic_name}</h3>
+                                      {group.epic_summary && <p style={styles.muted}>{group.epic_summary}</p>}
+                                    </div>
+                                    <Badge>{group.stories.length} stories</Badge>
+                                  </div>
+                                  <div style={responsiveTwoGrid}>
+                                    {group.stories.map((story, storyIndex) => {
+                                      const storyId = getStoryId(story, storyIndex, group.epic_name);
+                                      return (
+                                        <div key={`${group.epic_name}-${storyId}-${storyIndex}`} style={styles.innerCard}>
+                                          <div style={styles.rowBetween}>
+                                            <div>
+                                              <p style={styles.label}>{storyId}</p>
+                                              <h3 style={styles.itemTitle}>{story.title}</h3>
+                                            </div>
+                                            <Badge>{story.priority}</Badge>
+                                          </div>
+
+                                          <p style={styles.bodyText}>{story.story}</p>
+
+                                          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "10px" }}>
+                                            <div style={styles.softBox}>
+                                              <p style={styles.label}>Implementation</p>
+                                              <p style={styles.bodyText}>{safeText(story.implementation_type) || "Configuration / delivery detail to be confirmed"}</p>
+                                            </div>
+                                            <div style={styles.softBox}>
+                                              <p style={styles.label}>Related Objects</p>
+                                              <p style={styles.bodyText}>{listText(safeList(story.related_service_now_objects)) || "Mapped by Developer tab"}</p>
+                                            </div>
+                                          </div>
+
+                                          {story.acceptance_criteria?.length > 0 && (
+                                            <>
+                                              <p style={styles.label}>Acceptance Criteria</p>
+                                              <ul style={styles.list}>
+                                                {story.acceptance_criteria.map((criteria, i) => (
+                                                  <li key={i}>{criteria}</li>
+                                                ))}
+                                              </ul>
+                                            </>
+                                          )}
+
+                                          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "10px" }}>
+                                            <div style={styles.softBox}>
+                                              <p style={styles.label}>Developer Notes Needed</p>
+                                              <p style={styles.bodyText}>{listText(safeList(story.developer_notes_needed)) || "None specified"}</p>
+                                            </div>
+                                            <div style={styles.softBox}>
+                                              <p style={styles.label}>QA Focus</p>
+                                              <p style={styles.bodyText}>{listText(safeList(story.qa_focus)) || "Acceptance criteria coverage"}</p>
+                                            </div>
+                                          </div>
+
+                                          {safeList(story.dependencies).length > 0 && (
+                                            <div style={styles.softBox}>
+                                              <p style={styles.label}>Dependencies</p>
+                                              <p style={styles.bodyText}>{listText(safeList(story.dependencies))}</p>
+                                            </div>
+                                          )}
+
+                                          <button
+                                            style={styles.smallCopyButton}
+                                            onClick={() => copyToClipboard(JSON.stringify({ ...story, story_id: storyId, epic: group.epic_name }, null, 2))}
+                                          >
+                                            Copy Story
+                                          </button>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
-                                <Badge>
-                                  {result.developer.service_now_objects.length}{" "}
-                                  objects
-                                </Badge>
-                              </div>
-                              <div style={responsiveTwoGrid}>
-                                {result.developer.service_now_objects.map(
-                                  (object, index) => (
-                                    <button
-                                      key={index}
-                                      style={styles.clickableInnerCard}
-                                      onClick={() =>
-                                        generateCodeForCard(
-                                          {
-                                            category: "ServiceNow Object",
-                                            ...object,
-                                          },
-                                          object.name,
-                                        )
-                                      }
-                                    >
-                                      <div style={styles.rowBetween}>
-                                        <p style={styles.accentText}>
-                                          {object.name}
-                                        </p>
-                                        <span style={styles.objectTypePill}>
-                                          {object.object_type}
-                                        </span>
-                                      </div>
-                                      <p style={styles.bodyText}>
-                                        {object.purpose}
-                                      </p>
-                                      <p style={styles.clickHint}>
-                                        Generate implementation guidance →
-                                      </p>
-                                    </button>
-                                  ),
-                                )}
-                              </div>
+                              ))}
                             </div>
-                          )}
-
-                          {result.developer.flow_designer_notes?.length > 0 && (
-                            <div style={styles.techSection}>
-                              <div style={styles.techSectionHeader}>
-                                <div>
-                                  <p style={styles.label}>Automation</p>
-                                  <h3 style={styles.itemTitle}>
-                                    Flow Designer
-                                  </h3>
-                                </div>
-                                <Badge>
-                                  {result.developer.flow_designer_notes.length}{" "}
-                                  flows
-                                </Badge>
-                              </div>
-                              <div style={styles.stack}>
-                                {result.developer.flow_designer_notes.map(
-                                  (flow, index) => (
-                                    <button
-                                      key={index}
-                                      style={styles.clickableInnerCard}
-                                      onClick={() =>
-                                        generateCodeForCard(
-                                          {
-                                            category: "Flow Designer",
-                                            ...flow,
-                                          },
-                                          flow.flow_name,
-                                        )
-                                      }
-                                    >
-                                      <div style={styles.rowBetween}>
-                                        <h3 style={styles.itemTitle}>
-                                          {flow.flow_name}
-                                        </h3>
-                                        <span style={styles.statusChip}>
-                                          Flow
-                                        </span>
-                                      </div>
-                                      <p style={styles.muted}>
-                                        Trigger: {flow.trigger}
-                                      </p>
-                                      <ol style={styles.list}>
-                                        {flow.steps.map((step, i) => (
-                                          <li key={i}>{step}</li>
-                                        ))}
-                                      </ol>
-                                      <p style={styles.clickHint}>
-                                        Generate flow implementation details →
-                                      </p>
-                                    </button>
-                                  ),
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          {result.developer.business_rules?.length > 0 && (
-                            <div style={styles.techSection}>
-                              <div style={styles.techSectionHeader}>
-                                <div>
-                                  <p style={styles.label}>Server Logic</p>
-                                  <h3 style={styles.itemTitle}>
-                                    Business Rules
-                                  </h3>
-                                </div>
-                                <Badge>
-                                  {result.developer.business_rules.length} rules
-                                </Badge>
-                              </div>
-                              <div style={responsiveTwoGrid}>
-                                {result.developer.business_rules.map(
-                                  (rule, index) => (
-                                    <button
-                                      key={index}
-                                      style={styles.clickableInnerCard}
-                                      onClick={() =>
-                                        generateCodeForCard(
-                                          {
-                                            category: "Business Rule",
-                                            ...rule,
-                                          },
-                                          rule.name,
-                                        )
-                                      }
-                                    >
-                                      <div style={styles.rowBetween}>
-                                        <h3 style={styles.itemTitle}>
-                                          {rule.name}
-                                        </h3>
-                                        <span style={styles.statusChip}>
-                                          {rule.when}
-                                        </span>
-                                      </div>
-                                      <p style={styles.muted}>
-                                        Condition: {rule.condition}
-                                      </p>
-                                      <p style={styles.bodyText}>
-                                        {rule.purpose}
-                                      </p>
-                                      <p style={styles.clickHint}>
-                                        Generate business rule script/guidance →
-                                      </p>
-                                    </button>
-                                  ),
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                          <div style={responsiveTwoGrid}>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>ACL / Security Notes</p>
-                              {result.developer.acl_notes?.length ? (
-                                <ul style={styles.list}>
-                                  {result.developer.acl_notes.map(
-                                    (item, index) => (
-                                      <li key={index}>{item}</li>
-                                    ),
-                                  )}
-                                </ul>
-                              ) : (
-                                <p style={styles.muted}>
-                                  No ACL notes generated.
-                                </p>
-                              )}
-                            </div>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Notification Notes</p>
-                              {result.developer.notification_notes?.length ? (
-                                <ul style={styles.list}>
-                                  {result.developer.notification_notes.map(
-                                    (item, index) => (
-                                      <li key={index}>{item}</li>
-                                    ),
-                                  )}
-                                </ul>
-                              ) : (
-                                <p style={styles.muted}>
-                                  No notification notes generated.
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          {result.developer.deployment_notes?.length > 0 && (
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Deployment Notes</p>
-                              <ul style={styles.list}>
-                                {result.developer.deployment_notes.map(
-                                  (item, index) => (
-                                    <li key={index}>{item}</li>
-                                  ),
-                                )}
-                              </ul>
-                            </div>
+                          ) : (
+                            <p style={styles.muted}>No stories generated.</p>
                           )}
 
                           <RegeneratePanel
-                            section="developer"
+                            section="stories"
                             instruction={regenerateInstruction}
                             setInstruction={setRegenerateInstruction}
                             regeneratingSection={regeneratingSection}
                             onRegenerate={regenerateSection}
                           />
-                        </>
-                      ) : (
-                        <div style={styles.emptyCard}>
-                          <h2 style={styles.sectionTitle}>
-                            Technical notes are not available yet
-                          </h2>
-                          <p style={styles.bodyText}>
-                            Generate a full detailed package or upgrade the
-                            quick package to create implementation notes, flows,
-                            ACL guidance, notifications, and code-ready objects.
-                          </p>
                         </div>
-                      )}
-                    </div>
-                  </Card>
+                      </Card>
+                    );
+                  })()
+                )}
+
+                {packageTab === "technical" && (
+                  (() => {
+                    const technicalEpicOptions = getTechnicalEpicOptions(result);
+                    const visibleObjects = safeList(result.developer?.service_now_objects).filter((object) =>
+                      itemMatchesSelectedEpic(object, selectedTechnicalEpic, result),
+                    ) as ServiceNowObject[];
+                    const visibleFlows = safeList(result.developer?.flow_designer_notes).filter((flow) =>
+                      itemMatchesSelectedEpic(flow, selectedTechnicalEpic, result),
+                    ) as FlowDesignerNote[];
+                    const visibleRules = safeList(result.developer?.business_rules).filter((rule) =>
+                      itemMatchesSelectedEpic(rule, selectedTechnicalEpic, result),
+                    ) as BusinessRule[];
+
+                    return (
+                      <Card
+                        title="Technical Workbench"
+                        copyValue={JSON.stringify(result.developer, null, 2)}
+                        onCopy={copyToClipboard}
+                      >
+                        <div style={styles.stack}>
+                          {result.developer ? (
+                            <>
+                              <div style={styles.technicalHero}>
+                                <div>
+                                  <p style={styles.label}>Implementation Summary</p>
+                                  <p style={styles.bodyText}>{result.developer.implementation_summary}</p>
+                                </div>
+                                <div style={styles.technicalStatsGrid}>
+                                  <div style={styles.technicalStat}>
+                                    <p style={styles.label}>Objects</p>
+                                    <p style={styles.snapshotNumber}>{visibleObjects.length}</p>
+                                  </div>
+                                  <div style={styles.technicalStat}>
+                                    <p style={styles.label}>Flows</p>
+                                    <p style={styles.snapshotNumber}>{visibleFlows.length}</p>
+                                  </div>
+                                  <div style={styles.technicalStat}>
+                                    <p style={styles.label}>Epic Filter</p>
+                                    <select
+                                      value={selectedTechnicalEpic}
+                                      onChange={(event) => setSelectedTechnicalEpic(event.target.value)}
+                                      style={{ ...styles.input, padding: "8px 10px", minWidth: "190px" }}
+                                    >
+                                      {technicalEpicOptions.map((option) => (
+                                        <option key={option} value={option}>{option}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {visibleObjects.length > 0 && (
+                                <div style={styles.techSection}>
+                                  <div style={styles.techSectionHeader}>
+                                    <div>
+                                      <p style={styles.label}>Build Inventory</p>
+                                      <h3 style={styles.itemTitle}>ServiceNow Objects</h3>
+                                    </div>
+                                    <Badge>{visibleObjects.length} objects</Badge>
+                                  </div>
+                                  <div style={responsiveTwoGrid}>
+                                    {visibleObjects.map((object, index) => (
+                                      <button
+                                        key={index}
+                                        style={styles.clickableInnerCard}
+                                        onClick={() => generateCodeForCard({ category: "ServiceNow Object", ...object }, object.name)}
+                                      >
+                                        <div style={styles.rowBetween}>
+                                          <p style={styles.accentText}>{object.name}</p>
+                                          <span style={styles.objectTypePill}>{object.object_type}</span>
+                                        </div>
+                                        <p style={styles.bodyText}>{object.purpose}</p>
+                                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "10px" }}>
+                                          {getRelatedStoryIds(object).map((storyId) => <span key={storyId} style={styles.statusChip}>{storyId}</span>)}
+                                          {safeText(object.configuration_or_code) && <span style={styles.statusChip}>{safeText(object.configuration_or_code)}</span>}
+                                          {safeText(object.build_sequence) && <span style={styles.statusChip}>{safeText(object.build_sequence)}</span>}
+                                        </div>
+                                        <p style={styles.clickHint}>Generate implementation guidance →</p>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {visibleFlows.length > 0 && (
+                                <div style={styles.techSection}>
+                                  <div style={styles.techSectionHeader}>
+                                    <div>
+                                      <p style={styles.label}>Automation</p>
+                                      <h3 style={styles.itemTitle}>Flow Designer</h3>
+                                    </div>
+                                    <Badge>{visibleFlows.length} flows</Badge>
+                                  </div>
+                                  <div style={styles.stack}>
+                                    {visibleFlows.map((flow, index) => (
+                                      <button
+                                        key={index}
+                                        style={styles.clickableInnerCard}
+                                        onClick={() => generateCodeForCard({ category: "Flow Designer", ...flow }, flow.flow_name)}
+                                      >
+                                        <div style={styles.rowBetween}>
+                                          <h3 style={styles.itemTitle}>{flow.flow_name}</h3>
+                                          <span style={styles.statusChip}>Flow</span>
+                                        </div>
+                                        <p style={styles.muted}>Trigger: {flow.trigger}</p>
+                                        <ol style={styles.list}>
+                                          {safeList(flow.steps).map((step, i) => <li key={i}>{safeText(step)}</li>)}
+                                        </ol>
+                                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "10px" }}>
+                                          {getRelatedStoryIds(flow).map((storyId) => <span key={storyId} style={styles.statusChip}>{storyId}</span>)}
+                                          {safeText(flow.build_sequence) && <span style={styles.statusChip}>{safeText(flow.build_sequence)}</span>}
+                                        </div>
+                                        <p style={styles.clickHint}>Generate flow implementation details →</p>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {visibleRules.length > 0 && (
+                                <div style={styles.techSection}>
+                                  <div style={styles.techSectionHeader}>
+                                    <div>
+                                      <p style={styles.label}>Server Logic</p>
+                                      <h3 style={styles.itemTitle}>Business Rules</h3>
+                                    </div>
+                                    <Badge>{visibleRules.length} rules</Badge>
+                                  </div>
+                                  <div style={responsiveTwoGrid}>
+                                    {visibleRules.map((rule, index) => (
+                                      <button
+                                        key={index}
+                                        style={styles.clickableInnerCard}
+                                        onClick={() => generateCodeForCard({ category: "Business Rule", ...rule }, rule.name)}
+                                      >
+                                        <div style={styles.rowBetween}>
+                                          <h3 style={styles.itemTitle}>{rule.name}</h3>
+                                          <span style={styles.statusChip}>{rule.when}</span>
+                                        </div>
+                                        <p style={styles.muted}>Condition: {rule.condition}</p>
+                                        <p style={styles.bodyText}>{rule.purpose}</p>
+                                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "10px" }}>
+                                          {getRelatedStoryIds(rule).map((storyId) => <span key={storyId} style={styles.statusChip}>{storyId}</span>)}
+                                          {safeText(rule.technical_debt_level) && <span style={styles.statusChip}>Debt: {safeText(rule.technical_debt_level)}</span>}
+                                        </div>
+                                        <p style={styles.clickHint}>Generate business rule script/guidance →</p>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div style={responsiveTwoGrid}>
+                                <div style={styles.innerCard}>
+                                  <p style={styles.label}>ACL / Security Notes</p>
+                                  {result.developer.acl_notes?.length ? (
+                                    <ul style={styles.list}>{result.developer.acl_notes.map((item, index) => <li key={index}>{item}</li>)}</ul>
+                                  ) : <p style={styles.muted}>No ACL notes generated.</p>}
+                                </div>
+                                <div style={styles.innerCard}>
+                                  <p style={styles.label}>Notification Notes</p>
+                                  {result.developer.notification_notes?.length ? (
+                                    <ul style={styles.list}>{result.developer.notification_notes.map((item, index) => <li key={index}>{item}</li>)}</ul>
+                                  ) : <p style={styles.muted}>No notification notes generated.</p>}
+                                </div>
+                              </div>
+
+                              {result.developer.deployment_notes?.length > 0 && (
+                                <div style={styles.innerCard}>
+                                  <p style={styles.label}>Deployment Notes</p>
+                                  <ul style={styles.list}>{result.developer.deployment_notes.map((item, index) => <li key={index}>{item}</li>)}</ul>
+                                </div>
+                              )}
+
+                              <RegeneratePanel section="developer" instruction={regenerateInstruction} setInstruction={setRegenerateInstruction} regeneratingSection={regeneratingSection} onRegenerate={regenerateSection} />
+                            </>
+                          ) : (
+                            <div style={styles.emptyCard}>
+                              <h2 style={styles.sectionTitle}>Technical notes are not available yet</h2>
+                              <p style={styles.bodyText}>Generate a full detailed package or upgrade the quick package to create implementation notes, flows, ACL guidance, notifications, and code-ready objects.</p>
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })()
                 )}
 
                 {packageTab === "qa" && (
@@ -9588,6 +9775,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: "16px",
+  },
+  softBox: {
+    border: "1px solid #D6E0EC",
+    background: "#F8FAFC",
+    borderRadius: "16px",
+    padding: "12px",
   },
   innerCard: {
     background: "#F8FAFC",

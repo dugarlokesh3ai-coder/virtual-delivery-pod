@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from agents._common import _chat_json, _safe_dict
 
@@ -7,6 +7,7 @@ from agents._common import _chat_json, _safe_dict
 FALLBACK_QA_PROMPT = """
 You are a senior ServiceNow QA lead.
 Create a practical QA and UAT package from requirement, architecture, stories, and developer notes.
+Map tests to story IDs and delivery epics when available.
 Respect exact threshold language and requirement wording.
 Return only valid JSON.
 """
@@ -28,6 +29,10 @@ def _fallback_qa_package() -> Dict[str, Any]:
     }
 
 
+def _safe_list(value: Any) -> List[Any]:
+    return value if isinstance(value, list) else []
+
+
 def generate_qa_package(
     requirement: str,
     architecture: dict,
@@ -47,6 +52,8 @@ Story Context:
 Developer Context:
 {json.dumps(developer_output, indent=2)}
 
+Use story_id values from story_groups/stories and related_story_ids from developer output whenever possible.
+
 Return JSON exactly in this structure:
 {{
   "test_strategy": "Overall test strategy.",
@@ -57,7 +64,7 @@ Return JSON exactly in this structure:
     {{
       "id": "TC-001",
       "title": "Test case title",
-      "type": "Functional / Negative / Security / Regression / Boundary / Integration",
+      "type": "Functional / Negative / Security / Regression / Boundary / Integration / Notification / Reporting",
       "preconditions": [
         "Precondition 1"
       ],
@@ -65,7 +72,9 @@ Return JSON exactly in this structure:
         "Step 1"
       ],
       "expected_result": "Expected result",
-      "priority": "High / Medium / Low"
+      "priority": "High / Medium / Low",
+      "related_story_ids": ["WF-001"],
+      "epic": "Workflow / Routing / Approvals"
     }}
   ],
   "uat_cases": [
@@ -76,7 +85,9 @@ Return JSON exactly in this structure:
       "steps": [
         "Step 1"
       ],
-      "expected_result": "Expected result"
+      "expected_result": "Expected result",
+      "related_story_ids": ["UX-001"],
+      "epic": "Forms / UX / Catalog Experience"
     }}
   ],
   "edge_cases": [
@@ -104,10 +115,10 @@ Return JSON exactly in this structure:
 
     return {
         "test_strategy": output.get("test_strategy") or fallback["test_strategy"],
-        "test_scenarios": output.get("test_scenarios") if isinstance(output.get("test_scenarios"), list) else [],
-        "test_cases": output.get("test_cases") if isinstance(output.get("test_cases"), list) else [],
-        "uat_cases": output.get("uat_cases") if isinstance(output.get("uat_cases"), list) else [],
-        "edge_cases": output.get("edge_cases") if isinstance(output.get("edge_cases"), list) else fallback["edge_cases"],
-        "test_data_needs": output.get("test_data_needs") if isinstance(output.get("test_data_needs"), list) else [],
-        "regression_areas": output.get("regression_areas") if isinstance(output.get("regression_areas"), list) else fallback["regression_areas"],
+        "test_scenarios": _safe_list(output.get("test_scenarios")),
+        "test_cases": _safe_list(output.get("test_cases")),
+        "uat_cases": _safe_list(output.get("uat_cases")),
+        "edge_cases": _safe_list(output.get("edge_cases")) or fallback["edge_cases"],
+        "test_data_needs": _safe_list(output.get("test_data_needs")),
+        "regression_areas": _safe_list(output.get("regression_areas")) or fallback["regression_areas"],
     }
