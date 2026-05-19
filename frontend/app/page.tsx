@@ -243,12 +243,22 @@ type PriorityFix = {
   reason: string;
 };
 
+type ConsolidatedDecision = {
+  decision_area?: any;
+  question?: any;
+  why_it_matters?: any;
+  impacted_reviewers?: any[];
+  recommended_default_if_unanswered?: any;
+  blocks_build_readiness?: any;
+};
+
 type AgentReview = {
   overall_review_summary: string;
   architect_review: AgentReviewerFeedback;
   developer_review: AgentReviewerFeedback;
   qa_review: AgentReviewerFeedback;
   delivery_lead_review: AgentReviewerFeedback;
+  consolidated_decisions_needed?: ConsolidatedDecision[];
   priority_fixes: PriorityFix[];
   final_verdict: string;
 };
@@ -563,6 +573,34 @@ function platformObjectAccuracyMarkdown(data: DeliveryResult | null | undefined)
   return `## Platform Object Accuracy Notes\n\n${notes.length ? notes.map((item) => `- ${safeText(item)}`).join("\n") : "- Not provided"}`;
 }
 
+
+
+function getConsolidatedDecisions(
+  review: AgentReview | null | undefined,
+): ConsolidatedDecision[] {
+  return safeList((review as any)?.consolidated_decisions_needed) as ConsolidatedDecision[];
+}
+
+function buildConsolidatedDecisionsMarkdown(
+  review: AgentReview | null | undefined,
+) {
+  const decisions = getConsolidatedDecisions(review);
+
+  if (!decisions.length) {
+    return `## Business Decisions Needed\n\nNo consolidated business decisions were returned by the review board.`;
+  }
+
+  return `## Business Decisions Needed\n\n${decisions
+    .map((decision, index) => {
+      const reviewers = safeList(decision.impacted_reviewers)
+        .map((item) => safeText(item))
+        .filter(Boolean)
+        .join(", ");
+
+      return `### ${index + 1}. ${safeText(decision.decision_area) || "Business Decision"}\n\n**Question:** ${safeText(decision.question) || "Not provided"}\n\n**Why it matters:** ${safeText(decision.why_it_matters) || "Not provided"}\n\n**Impacted reviewers:** ${reviewers || "Not provided"}\n\n**Default if unanswered:** ${safeText(decision.recommended_default_if_unanswered) || "Treat as unresolved."}\n\n**Blocks build readiness:** ${safeText(decision.blocks_build_readiness) || "Not provided"}`;
+    })
+    .join("\n\n")}`;
+}
 
 function buildPlatformFitMarkdown(data: DeliveryResult | null | undefined) {
   const decision = getPlatformFitDecision(data);
@@ -2706,6 +2744,8 @@ ${data.quality_score?.weaknesses?.map((item) => `- ${item}`).join("\n")}
 ### Recommended Fixes
 ${data.quality_score?.recommended_fixes?.map((item) => `- ${item}`).join("\n")}
 
+${data.agent_review ? `## Agent Review Board\n\n### Overall Review Summary\n${data.agent_review.overall_review_summary || ""}\n\n### Final Verdict\n${data.agent_review.final_verdict || ""}\n\n${buildConsolidatedDecisionsMarkdown(data.agent_review)}\n\n### Priority Fixes\n${data.agent_review.priority_fixes?.map((fix) => `- **${fix.priority}: ${fix.fix}** — ${fix.reason}`).join("\n") || "- Not provided"}` : ""}
+
 ---
 
 ## Requirement Summary
@@ -3215,6 +3255,33 @@ ${uat.expected_result}
       children.push(docBullet(item)),
     );
 
+    if (result.agent_review) {
+      children.push(docHeading("Agent Review Board"));
+      children.push(docHeading("Overall Review Summary", HeadingLevel.HEADING_2));
+      children.push(docParagraph(result.agent_review.overall_review_summary));
+      children.push(docParagraph(`Final Verdict: ${result.agent_review.final_verdict || "Not provided"}`));
+
+      const consolidatedDecisions = getConsolidatedDecisions(result.agent_review);
+      children.push(docHeading("Business Decisions Needed", HeadingLevel.HEADING_2));
+      if (consolidatedDecisions.length) {
+        consolidatedDecisions.forEach((decision, index) => {
+          children.push(docParagraph(`${index + 1}. ${safeText(decision.decision_area) || "Business Decision"}`));
+          children.push(docBullet(`Question: ${safeText(decision.question) || "Not provided"}`));
+          children.push(docBullet(`Why it matters: ${safeText(decision.why_it_matters) || "Not provided"}`));
+          children.push(docBullet(`Impacted reviewers: ${safeList(decision.impacted_reviewers).map((item) => safeText(item)).filter(Boolean).join(", ") || "Not provided"}`));
+          children.push(docBullet(`Default if unanswered: ${safeText(decision.recommended_default_if_unanswered) || "Treat as unresolved."}`));
+          children.push(docBullet(`Blocks build readiness: ${safeText(decision.blocks_build_readiness) || "Not provided"}`));
+        });
+      } else {
+        children.push(docParagraph("No consolidated business decisions were returned by the review board."));
+      }
+
+      children.push(docHeading("Priority Fixes", HeadingLevel.HEADING_2));
+      result.agent_review.priority_fixes?.forEach((fix) =>
+        children.push(docBullet(`${fix.priority}: ${fix.fix} — ${fix.reason}`)),
+      );
+    }
+
     children.push(docHeading("Process / State Flow Diagram"));
     children.push(docParagraph(result.process_diagram?.title));
     children.push(docParagraph(result.process_diagram?.summary));
@@ -3589,6 +3656,19 @@ ${uat.expected_result}
     result?.generation_mode === "quick"
       ? "Quick Readiness Score"
       : "Delivery Quality Score";
+  const buildGate = getBuildReadinessGate(result);
+  const buildGateVerdict = safeText(buildGate?.verdict) || "Not assessed";
+  const buildGateBlocks =
+    buildGateVerdict.toLowerCase().includes("needs discovery") ||
+    buildGateVerdict.toLowerCase().includes("not ready");
+  const consolidatedDecisions = getConsolidatedDecisions(result?.agent_review);
+  const buildBlockerCount = safeList(buildGate?.must_resolve_before_build).length;
+  const reviewQuestionCount = result?.agent_review
+    ? REVIEW_AGENT_TABS.reduce((total, tab) => {
+        const feedback = getReviewFeedback(tab.id);
+        return total + safeList(feedback?.questions_for_business).length;
+      }, 0)
+    : 0;
 
   return (
     <main style={styles.page}>
@@ -4804,6 +4884,110 @@ ${uat.expected_result}
                   </div>
                 </div>
 
+                <section style={styles.packageActionCenter}>
+                  <div style={styles.actionCenterHeader}>
+                    <div>
+                      <p style={styles.label}>Next Best Actions</p>
+                      <h3 style={styles.actionCenterTitle}>One place to move the package forward</h3>
+                      <p style={styles.muted}>
+                        Resolve business decisions once, regenerate only when needed, then export from the Export tab.
+                      </p>
+                    </div>
+                    <Badge>
+                      {result.generation_mode === "quick" ? "Quick draft" : "Full package"}
+                    </Badge>
+                  </div>
+
+                  <div style={isMobile ? styles.mobileOneColumnGrid : styles.actionCenterGrid}>
+                    <button
+                      type="button"
+                      onClick={() => setPackageTab("design")}
+                      style={{
+                        ...styles.actionTile,
+                        ...(buildGateBlocks ? styles.actionTileWarning : {}),
+                      }}
+                    >
+                      <span style={styles.actionTileLabel}>Build readiness</span>
+                      <strong style={styles.actionTileTitle}>{buildGateVerdict}</strong>
+                      <span style={styles.actionTileMeta}>
+                        {buildBlockerCount
+                          ? `${buildBlockerCount} blocker${buildBlockerCount === 1 ? "" : "s"}`
+                          : "Open design gate"}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (result.agent_review) {
+                          setPackageTab("review");
+                        } else {
+                          runAgentReview();
+                        }
+                      }}
+                      style={{
+                        ...styles.actionTile,
+                        ...(consolidatedDecisions.length ? styles.actionTileWarning : {}),
+                      }}
+                    >
+                      <span style={styles.actionTileLabel}>Business decisions</span>
+                      <strong style={styles.actionTileTitle}>
+                        {result.agent_review
+                          ? `${consolidatedDecisions.length} consolidated`
+                          : "Run review"}
+                      </strong>
+                      <span style={styles.actionTileMeta}>
+                        {result.agent_review
+                          ? `${reviewQuestionCount} raw reviewer questions deduped`
+                          : "Find duplicated gaps before asking business"}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPackageTab("delivery_lead")}
+                      style={styles.actionTile}
+                    >
+                      <span style={styles.actionTileLabel}>Clarify / update</span>
+                      <strong style={styles.actionTileTitle}>Ask Delivery Lead</strong>
+                      <span style={styles.actionTileMeta}>Apply answers back to the requirement</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPackageTab("export")}
+                      style={styles.actionTile}
+                    >
+                      <span style={styles.actionTileLabel}>Final artifact</span>
+                      <strong style={styles.actionTileTitle}>Export package</strong>
+                      <span style={styles.actionTileMeta}>DOCX and Markdown live in one tab</span>
+                    </button>
+                  </div>
+
+                  {packageNeedsRegeneration && (
+                    <div style={styles.inlineWarning}>
+                      <div>
+                        <p style={styles.riskTitle}>Requirement changed after package generation</p>
+                        <p style={styles.bodyText}>
+                          Regenerate before using the package for review, build planning, or export.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => generatePackage(result.generation_mode === "quick" ? "quick" : "full")}
+                        disabled={loading}
+                        style={{
+                          ...styles.button,
+                          opacity: loading ? 0.65 : 1,
+                          cursor: loading ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {loading ? "Regenerating..." : "Regenerate Package"}
+                      </button>
+                    </div>
+                  )}
+                </section>
+
                 <div
                   style={isMobile ? styles.mobilePackageNav : styles.packageNav}
                 >
@@ -5844,6 +6028,59 @@ ${uat.expected_result}
                           </div>
                         )}
 
+                        {getConsolidatedDecisions(result.agent_review).length > 0 && (
+                          <div style={styles.innerCard}>
+                            <div style={styles.cardTitleRow}>
+                              <div>
+                                <p style={styles.label}>Business Decisions Needed</p>
+                                <h3 style={styles.itemTitle}>Consolidated decision log</h3>
+                                <p style={styles.muted}>
+                                  These are deduplicated questions across Architect, Developer, QA, and Delivery Lead. Answer these once, apply them to the requirement, then regenerate.
+                                </p>
+                              </div>
+                              <Badge>
+                                {getConsolidatedDecisions(result.agent_review).length} decisions
+                              </Badge>
+                            </div>
+
+                            <div style={styles.priorityFixGrid}>
+                              {getConsolidatedDecisions(result.agent_review).map(
+                                (decision, index) => (
+                                  <div key={index} style={styles.priorityFixCard}>
+                                    <p style={styles.label}>
+                                      {safeText(decision.decision_area) || "Business Decision"}
+                                    </p>
+                                    <p style={styles.riskTitle}>
+                                      {safeText(decision.question) || "Question not provided"}
+                                    </p>
+                                    <p style={styles.bodyText}>
+                                      <strong>Why it matters:</strong>{" "}
+                                      {safeText(decision.why_it_matters) || "Not provided"}
+                                    </p>
+                                    <p style={styles.bodyText}>
+                                      <strong>Impacted reviewers:</strong>{" "}
+                                      {safeList(decision.impacted_reviewers)
+                                        .map((item) => safeText(item))
+                                        .filter(Boolean)
+                                        .join(", ") || "Not provided"}
+                                    </p>
+                                    <p style={styles.bodyText}>
+                                      <strong>Default if unanswered:</strong>{" "}
+                                      {safeText(decision.recommended_default_if_unanswered) ||
+                                        "Treat as unresolved."}
+                                    </p>
+                                    <p style={styles.bodyText}>
+                                      <strong>Blocks build readiness:</strong>{" "}
+                                      {safeText(decision.blocks_build_readiness) ||
+                                        "Not provided"}
+                                    </p>
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         <div style={styles.reviewAgentShell}>
                           <div style={styles.reviewAgentTabs}>
                             {REVIEW_AGENT_TABS.map((tab) => (
@@ -5872,6 +6109,9 @@ ${uat.expected_result}
                               )?.title || "Agent Review"
                             }
                             review={getReviewFeedback(activeReviewAgent)}
+                            businessQuestionsAreConsolidated={
+                              getConsolidatedDecisions(result.agent_review).length > 0
+                            }
                           />
 
                           <div style={styles.reviewAgentChatBox}>
@@ -7249,9 +7489,11 @@ function RegeneratePanel({
 function ReviewAgentPanel({
   agentTitle,
   review,
+  businessQuestionsAreConsolidated = false,
 }: {
   agentTitle: string;
   review: AgentReviewerFeedback | null;
+  businessQuestionsAreConsolidated?: boolean;
 }) {
   if (!review) {
     return (
@@ -7302,11 +7544,21 @@ function ReviewAgentPanel({
 
         <div style={styles.innerCard}>
           <p style={styles.label}>Questions for Business</p>
-          <ul style={styles.list}>
-            {review.questions_for_business?.map((item, index) => (
-              <li key={index}>{item}</li>
-            ))}
-          </ul>
+          {businessQuestionsAreConsolidated ? (
+            <div style={styles.decisionRedirect}>
+              <p style={styles.bodyText}>
+                Business questions from all reviewers are consolidated above so the user only answers each decision once. Use this reviewer chat for role-specific follow-up, rewrites, or risk analysis.
+              </p>
+            </div>
+          ) : safeList(review.questions_for_business).length ? (
+            <ul style={styles.list}>
+              {review.questions_for_business?.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p style={styles.muted}>No role-specific business questions returned.</p>
+          )}
         </div>
       </div>
     </div>
@@ -9316,6 +9568,87 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#FFFFFF",
     border: "1px solid #CBD5E1",
     borderRadius: "16px",
+    padding: "14px",
+  },
+  packageActionCenter: {
+    background: "rgba(255,255,255,0.96)",
+    border: "1px solid #C7D2FE",
+    borderRadius: "22px",
+    padding: "18px",
+    boxShadow: "0 16px 42px rgba(79, 70, 229, 0.10)",
+    marginBottom: "18px",
+  },
+  actionCenterHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "16px",
+    marginBottom: "14px",
+  },
+  actionCenterTitle: {
+    margin: "0 0 6px",
+    color: "#0F172A",
+    fontSize: "20px",
+    fontWeight: 900,
+    letterSpacing: "-0.02em",
+  },
+  actionCenterGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: "12px",
+  },
+  actionTile: {
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    background: "#FFFFFF",
+    color: "#0F172A",
+    padding: "16px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "7px",
+    textAlign: "left",
+    cursor: "pointer",
+    minHeight: "116px",
+    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.06)",
+  },
+  actionTileWarning: {
+    border: "1px solid #FACC15",
+    background: "#FFFBEB",
+  },
+  actionTileLabel: {
+    color: "#64748B",
+    fontSize: "11px",
+    textTransform: "uppercase",
+    letterSpacing: "0.12em",
+    fontWeight: 900,
+  },
+  actionTileTitle: {
+    color: "#1D4ED8",
+    fontSize: "18px",
+    lineHeight: "1.25",
+    fontWeight: 900,
+  },
+  actionTileMeta: {
+    color: "#475569",
+    fontSize: "13px",
+    lineHeight: "1.45",
+    fontWeight: 700,
+  },
+  inlineWarning: {
+    marginTop: "14px",
+    border: "1px solid #FACC15",
+    background: "#FFFBEB",
+    borderRadius: "18px",
+    padding: "14px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "14px",
+  },
+  decisionRedirect: {
+    background: "#EFF6FF",
+    border: "1px dashed #93C5FD",
+    borderRadius: "14px",
     padding: "14px",
   },
 
