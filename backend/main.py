@@ -17,6 +17,7 @@ from agents.diagram import generate_process_diagram
 from agents.quality_score import generate_quality_score
 from agents.section_regenerator import regenerate_section
 from agents.agent_review import generate_agent_review
+from agents.project_manager import generate_project_plan
 
 # Delivery Lead review and Delivery Lead chat are separate agents.
 # These fallback imports keep Render from failing if a function name changed during refactors.
@@ -41,6 +42,12 @@ class CodeRequest(BaseModel):
 class AgentReviewRequest(BaseModel):
     requirement: str
     current_package: dict
+
+
+class ProjectPlanRequest(BaseModel):
+    requirement: str
+    current_package: dict
+    planning_inputs: dict = Field(default_factory=dict)
 
 
 class DeliveryLeadChatRequest(BaseModel):
@@ -238,6 +245,38 @@ AGENT_REVIEW_FALLBACK = {
     "consolidated_decisions_needed": [],
     "priority_fixes": [],
     "final_verdict": "Review unavailable.",
+}
+
+
+PROJECT_MANAGER_FALLBACK = {
+    "project_plan_summary": {
+        "recommended_delivery_approach": "Unable to generate project plan. Check backend logs.",
+        "estimated_duration_weeks": None,
+        "target_deployment_feasibility": "Not assessed",
+        "complexity": "Unknown",
+        "confidence_level": "Low",
+        "summary": "Project Manager agent failed during generation.",
+    },
+    "total_loe": {"low_hours": None, "likely_hours": None, "high_hours": None},
+    "cost_estimate": {
+        "implementation_low": None,
+        "implementation_likely": None,
+        "implementation_high": None,
+        "hypercare_cost": None,
+        "monthly_maintenance_cost": None,
+        "first_year_total": None,
+    },
+    "phase_plan": [],
+    "milestone_schedule": [],
+    "role_allocation": [],
+    "hypercare_plan": {},
+    "maintenance_plan": {},
+    "assumptions": ["Project Manager agent failed during generation. Check backend logs."],
+    "exclusions": [],
+    "timeline_risks": [],
+    "cost_risks": [],
+    "mvp_scope_adjustments_to_hit_date": [],
+    "recommended_next_steps": ["Check backend logs and regenerate the project plan."],
 }
 
 DELIVERY_LEAD_CHAT_FALLBACK = {
@@ -707,6 +746,27 @@ async def agent_review(request: AgentReviewRequest):
         review["diagnostics"] = diagnostics
 
     return review
+
+
+
+@app.post("/project-plan")
+async def project_plan(request: ProjectPlanRequest):
+    diagnostics = []
+
+    plan = await safe_agent_call(
+        "Project Manager Agent",
+        PROJECT_MANAGER_FALLBACK,
+        generate_project_plan,
+        request.requirement,
+        request.current_package or {},
+        request.planning_inputs or {},
+        diagnostics=diagnostics,
+    )
+
+    if isinstance(plan, dict):
+        plan["diagnostics"] = diagnostics
+
+    return plan
 
 
 @app.post("/delivery_lead_chat")
