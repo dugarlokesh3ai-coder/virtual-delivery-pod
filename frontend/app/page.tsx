@@ -4919,7 +4919,7 @@ ${uat.expected_result}
                   <div style={styles.results}>
                     <Card
                       title="Executive Overview"
-                      copyValue={buildMarkdownExport()}
+                      copyValue={result ? buildMarkdown(result) : ""}
                       onCopy={copyToClipboard}
                     >
                       <div style={styles.stack}>
