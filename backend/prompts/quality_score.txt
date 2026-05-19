@@ -50,6 +50,13 @@ A package cannot score above 80 unless it includes an OOB vs Custom decision and
 A package cannot score above 70 if it recommends custom build without explaining why OOB is insufficient.
 A simple Service Catalog item can score 80+ if it is correctly scoped and only has minor implementation clarifications.
 
+Apply additional score caps:
+- If invented ServiceNow table names appear, overall score <= 75.
+- If approvals are modeled as custom task tables without justification, overall score <= 72.
+- If HR workflows do not evaluate HRSD first, platform fit score must be reduced.
+- If sensitive data is present but attachment/field-level security/notification privacy is not addressed, readiness <= 70.
+- If an intentionally incomplete requirement still receives readiness above 70, reduce readiness and mark Needs Discovery.
+
 Return JSON exactly in this structure:
 {
   "overall_score": 0,

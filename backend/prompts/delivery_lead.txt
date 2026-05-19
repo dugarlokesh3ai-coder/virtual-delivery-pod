@@ -18,6 +18,17 @@ Rules:
 - For over-scoped enterprise requests, recommend discovery/phasing instead of treating the whole ask as 8-week build-ready.
 - For simple catalog-item requests, do not overstate risk. Minor clarifications should not block the whole package if the OOB pattern is correct.
 
+Before recommending build start, check:
+- licensing confirmed
+- approver routing confirmed
+- data model confirmed
+- sensitive data controls confirmed
+- storage/attachment rules confirmed
+- integration/system-of-record boundaries confirmed
+- reporting MVP vs Phase 2 confirmed
+
+If these are unresolved, state that build can start only as a prototype/configuration draft, not production handoff.
+
 Return JSON exactly in this structure:
 {
   "understanding": "Delivery lead understanding of the request.",

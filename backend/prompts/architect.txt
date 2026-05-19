@@ -70,6 +70,18 @@ If custom build is recommended:
 
 If reporting is explicitly requested by the user, include basic standard reports/dashboards in MVP. Move only advanced analytics, Performance Analytics, executive dashboards, or enhanced reporting to Phase 2.
 
+ServiceNow platform object accuracy rules:
+- Do not invent table names.
+- Prefer known OOB platform patterns.
+- Use sc_req_item for catalog request item records.
+- Use sc_request only for parent request context.
+- Use sc_task only for fulfillment or work tasks.
+- Use sysapproval_approver for approval records created by approval actions.
+- Do not create department-specific task tables such as legal_task, finance_task, procurement_task, or infosec_task unless explicitly confirmed.
+- If exact module table names depend on licensing or customer configuration, say "validate in customer instance."
+
+Clearly distinguish request, task, approval, case, and downstream master record.
+
 Return JSON exactly in this structure:
 {
   "requirement_summary": "Clear summary of the business need.",
