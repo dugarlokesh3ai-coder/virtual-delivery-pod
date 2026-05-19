@@ -797,6 +797,7 @@ export default function Home() {
   const [packageTab, setPackageTab] = useState<PackageTab>("overview");
   const packageContentRef = useRef<HTMLDivElement | null>(null);
   const [packageChromeExpanded, setPackageChromeExpanded] = useState(false);
+  const [intakeExpanded, setIntakeExpanded] = useState(true);
   const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [loadingStage, setLoadingStage] = useState("");
@@ -1770,6 +1771,7 @@ ${update}`;
     setResult(project.result);
     clearUploadedFiles();
     setIntakeAnalysis(null);
+    setIntakeExpanded(!project.result);
     setActiveProjectId(project.id);
     setActiveTab("stories");
     setPackageTab("overview");
@@ -1806,6 +1808,7 @@ ${update}`;
 
     setIntakeAnalysis(null);
     setResult(null);
+    setIntakeExpanded(true);
 
     setActiveTab("stories");
     setPackageTab("overview");
@@ -1920,6 +1923,7 @@ ${update}`;
     clearUploadedFiles();
     setIntakeAnalysis(null);
     setResult(null);
+    setIntakeExpanded(true);
     setActiveProjectId(null);
     setActiveTab("stories");
     setPackageTab("overview");
@@ -2045,6 +2049,7 @@ ${update}`;
       setResult(data);
       setProjectStatus("Draft");
       setPackageNeedsRegeneration(false);
+      setIntakeExpanded(false);
       setActiveTab("stories");
       setPackageTab(mode === "quick" ? "design" : "overview");
       addDiagnostic({
@@ -2131,6 +2136,7 @@ ${update}`;
       setResult(data);
       setProjectStatus("Draft");
       setPackageNeedsRegeneration(false);
+      setIntakeExpanded(false);
       setPackageTab("overview");
     } catch (error) {
       console.error(error);
@@ -3977,48 +3983,108 @@ ${uat.expected_result}
               </section>
             )}
 
-            <section style={styles.workspaceCommandBar}>
-              <div>
-                <p style={styles.label}>Workspace Controls</p>
-                <h2 style={styles.commandBarTitle}>
-                  Manage templates, saved work, and versions
-                </h2>
+            <section style={styles.topWorkspaceShell}>
+              <div style={styles.topWorkspaceHeader}>
+                <div style={styles.topWorkspaceTitleBlock}>
+                  <p style={styles.label}>Workspace</p>
+                  <h2 style={styles.topWorkspaceTitle}>
+                    {projectName.trim() || result?.requirement_summary || "Untitled delivery package"}
+                  </h2>
+                  <p style={styles.projectMeta}>
+                    {activeProjectId ? "Saved project" : "Unsaved workspace"} · {files.length} file{files.length === 1 ? "" : "s"} attached · {autoSaveState}
+                    {lastAutoSavedAt
+                      ? ` at ${new Date(lastAutoSavedAt).toLocaleTimeString()}`
+                      : ""}
+                  </p>
+                </div>
+
+                <div style={isMobile ? styles.mobileActionRow : styles.topWorkspaceActions}>
+                  <select
+                    value={workspacePanel}
+                    onChange={(e) =>
+                      openWorkspacePanel(e.target.value as WorkspacePanel)
+                    }
+                    style={styles.workspaceSelectCompact}
+                  >
+                    <option value="none">Workspace menu</option>
+                    <option value="templates">Templates</option>
+                    <option value="saved">
+                      Saved Projects ({savedProjects.length})
+                    </option>
+                    <option value="versions">
+                      Version History ({projectVersions.length})
+                    </option>
+                    <option value="diagnostics">
+                      Diagnostics ({diagnostics.length})
+                    </option>
+                    <option value="guide">Guide</option>
+                  </select>
+
+                  <button onClick={newProject} style={styles.secondaryButtonCompact}>
+                    New / Clear
+                  </button>
+
+                  <button
+                    onClick={saveProject}
+                    disabled={projectSaving}
+                    style={{
+                      ...styles.buttonCompact,
+                      opacity: projectSaving ? 0.65 : 1,
+                      cursor: projectSaving ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {projectSaving
+                      ? "Saving..."
+                      : activeProjectId
+                        ? "Update"
+                        : "Save"}
+                  </button>
+                </div>
               </div>
 
-              <div
-                style={
-                  isMobile ? styles.mobileActionRow : styles.commandBarActions
-                }
-              >
-                <select
-                  value={workspacePanel}
-                  onChange={(e) =>
-                    openWorkspacePanel(e.target.value as WorkspacePanel)
-                  }
-                  style={styles.workspaceSelect}
-                >
-                  <option value="none">Workspace menu</option>
-                  <option value="templates">Templates</option>
-                  <option value="saved">
-                    Saved Projects ({savedProjects.length})
-                  </option>
-                  <option value="versions">
-                    Version History ({projectVersions.length})
-                  </option>
-                  <option value="diagnostics">
-                    Diagnostics ({diagnostics.length})
-                  </option>
-                  <option value="guide">Guide</option>
-                </select>
+              <div style={isMobile ? styles.mobileOneColumnGrid : styles.topWorkspaceGrid}>
+                <div style={styles.projectField}>
+                  <label style={styles.projectLabel}>Project name</label>
+                  <input
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                    placeholder="Optional. Name this delivery package..."
+                    style={styles.projectInputCompact}
+                  />
+                </div>
 
-                {workspacePanel !== "none" && (
-                  <button
-                    onClick={() => setWorkspacePanel("none")}
-                    style={styles.secondaryButton}
-                  >
-                    Close Panel
-                  </button>
-                )}
+                <div style={styles.projectField}>
+                  <label style={styles.projectLabel}>Status</label>
+                  <div style={styles.compactStatusFlow}>
+                    {PROJECT_STATUS_OPTIONS.map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => setProjectStatus(status)}
+                        style={
+                          projectStatus === status
+                            ? styles.compactStatusStepActive
+                            : styles.compactStatusStep
+                        }
+                      >
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    if (activeProjectId) deleteProject(activeProjectId);
+                  }}
+                  disabled={!activeProjectId}
+                  style={{
+                    ...styles.deleteButtonCompact,
+                    opacity: activeProjectId ? 1 : 0.45,
+                    cursor: activeProjectId ? "pointer" : "not-allowed",
+                  }}
+                >
+                  Delete
+                </button>
               </div>
             </section>
 
@@ -4380,106 +4446,6 @@ ${uat.expected_result}
               </section>
             )}
 
-            <section style={styles.statusBanner}>
-              <div>
-                <p style={styles.label}>Project Status</p>
-                <h2 style={styles.statusTitle}>{projectStatus}</h2>
-                <p style={styles.projectMeta}>
-                  {activeProjectId
-                    ? "Active saved project"
-                    : "Unsaved workspace"}{" "}
-                  · {files.length} file{files.length === 1 ? "" : "s"} attached
-                  by name · {autoSaveState}
-                  {lastAutoSavedAt
-                    ? ` at ${new Date(lastAutoSavedAt).toLocaleTimeString()}`
-                    : ""}
-                </p>
-              </div>
-
-              <div
-                style={isMobile ? styles.mobileStatusFlow : styles.statusFlow}
-              >
-                {PROJECT_STATUS_OPTIONS.map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setProjectStatus(status)}
-                    style={
-                      projectStatus === status
-                        ? styles.statusStepActive
-                        : styles.statusStep
-                    }
-                  >
-                    {status}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section style={styles.projectBar}>
-              <div style={responsiveProjectBarTop}>
-                <div>
-                  <p style={styles.label}>Project Workspace</p>
-                  <h2 style={styles.projectBarTitle}>
-                    Name and save the current package
-                  </h2>
-                </div>
-
-                <div style={responsiveProjectActions}>
-                  <button onClick={newProject} style={styles.secondaryButton}>
-                    New / Clear
-                  </button>
-
-                  <button
-                    onClick={saveProject}
-                    disabled={projectSaving}
-                    style={{
-                      ...styles.button,
-                      opacity: projectSaving ? 0.65 : 1,
-                      cursor: projectSaving ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {projectSaving
-                      ? "Saving..."
-                      : activeProjectId
-                        ? "Update Project"
-                        : "Save Project"}
-                  </button>
-                </div>
-              </div>
-
-              <div
-                style={
-                  isMobile
-                    ? styles.mobileOneColumnGrid
-                    : styles.simpleProjectControls
-                }
-              >
-                <div style={styles.projectField}>
-                  <label style={styles.projectLabel}>Current Project</label>
-                  <input
-                    value={projectName}
-                    onChange={(e) => setProjectName(e.target.value)}
-                    placeholder="Optional. Name this delivery package..."
-                    style={styles.projectInput}
-                  />
-                </div>
-
-                <button
-                  onClick={() => {
-                    if (activeProjectId) deleteProject(activeProjectId);
-                  }}
-                  disabled={!activeProjectId}
-                  style={{
-                    ...styles.deleteButton,
-                    opacity: activeProjectId ? 1 : 0.45,
-                    cursor: activeProjectId ? "pointer" : "not-allowed",
-                  }}
-                >
-                  Delete
-                </button>
-              </div>
-            </section>
-
             {loadingStage && (
               <div style={styles.loadingStage}>{loadingStage}</div>
             )}
@@ -4511,13 +4477,56 @@ ${uat.expected_result}
               </div>
             )}
 
-            <section style={styles.intakeCard}>
+            <section style={styles.intakeCardCompact}>
               <div style={responsiveCardHeader}>
-                <h2 style={styles.sectionTitle}>Requirement Intake</h2>
-                <span style={styles.muted}>
-                  Text or docs → delivery-ready package
-                </span>
+                <div>
+                  <p style={styles.label}>Requirement Intake</p>
+                  <h2 style={styles.sectionTitle}>Source requirement</h2>
+                  <p style={styles.muted}>
+                    Paste notes or attach documents. Collapse this after package generation to keep the workspace focused.
+                  </p>
+                </div>
+                {result && (
+                  <button
+                    onClick={() => setIntakeExpanded(!intakeExpanded)}
+                    style={styles.tertiaryButton}
+                  >
+                    {intakeExpanded ? "Collapse intake" : "Edit requirement"}
+                  </button>
+                )}
               </div>
+
+              {result && !intakeExpanded ? (
+                <div style={styles.collapsedIntakeSummary}>
+                  <div>
+                    <p style={styles.itemTitle}>Requirement saved in workspace</p>
+                    <p style={styles.muted}>
+                      {requirement.length} characters · {files.length} file{files.length === 1 ? "" : "s"} attached
+                      {packageNeedsRegeneration ? " · changes need regeneration" : ""}
+                    </p>
+                  </div>
+                  <div style={styles.packageCommandActions}>
+                    <button
+                      onClick={() => setIntakeExpanded(true)}
+                      style={styles.secondaryButtonCompact}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={regeneratePackageAfterRequirementUpdate}
+                      disabled={loading || !packageNeedsRegeneration}
+                      style={{
+                        ...styles.buttonCompact,
+                        opacity: loading || !packageNeedsRegeneration ? 0.55 : 1,
+                        cursor: loading || !packageNeedsRegeneration ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
 
               <textarea
                 value={requirement}
@@ -4623,6 +4632,8 @@ ${uat.expected_result}
                     : "Full Detailed Package"}
                 </button>
               </div>
+                </>
+              )}
             </section>
 
             {intakeAnalysis && (
@@ -7404,6 +7415,17 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     whiteSpace: "nowrap",
   },
+  regenerationNotice: {
+    border: "1px solid #F59E0B",
+    background: "#FFFBEB",
+    borderRadius: "18px",
+    padding: "16px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "14px",
+    marginBottom: "14px",
+  },
   overviewHeroGrid: {
     display: "grid",
     gridTemplateColumns: "1.1fr 0.9fr",
@@ -7462,6 +7484,146 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: "10px",
     marginBottom: "12px",
+  },
+  topWorkspaceShell: {
+    background: "rgba(255,255,255,0.95)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "24px",
+    padding: "18px",
+    boxShadow: "0 14px 36px rgba(15, 23, 42, 0.07)",
+    marginBottom: "16px",
+  },
+  topWorkspaceHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "18px",
+    marginBottom: "14px",
+  },
+  topWorkspaceTitleBlock: {
+    minWidth: 0,
+  },
+  topWorkspaceTitle: {
+    margin: "2px 0 0",
+    color: "#0F172A",
+    fontSize: "22px",
+    lineHeight: 1.2,
+    fontWeight: 900,
+    letterSpacing: "-0.03em",
+    maxWidth: "720px",
+  },
+  topWorkspaceActions: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+  },
+  topWorkspaceGrid: {
+    display: "grid",
+    gridTemplateColumns: "minmax(280px, 1fr) minmax(420px, 0.9fr) auto",
+    gap: "14px",
+    alignItems: "end",
+  },
+  workspaceSelectCompact: {
+    minWidth: "230px",
+    border: "1px solid #CBD5E1",
+    borderRadius: "12px",
+    background: "#FFFFFF",
+    color: "#1D4ED8",
+    padding: "11px 13px",
+    fontSize: "14px",
+    fontWeight: 850,
+    outline: "none",
+    cursor: "pointer",
+  },
+  buttonCompact: {
+    border: "0",
+    borderRadius: "12px",
+    background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+    color: "white",
+    padding: "11px 16px",
+    fontSize: "14px",
+    fontWeight: 850,
+    boxShadow: "0 12px 28px rgba(37, 99, 235, 0.22)",
+    whiteSpace: "nowrap",
+    cursor: "pointer",
+  },
+  secondaryButtonCompact: {
+    border: "1px solid #CBD5E1",
+    borderRadius: "12px",
+    background: "#FFFFFF",
+    color: "#1D4ED8",
+    padding: "11px 16px",
+    fontSize: "14px",
+    fontWeight: 850,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  projectInputCompact: {
+    width: "100%",
+    border: "1px solid #CBD5E1",
+    borderRadius: "12px",
+    background: "#FFFFFF",
+    color: "#0F172A",
+    padding: "11px 13px",
+    fontSize: "14px",
+    fontWeight: 750,
+    outline: "none",
+    boxSizing: "border-box",
+  },
+  compactStatusFlow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: "8px",
+  },
+  compactStatusStep: {
+    border: "1px solid #CBD5E1",
+    background: "#FFFFFF",
+    color: "#334155",
+    borderRadius: "999px",
+    padding: "9px 10px",
+    fontSize: "13px",
+    fontWeight: 850,
+    cursor: "pointer",
+  },
+  compactStatusStepActive: {
+    border: "1px solid #2563EB",
+    background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+    color: "#FFFFFF",
+    borderRadius: "999px",
+    padding: "9px 10px",
+    fontSize: "13px",
+    fontWeight: 900,
+    cursor: "pointer",
+    boxShadow: "0 10px 22px rgba(37, 99, 235, 0.18)",
+  },
+  deleteButtonCompact: {
+    border: "1px solid #FCA5A5",
+    borderRadius: "12px",
+    background: "#FEF2F2",
+    color: "#B91C1C",
+    padding: "11px 15px",
+    fontSize: "13px",
+    fontWeight: 850,
+  },
+  intakeCardCompact: {
+    background: "rgba(255,255,255,0.94)",
+    border: "1px solid #CBD5E1",
+    borderRadius: "24px",
+    padding: "20px 24px 24px",
+    boxShadow: "0 14px 40px rgba(15, 23, 42, 0.08)",
+    marginBottom: "20px",
+  },
+  collapsedIntakeSummary: {
+    background: "#F8FAFC",
+    border: "1px solid #CBD5E1",
+    borderRadius: "18px",
+    padding: "16px",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "16px",
+    alignItems: "center",
   },
   page: {
     minHeight: "100vh",
