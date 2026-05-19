@@ -798,6 +798,8 @@ export default function Home() {
   const packageContentRef = useRef<HTMLDivElement | null>(null);
   const [packageChromeExpanded, setPackageChromeExpanded] = useState(false);
   const [intakeExpanded, setIntakeExpanded] = useState(true);
+  const [activeDecisionIndex, setActiveDecisionIndex] = useState(0);
+  const [decisionAnswers, setDecisionAnswers] = useState<Record<number, string>>({});
   const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [loadingStage, setLoadingStage] = useState("");
@@ -1361,6 +1363,97 @@ ${update}`;
       (total, messages) => total + messages.length,
       0,
     );
+  }
+
+  function goToBusinessDecisions() {
+    setPackageTab("review");
+    window.setTimeout(() => {
+      document.getElementById("business-decisions")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 80);
+  }
+
+  function updateDecisionAnswer(index: number, value: string) {
+    setDecisionAnswers((previous) => ({
+      ...previous,
+      [index]: value,
+    }));
+  }
+
+  function buildDecisionAnswerUpdate(
+    decision: ConsolidatedDecision,
+    index: number,
+    answer: string,
+  ) {
+    const area = safeText(decision.decision_area) || `Decision ${index + 1}`;
+    const question = safeText(decision.question) || "Business decision";
+
+    return `Business decision resolved - ${area}:
+Question: ${question}
+Answer: ${answer.trim()}`;
+  }
+
+  function applyDecisionAnswer(decision: ConsolidatedDecision, index: number) {
+    const answer = (decisionAnswers[index] || "").trim();
+
+    if (!answer) {
+      alert("Add an answer before applying this decision.");
+      return;
+    }
+
+    const updateText = buildDecisionAnswerUpdate(decision, index, answer);
+
+    setRequirement((currentText) =>
+      mergeRequirementUpdate(currentText, updateText),
+    );
+    setClarificationAnswers("");
+    setIntakeAnalysis(null);
+    setPackageNeedsRegeneration(true);
+    setIntakeExpanded(false);
+
+    const nextIndex = Math.min(
+      index + 1,
+      Math.max(getConsolidatedDecisions(result?.agent_review).length - 1, 0),
+    );
+    setActiveDecisionIndex(nextIndex);
+
+    addDiagnostic({
+      area: "Business decision",
+      status: "success",
+      message: `Applied decision ${index + 1} to the requirement.`,
+    });
+  }
+
+  function applyAllDecisionAnswers() {
+    const decisions = getConsolidatedDecisions(result?.agent_review);
+    const answeredUpdates = decisions
+      .map((decision, index) => {
+        const answer = (decisionAnswers[index] || "").trim();
+        if (!answer) return "";
+        return buildDecisionAnswerUpdate(decision, index, answer);
+      })
+      .filter(Boolean);
+
+    if (!answeredUpdates.length) {
+      alert("Answer at least one decision before applying.");
+      return;
+    }
+
+    setRequirement((currentText) =>
+      mergeRequirementUpdate(currentText, answeredUpdates.join("\n\n")),
+    );
+    setClarificationAnswers("");
+    setIntakeAnalysis(null);
+    setPackageNeedsRegeneration(true);
+    setIntakeExpanded(false);
+
+    addDiagnostic({
+      area: "Business decisions",
+      status: "success",
+      message: `Applied ${answeredUpdates.length} decision answer(s) to the requirement.`,
+    });
   }
 
   function buildProjectPayload(
@@ -4817,7 +4910,14 @@ ${uat.expected_result}
                       <span style={styles.softPill}>{packageScoreLabel}: {displayScore(result.quality_score?.overall_score)}</span>
                       <span style={styles.softPill}>Readiness: {packageHealthLabel}</span>
                       {unresolvedCount > 0 && (
-                        <span style={styles.warningPill}>{unresolvedCount} items to resolve</span>
+                        <button
+                          type="button"
+                          onClick={goToBusinessDecisions}
+                          style={styles.warningPillButton}
+                          title="Open the Review tab and jump to the decision log"
+                        >
+                          {unresolvedCount} decision{unresolvedCount === 1 ? "" : "s"} to resolve →
+                        </button>
                       )}
                     </div>
                   </div>
@@ -4954,10 +5054,10 @@ ${uat.expected_result}
                             <strong>Review platform fit</strong>
                             <span>OOB vs custom, readiness, security, object model.</span>
                           </button>
-                          <button onClick={() => selectPackageTab("review")} style={styles.nextStepCardButton}>
+                          <button onClick={goToBusinessDecisions} style={styles.nextStepCardButton}>
                             <span style={styles.label}>2 · Decisions</span>
-                            <strong>{consolidatedDecisions.length ? `${consolidatedDecisions.length} consolidated decisions` : "Run agent review"}</strong>
-                            <span>{blockingDecisionCount ? `${blockingDecisionCount} blocking decisions` : "De-duplicate reviewer questions."}</span>
+                            <strong>{consolidatedDecisions.length ? `${consolidatedDecisions.length} numbered decision${consolidatedDecisions.length === 1 ? "" : "s"}` : "Run agent review"}</strong>
+                            <span>{blockingDecisionCount ? `${blockingDecisionCount} blocking decision${blockingDecisionCount === 1 ? "" : "s"}` : "Answer once, then regenerate."}</span>
                           </button>
                           <button onClick={() => selectPackageTab("delivery_lead")} style={styles.nextStepCardButton}>
                             <span style={styles.label}>3 · Clarify</span>
@@ -5014,8 +5114,8 @@ ${uat.expected_result}
                                     <span>{safeText(decision.question)}</span>
                                   </div>
                                 ))}
-                                <button onClick={() => selectPackageTab("review")} style={styles.inlineLinkButton}>
-                                  Resolve all decisions in Review →
+                                <button onClick={goToBusinessDecisions} style={styles.inlineLinkButton}>
+                                  Open numbered decision log →
                                 </button>
                               </div>
                             ) : (
@@ -5734,13 +5834,13 @@ ${uat.expected_result}
                         )}
 
                         {getConsolidatedDecisions(result.agent_review).length > 0 && (
-                          <div style={styles.innerCard}>
+                          <div id="business-decisions" style={styles.innerCard}>
                             <div style={styles.cardTitleRow}>
                               <div>
                                 <p style={styles.label}>Business Decisions Needed</p>
-                                <h3 style={styles.itemTitle}>Consolidated decision log</h3>
+                                <h3 style={styles.itemTitle}>Answer one decision at a time</h3>
                                 <p style={styles.muted}>
-                                  These are deduplicated questions across Architect, Developer, QA, and Delivery Lead. Answer these once, apply them to the requirement, then regenerate.
+                                  Reviewer questions are deduplicated below. Pick a numbered decision, answer it once, apply it to the requirement, then regenerate the package.
                                 </p>
                               </div>
                               <Badge>
@@ -5748,40 +5848,134 @@ ${uat.expected_result}
                               </Badge>
                             </div>
 
-                            <div style={styles.priorityFixGrid}>
-                              {getConsolidatedDecisions(result.agent_review).map(
-                                (decision, index) => (
-                                  <div key={index} style={styles.priorityFixCard}>
-                                    <p style={styles.label}>
-                                      {safeText(decision.decision_area) || "Business Decision"}
-                                    </p>
-                                    <p style={styles.riskTitle}>
-                                      {safeText(decision.question) || "Question not provided"}
-                                    </p>
-                                    <p style={styles.bodyText}>
-                                      <strong>Why it matters:</strong>{" "}
-                                      {safeText(decision.why_it_matters) || "Not provided"}
-                                    </p>
-                                    <p style={styles.bodyText}>
-                                      <strong>Impacted reviewers:</strong>{" "}
-                                      {safeList(decision.impacted_reviewers)
-                                        .map((item) => safeText(item))
-                                        .filter(Boolean)
-                                        .join(", ") || "Not provided"}
-                                    </p>
-                                    <p style={styles.bodyText}>
-                                      <strong>Default if unanswered:</strong>{" "}
-                                      {safeText(decision.recommended_default_if_unanswered) ||
-                                        "Treat as unresolved."}
-                                    </p>
-                                    <p style={styles.bodyText}>
-                                      <strong>Blocks build readiness:</strong>{" "}
-                                      {safeText(decision.blocks_build_readiness) ||
-                                        "Not provided"}
-                                    </p>
+                            <div style={isMobile ? styles.mobileDecisionLayout : styles.decisionLayout}>
+                              <div style={styles.decisionList}>
+                                {getConsolidatedDecisions(result.agent_review).map((decision, index) => {
+                                  const answered = !!(decisionAnswers[index] || "").trim();
+                                  const active = activeDecisionIndex === index;
+
+                                  return (
+                                    <button
+                                      key={index}
+                                      type="button"
+                                      onClick={() => setActiveDecisionIndex(index)}
+                                      style={
+                                        active
+                                          ? styles.decisionListItemActive
+                                          : styles.decisionListItem
+                                      }
+                                    >
+                                      <span style={styles.decisionNumber}>{index + 1}</span>
+                                      <span style={styles.decisionListText}>
+                                        <strong>{safeText(decision.decision_area) || "Business Decision"}</strong>
+                                        <span>{answered ? "Answered" : safeText(decision.blocks_build_readiness) === "true" ? "Blocks build" : "Needs answer"}</span>
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {(() => {
+                                const decisions = getConsolidatedDecisions(result.agent_review);
+                                const boundedIndex = Math.min(activeDecisionIndex, decisions.length - 1);
+                                const decision = decisions[boundedIndex];
+
+                                if (!decision) return null;
+
+                                return (
+                                  <div style={styles.decisionDetailCard}>
+                                    <div style={styles.decisionDetailHeader}>
+                                      <div>
+                                        <p style={styles.label}>Decision {boundedIndex + 1}</p>
+                                        <h4 style={styles.decisionQuestion}>
+                                          {safeText(decision.question) || "Question not provided"}
+                                        </h4>
+                                      </div>
+                                      <Badge>
+                                        {safeText(decision.blocks_build_readiness) === "true" ? "Blocks build" : "Decision"}
+                                      </Badge>
+                                    </div>
+
+                                    <div style={styles.decisionMetaGrid}>
+                                      <div style={styles.decisionMetaBox}>
+                                        <strong>Why it matters</strong>
+                                        <span>{safeText(decision.why_it_matters) || "Not provided"}</span>
+                                      </div>
+                                      <div style={styles.decisionMetaBox}>
+                                        <strong>Impacted reviewers</strong>
+                                        <span>
+                                          {safeList(decision.impacted_reviewers)
+                                            .map((item) => safeText(item))
+                                            .filter(Boolean)
+                                            .join(", ") || "Not provided"}
+                                        </span>
+                                      </div>
+                                      <div style={styles.decisionMetaBox}>
+                                        <strong>Default if unanswered</strong>
+                                        <span>
+                                          {safeText(decision.recommended_default_if_unanswered) ||
+                                            "Treat as unresolved."}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <label style={styles.answerLabel}>
+                                      Your answer
+                                      <textarea
+                                        value={decisionAnswers[boundedIndex] || ""}
+                                        onChange={(event) =>
+                                          updateDecisionAnswer(boundedIndex, event.target.value)
+                                        }
+                                        placeholder="Example: Use Service Catalog + Flow Designer for MVP. GRC/IRM licensing will be evaluated in parallel. Escalate approvals after 7 business days..."
+                                        style={styles.decisionAnswerTextarea}
+                                      />
+                                    </label>
+
+                                    <div style={styles.decisionActionRow}>
+                                      <button
+                                        type="button"
+                                        onClick={() => applyDecisionAnswer(decision, boundedIndex)}
+                                        style={styles.button}
+                                      >
+                                        Apply this answer
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={applyAllDecisionAnswers}
+                                        style={styles.secondaryButton}
+                                      >
+                                        Apply all answered
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveDecisionIndex(Math.min(boundedIndex + 1, decisions.length - 1))}
+                                        disabled={boundedIndex >= decisions.length - 1}
+                                        style={{
+                                          ...styles.tertiaryButton,
+                                          opacity: boundedIndex >= decisions.length - 1 ? 0.45 : 1,
+                                          cursor: boundedIndex >= decisions.length - 1 ? "not-allowed" : "pointer",
+                                        }}
+                                      >
+                                        Next decision
+                                      </button>
+                                    </div>
+
+                                    {packageNeedsRegeneration && (
+                                      <div style={styles.decisionRegenerateCallout}>
+                                        <span>Requirement updated. Regenerate before export or handoff.</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => generatePackage("full")}
+                                          disabled={loading}
+                                          style={styles.inlineLinkButton}
+                                        >
+                                          {loading ? "Regenerating..." : "Regenerate full package"}
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
-                                ),
-                              )}
+                                );
+                              })()}
                             </div>
                           </div>
                         )}
@@ -9529,6 +9723,161 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#334155",
     padding: "5px 9px",
     fontSize: "12px",
+    fontWeight: 800,
+  },
+  warningPillButton: {
+    border: "1px solid #FED7AA",
+    background: "#FFF7ED",
+    color: "#9A3412",
+    borderRadius: "999px",
+    padding: "7px 12px",
+    fontSize: "12px",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  decisionLayout: {
+    display: "grid",
+    gridTemplateColumns: "300px 1fr",
+    gap: "18px",
+    alignItems: "start",
+  },
+  mobileDecisionLayout: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
+    gap: "14px",
+  },
+  decisionList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+  },
+  decisionListItem: {
+    width: "100%",
+    border: "1px solid #CBD5E1",
+    background: "#FFFFFF",
+    borderRadius: "16px",
+    padding: "12px",
+    textAlign: "left",
+    cursor: "pointer",
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+  },
+  decisionListItemActive: {
+    width: "100%",
+    border: "1px solid #2563EB",
+    background: "#EFF6FF",
+    borderRadius: "16px",
+    padding: "12px",
+    textAlign: "left",
+    cursor: "pointer",
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    boxShadow: "0 12px 30px rgba(37, 99, 235, 0.12)",
+  },
+  decisionNumber: {
+    minWidth: "30px",
+    height: "30px",
+    borderRadius: "999px",
+    background: "#DBEAFE",
+    color: "#1D4ED8",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "13px",
+    fontWeight: 950,
+  },
+  decisionListText: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+    color: "#334155",
+    fontSize: "13px",
+    lineHeight: 1.35,
+  },
+  decisionDetailCard: {
+    border: "1px solid #CBD5E1",
+    background: "#FFFFFF",
+    borderRadius: "18px",
+    padding: "18px",
+  },
+  decisionDetailHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "12px",
+    marginBottom: "14px",
+  },
+  decisionQuestion: {
+    margin: "4px 0 0",
+    color: "#0F172A",
+    fontSize: "18px",
+    lineHeight: 1.4,
+    fontWeight: 900,
+  },
+  decisionMetaGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    gap: "10px",
+    marginBottom: "14px",
+  },
+  decisionMetaBox: {
+    border: "1px solid #E2E8F0",
+    background: "#F8FAFC",
+    borderRadius: "14px",
+    padding: "12px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "6px",
+    color: "#475569",
+    fontSize: "13px",
+    lineHeight: 1.45,
+  },
+  answerLabel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    color: "#334155",
+    fontSize: "13px",
+    fontWeight: 900,
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+  },
+  decisionAnswerTextarea: {
+    minHeight: "130px",
+    resize: "vertical",
+    border: "1px solid #CBD5E1",
+    borderRadius: "16px",
+    padding: "14px",
+    color: "#0F172A",
+    fontSize: "15px",
+    lineHeight: 1.55,
+    outline: "none",
+    background: "#FFFFFF",
+    textTransform: "none",
+    letterSpacing: "normal",
+    fontWeight: 500,
+  },
+  decisionActionRow: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    flexWrap: "wrap",
+    marginTop: "12px",
+  },
+  decisionRegenerateCallout: {
+    marginTop: "14px",
+    border: "1px solid #FACC15",
+    background: "#FFFBEB",
+    color: "#92400E",
+    borderRadius: "14px",
+    padding: "12px",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    alignItems: "center",
+    fontSize: "14px",
     fontWeight: 800,
   },
   platformDecisionGrid: {
