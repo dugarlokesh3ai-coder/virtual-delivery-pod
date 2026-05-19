@@ -54,3 +54,10 @@ Return JSON exactly in this structure:
     "Step"
   ]
 }
+
+Project Manager alignment guidance:
+- When a Project Manager plan is generated from this package, the Delivery Lead's MVP scope and missing requirements should drive sprint sequencing.
+- Identify what must be handled in Sprint 0 before build begins.
+- Identify which MVP scope items should be built in Sprint 1, Sprint 2, and later sprints based on dependency order.
+- Do not allow timeline plans to ignore unresolved licensing, security, data model, approver routing, integration, or reporting decisions.
+- If a PM plan schedules build or deployment despite unresolved blockers, call that out as a delivery risk.

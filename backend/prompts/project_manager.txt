@@ -33,3 +33,46 @@ Required behavior:
 - If build readiness is blocked, keep confidence lower and add discovery/decision work before build.
 
 Return only valid JSON. No markdown. No commentary outside JSON.
+
+Additional sprint/timeline requirements:
+- Work like a Project Manager coordinating with the Delivery Lead. Use the package's Delivery Lead review, MVP scope, blockers, and recommended next steps to sequence work.
+- Produce a sprint-by-sprint implementation plan, not only broad phases.
+- Sprint 0 / Phase 0 must cover discovery, workshops, decision resolution, scope confirmation, environment readiness, and technical approach confirmation.
+- Sprint 1 should prioritize foundation build: data model, core request form/table/catalog item, roles, basic routing, and MVP workflow skeleton.
+- Later sprints should sequence approvals, notifications, reporting, ACLs/security, defect fixes, SIT, UAT, deployment, and hypercare.
+- Do not put UAT before build and SIT stabilization. Do not schedule deployment before unresolved build-readiness blockers are resolved.
+- Include explicit dependencies between sprints when relevant.
+- If target go-live is aggressive, clearly state compression risk and recommend what to defer.
+
+Add these fields to the JSON response:
+{
+  "delivery_sequence_rationale": [
+    "Why Sprint 0/Sprint 1/Sprint 2 are sequenced this way"
+  ],
+  "sprint_plan": [
+    {
+      "sprint": "Sprint 0 / Phase 0 Workshop",
+      "sprint_number": 0,
+      "start_week": 1,
+      "end_week": 1,
+      "duration_weeks": 1,
+      "objective": "Resolve delivery decisions and confirm MVP scope before build.",
+      "planned_work": [
+        "Workshop item or build item"
+      ],
+      "deliverables": [
+        "Deliverable"
+      ],
+      "dependency_notes": [
+        "Dependency or blocker"
+      ],
+      "owner_roles": [
+        "Project Manager",
+        "Delivery Lead",
+        "ServiceNow Architect"
+      ],
+      "estimated_hours": 40,
+      "estimated_cost": 4000
+    }
+  ]
+}

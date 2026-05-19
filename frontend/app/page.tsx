@@ -380,6 +380,21 @@ type ProjectPlanPhase = {
   exit_criteria: any[];
 };
 
+type ProjectPlanSprint = {
+  sprint?: any;
+  sprint_number?: any;
+  start_week?: any;
+  end_week?: any;
+  duration_weeks?: any;
+  objective?: any;
+  planned_work?: any[];
+  deliverables?: any[];
+  dependency_notes?: any[];
+  owner_roles?: any[];
+  estimated_hours?: any;
+  estimated_cost?: any;
+};
+
 type ProjectManagerPlan = {
   project_plan_summary?: {
     recommended_delivery_approach?: any;
@@ -403,6 +418,8 @@ type ProjectManagerPlan = {
     first_year_total?: any;
   };
   phase_plan?: ProjectPlanPhase[];
+  sprint_plan?: ProjectPlanSprint[];
+  delivery_sequence_rationale?: any[];
   milestone_schedule?: any[];
   role_allocation?: any[];
   hypercare_plan?: any;
@@ -777,6 +794,116 @@ function buildProjectPlanMarkdown(plan: ProjectManagerPlan | null | undefined, c
   return `## Project Manager Plan\n\n### Summary\n- **Approach:** ${safeText(summary.recommended_delivery_approach) || "Not provided"}\n- **Estimated Duration:** ${safeText(summary.estimated_duration_weeks) || "Not provided"} weeks\n- **Target Feasibility:** ${safeText(summary.target_deployment_feasibility) || "Not provided"}\n- **Complexity:** ${safeText(summary.complexity) || "Not provided"}\n- **Confidence:** ${safeText(summary.confidence_level) || "Not provided"}\n\n${safeText(summary.summary) || ""}\n\n### LOE\n- Low: ${safeText(totalLoe.low_hours) || "Not provided"} hours\n- Likely: ${safeText(totalLoe.likely_hours) || "Not provided"} hours\n- High: ${safeText(totalLoe.high_hours) || "Not provided"} hours\n\n### Cost\n- Implementation Low: ${formatPlanCurrency(cost.implementation_low, currency)}\n- Implementation Likely: ${formatPlanCurrency(cost.implementation_likely, currency)}\n- Implementation High: ${formatPlanCurrency(cost.implementation_high, currency)}\n- Hypercare: ${formatPlanCurrency(cost.hypercare_cost, currency)}\n- Monthly Maintenance: ${formatPlanCurrency(cost.monthly_maintenance_cost, currency)}\n- First-Year Total: ${formatPlanCurrency(cost.first_year_total, currency)}\n\n### Phase Plan\n${phases.length ? phases.map((phase: any, index: number) => `#### ${index + 1}. ${safeText(phase.phase) || "Phase"}\n- Objective: ${safeText(phase.objective)}\n- Duration: ${safeText(phase.duration_weeks)} weeks\n- Estimated Cost: ${formatPlanCurrency(phase.estimated_cost, currency)}\n- Activities: ${safeList(phase.activities).map((item) => safeText(item)).filter(Boolean).join("; ") || "Not provided"}\n- Deliverables: ${safeList(phase.deliverables).map((item) => safeText(item)).filter(Boolean).join("; ") || "Not provided"}`).join("\n\n") : "- Not provided"}\n\n### Timeline Risks\n${safeList(plan.timeline_risks).map((item) => `- ${safeText(item)}`).join("\n") || "- Not provided"}\n\n### Cost Risks\n${safeList(plan.cost_risks).map((item) => `- ${safeText(item)}`).join("\n") || "- Not provided"}\n\n### Recommended Next Steps\n${safeList(plan.recommended_next_steps).map((item) => `- ${safeText(item)}`).join("\n") || "- Not provided"}`;
 }
 
+function parsePlanNumber(value: any, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const match = value.match(/-?\d+(\.\d+)?/);
+    if (match) {
+      const parsed = Number(match[0]);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return fallback;
+}
+
+function getPhaseDurationWeeks(phase: any, override?: number) {
+  if (typeof override === "number" && Number.isFinite(override) && override > 0) {
+    return override;
+  }
+  return Math.max(1, parsePlanNumber(phase?.duration_weeks, 1));
+}
+
+function getPhaseEndWeek(phase: any, startWeek: number, durationWeeks: number) {
+  const explicitEnd = parsePlanNumber(phase?.end_week, 0);
+  if (explicitEnd > 0) return Math.max(startWeek, explicitEnd);
+  return startWeek + Math.max(durationWeeks, 1) - 1;
+}
+
+function getAdjustedPhaseTimeline(plan: ProjectManagerPlan | null | undefined, overrides: Record<number, number>) {
+  const phases = safeList(plan?.phase_plan);
+  let cursor = 1;
+
+  return phases.map((phase: any, index: number) => {
+    const durationWeeks = getPhaseDurationWeeks(phase, overrides[index]);
+    const explicitStart = parsePlanNumber(phase?.start_week, 0);
+    const startWeek = explicitStart > 0 ? explicitStart : cursor;
+    const endWeek = getPhaseEndWeek(phase, startWeek, durationWeeks);
+    cursor = endWeek + 1;
+
+    return {
+      ...phase,
+      startWeek,
+      endWeek,
+      durationWeeks,
+      label: safeText(phase?.phase) || `Phase ${index + 1}`,
+    };
+  });
+}
+
+function getTimelineWeeksFromPhases(phases: any[]) {
+  return Math.max(1, ...phases.map((phase) => parsePlanNumber(phase?.endWeek, 1)));
+}
+
+function getPlanSprintList(plan: ProjectManagerPlan | null | undefined, adjustedPhases: any[]) {
+  const sprintPlan = safeList((plan as any)?.sprint_plan);
+
+  if (sprintPlan.length) {
+    return sprintPlan.map((sprint: any, index: number) => ({
+      ...sprint,
+      sprintLabel: safeText(sprint.sprint) || `Sprint ${safeText(sprint.sprint_number) || index + 1}`,
+      startWeek: Math.max(1, parsePlanNumber(sprint.start_week, index * 2 + 1)),
+      endWeek: Math.max(index * 2 + 2, parsePlanNumber(sprint.end_week, index * 2 + 2)),
+      workItems: safeList(sprint.planned_work).length ? safeList(sprint.planned_work) : safeList(sprint.deliverables),
+    }));
+  }
+
+  return adjustedPhases.map((phase, index) => ({
+    sprintLabel: index === 0 ? "Sprint 0 / Discovery" : `Sprint ${index}`,
+    startWeek: phase.startWeek,
+    endWeek: phase.endWeek,
+    objective: phase.objective,
+    owner_roles: safeList(phase.owner_roles),
+    estimated_hours: Object.values(phase.loe_hours_by_role || {}).reduce((sum: number, value: any) => sum + parsePlanNumber(value, 0), 0),
+    estimated_cost: phase.estimated_cost,
+    workItems: safeList(phase.activities).length ? safeList(phase.activities) : safeList(phase.deliverables),
+  }));
+}
+
+function getCostChartItems(plan: ProjectManagerPlan | null | undefined, currency = "USD") {
+  const cost = plan?.cost_estimate || {};
+  return [
+    { label: "Implementation low", value: parsePlanNumber(cost.implementation_low, 0), display: formatPlanCurrency(cost.implementation_low, currency) },
+    { label: "Implementation likely", value: parsePlanNumber(cost.implementation_likely, 0), display: formatPlanCurrency(cost.implementation_likely, currency) },
+    { label: "Implementation high", value: parsePlanNumber(cost.implementation_high, 0), display: formatPlanCurrency(cost.implementation_high, currency) },
+    { label: "Hypercare", value: parsePlanNumber(cost.hypercare_cost, 0), display: formatPlanCurrency(cost.hypercare_cost, currency) },
+    { label: "First-year total", value: parsePlanNumber(cost.first_year_total, 0), display: formatPlanCurrency(cost.first_year_total, currency) },
+  ];
+}
+
+function getRoleHourItems(plan: ProjectManagerPlan | null | undefined, roleInputs: PlanningRoleInput[]) {
+  const allocations = safeList(plan?.role_allocation);
+
+  if (allocations.length) {
+    return allocations.map((item: any) => ({
+      role: safeText(item.role || item.name) || "Role",
+      hours: parsePlanNumber(item.total_hours || item.hours || item.likely_hours, 0),
+      cost: item.estimated_cost || item.cost,
+    }));
+  }
+
+  const likelyHours = parsePlanNumber(plan?.total_loe?.likely_hours, 0);
+  const totalCapacity = roleInputs.reduce(
+    (sum, role) => sum + Math.max(role.count, 0) * Math.max(role.weekly_capacity_hours, 0),
+    0,
+  );
+
+  return roleInputs.map((role) => {
+    const weight = totalCapacity ? (Math.max(role.count, 0) * Math.max(role.weekly_capacity_hours, 0)) / totalCapacity : 0;
+    const hours = Math.round(likelyHours * weight);
+    return { role: role.role, hours, cost: hours * role.hourly_rate };
+  });
+}
+
 function buildPlatformFitMarkdown(data: DeliveryResult | null | undefined) {
   const decision = getPlatformFitDecision(data);
 
@@ -1054,6 +1181,8 @@ export default function Home() {
 
   const [projectPlan, setProjectPlan] = useState<ProjectManagerPlan | null>(null);
   const [projectPlanLoading, setProjectPlanLoading] = useState(false);
+  const [activePlanView, setActivePlanView] = useState<"overview" | "timeline" | "cost" | "team">("overview");
+  const [phaseDurationOverrides, setPhaseDurationOverrides] = useState<Record<number, number>>({});
   const [planningInputs, setPlanningInputs] = useState<PlanningInputs>({
     project_start_date: "",
     target_go_live_date: "",
@@ -1696,6 +1825,21 @@ Answer: ${answer.trim()}`;
     }));
   }
 
+  function adjustPhaseDuration(index: number, delta: number) {
+    const adjustedPhases = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides);
+    const currentDuration = getPhaseDurationWeeks(adjustedPhases[index], phaseDurationOverrides[index]);
+    const nextDuration = Math.max(1, currentDuration + delta);
+
+    setPhaseDurationOverrides((previous) => ({
+      ...previous,
+      [index]: nextDuration,
+    }));
+  }
+
+  function resetPhaseDurations() {
+    setPhaseDurationOverrides({});
+  }
+
   async function generateProjectManagerPlan() {
     if (!result) {
       alert("Generate a package first.");
@@ -1725,6 +1869,8 @@ Answer: ${answer.trim()}`;
 
       const data: ProjectManagerPlan = await response.json();
       setProjectPlan(data);
+      setPhaseDurationOverrides({});
+      setActivePlanView("overview");
       addDiagnostic({
         area: "Project Manager",
         status: "success",
@@ -6535,245 +6681,209 @@ ${uat.expected_result}
                     onCopy={copyToClipboard}
                   >
                     <div style={styles.stack}>
-                      <div style={styles.innerCard}>
-                        <p style={styles.label}>Delivery Planning Inputs</p>
-                        <p style={styles.bodyText}>
-                          Enter dates, team capacity, and rates. The Project Manager will calculate LOE, cost, timeline, SIT, UAT, hypercare, and maintenance assumptions from the generated package.
-                        </p>
-                      </div>
-
-                      <div style={isMobile ? styles.mobileOneColumnGrid : styles.twoColumnGrid}>
-                        <label style={styles.projectField}>
-                          <span style={styles.projectLabel}>Project start date</span>
-                          <input
-                            type="date"
-                            value={planningInputs.project_start_date}
-                            onChange={(e) => updatePlanningInput("project_start_date", e.target.value)}
-                            style={styles.projectInputCompact}
-                          />
-                        </label>
-                        <label style={styles.projectField}>
-                          <span style={styles.projectLabel}>Target deployment date</span>
-                          <input
-                            type="date"
-                            value={planningInputs.target_go_live_date}
-                            onChange={(e) => updatePlanningInput("target_go_live_date", e.target.value)}
-                            style={styles.projectInputCompact}
-                          />
-                        </label>
-                        <label style={styles.projectField}>
-                          <span style={styles.projectLabel}>Currency</span>
-                          <select
-                            value={planningInputs.currency}
-                            onChange={(e) => updatePlanningInput("currency", e.target.value)}
-                            style={styles.workspaceSelectCompact}
-                          >
-                            <option value="USD">USD</option>
-                            <option value="CAD">CAD</option>
-                            <option value="GBP">GBP</option>
-                            <option value="EUR">EUR</option>
-                            <option value="INR">INR</option>
-                          </select>
-                        </label>
-                        <label style={styles.projectField}>
-                          <span style={styles.projectLabel}>Delivery model</span>
-                          <select
-                            value={planningInputs.delivery_model}
-                            onChange={(e) => updatePlanningInput("delivery_model", e.target.value as PlanningInputs["delivery_model"])}
-                            style={styles.workspaceSelectCompact}
-                          >
-                            <option value="aggressive">Aggressive</option>
-                            <option value="normal">Normal</option>
-                            <option value="conservative">Conservative</option>
-                          </select>
-                        </label>
-                        <label style={styles.projectField}>
-                          <span style={styles.projectLabel}>Hypercare weeks</span>
-                          <input
-                            type="number"
-                            min="0"
-                            value={planningInputs.hypercare_weeks}
-                            onChange={(e) => updatePlanningInput("hypercare_weeks", Number(e.target.value) || 0)}
-                            style={styles.projectInputCompact}
-                          />
-                        </label>
-                        <label style={styles.projectField}>
-                          <span style={styles.projectLabel}>Maintenance months</span>
-                          <input
-                            type="number"
-                            min="0"
-                            value={planningInputs.maintenance_months}
-                            onChange={(e) => updatePlanningInput("maintenance_months", Number(e.target.value) || 0)}
-                            style={styles.projectInputCompact}
-                          />
-                        </label>
-                      </div>
-
-                      <div style={styles.innerCard}>
-                        <div style={styles.cardTitleRow}>
-                          <div>
-                            <p style={styles.label}>Team and Rates</p>
-                            <p style={styles.bodyText}>Use role-based hourly rates and weekly capacity to calculate cost and schedule feasibility.</p>
-                          </div>
-                          <button onClick={addPlanningRole} style={styles.secondaryButton}>Add Role</button>
+                      <div style={styles.pmHeroPanel}>
+                        <div>
+                          <p style={styles.label}>Delivery Planning</p>
+                          <h3 style={styles.itemTitle}>LOE, cost, sprint plan, and timeline</h3>
+                          <p style={styles.bodyText}>
+                            Give the Project Manager dates, rates, and team capacity. It will turn the generated package into a delivery plan with Phase 0, sprints, SIT, UAT, deployment, hypercare, and maintenance.
+                          </p>
                         </div>
-                        <div style={styles.stackSmall}>
-                          {planningInputs.role_rates.map((role, index) => (
-                            <div key={`${role.role}-${index}`} style={isMobile ? styles.mobileOneColumnGrid : styles.pmRoleGrid}>
-                              <input
-                                value={role.role}
-                                onChange={(e) => updatePlanningRole(index, "role", e.target.value)}
-                                style={styles.projectInputCompact}
-                                aria-label="Role"
-                              />
-                              <input
-                                type="number"
-                                value={role.hourly_rate}
-                                onChange={(e) => updatePlanningRole(index, "hourly_rate", e.target.value)}
-                                style={styles.projectInputCompact}
-                                aria-label="Hourly rate"
-                              />
-                              <input
-                                type="number"
-                                value={role.count}
-                                onChange={(e) => updatePlanningRole(index, "count", e.target.value)}
-                                style={styles.projectInputCompact}
-                                aria-label="Count"
-                              />
-                              <input
-                                type="number"
-                                value={role.weekly_capacity_hours}
-                                onChange={(e) => updatePlanningRole(index, "weekly_capacity_hours", e.target.value)}
-                                style={styles.projectInputCompact}
-                                aria-label="Weekly capacity"
-                              />
-                              <button onClick={() => removePlanningRole(index)} style={styles.deleteButtonCompact}>Remove</button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div style={isMobile ? styles.mobileOneColumnGrid : styles.twoColumnGrid}>
-                        <label style={styles.toggleRow}>
-                          <input
-                            type="checkbox"
-                            checked={planningInputs.include_maintenance}
-                            onChange={(e) => updatePlanningInput("include_maintenance", e.target.checked)}
-                          />
-                          Include maintenance estimate
-                        </label>
-                        <label style={styles.toggleRow}>
-                          <input
-                            type="checkbox"
-                            checked={planningInputs.include_training}
-                            onChange={(e) => updatePlanningInput("include_training", e.target.checked)}
-                          />
-                          Include training/change support
-                        </label>
-                        <label style={styles.toggleRow}>
-                          <input
-                            type="checkbox"
-                            checked={planningInputs.data_migration_needed}
-                            onChange={(e) => updatePlanningInput("data_migration_needed", e.target.checked)}
-                          />
-                          Data migration needed
-                        </label>
-                        <label style={styles.toggleRow}>
-                          <input
-                            type="checkbox"
-                            checked={planningInputs.integrations_needed}
-                            onChange={(e) => updatePlanningInput("integrations_needed", e.target.checked)}
-                          />
-                          Integrations needed
-                        </label>
-                      </div>
-
-                      <div style={styles.exportActions}>
-                        <button
-                          onClick={generateProjectManagerPlan}
-                          disabled={projectPlanLoading || loading}
-                          style={{
-                            ...styles.button,
-                            opacity: projectPlanLoading || loading ? 0.65 : 1,
-                            cursor: projectPlanLoading || loading ? "not-allowed" : "pointer",
-                          }}
-                        >
-                          {projectPlanLoading ? "Generating Plan..." : "Generate LOE / Cost / Timeline"}
-                        </button>
-                        {projectPlan && (
-                          <button onClick={() => copyToClipboard(buildProjectPlanMarkdown(projectPlan, planningInputs.currency))} style={styles.secondaryButton}>
-                            Copy Plan
+                        <div style={styles.pmHeroActions}>
+                          <button
+                            onClick={generateProjectManagerPlan}
+                            disabled={projectPlanLoading || loading}
+                            style={{
+                              ...styles.button,
+                              opacity: projectPlanLoading || loading ? 0.65 : 1,
+                              cursor: projectPlanLoading || loading ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {projectPlanLoading ? "Building Plan..." : projectPlan ? "Recalculate Plan" : "Generate Plan"}
                           </button>
-                        )}
+                          {projectPlan && (
+                            <button onClick={() => copyToClipboard(buildProjectPlanMarkdown(projectPlan, planningInputs.currency))} style={styles.secondaryButton}>
+                              Copy Plan
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      {projectPlan && (
-                        <div style={styles.stack}>
-                          <div style={styles.innerCard}>
-                            <p style={styles.label}>Plan Summary</p>
-                            <h3 style={styles.itemTitle}>{safeText(projectPlan.project_plan_summary?.target_deployment_feasibility) || "Timeline feasibility not provided"}</h3>
-                            <p style={styles.bodyText}>{safeText(projectPlan.project_plan_summary?.summary)}</p>
-                            <div style={styles.packagePillRow}>
-                              <span style={styles.softPill}>Duration: {safeText(projectPlan.project_plan_summary?.estimated_duration_weeks) || "—"} weeks</span>
-                              <span style={styles.softPill}>Complexity: {safeText(projectPlan.project_plan_summary?.complexity) || "—"}</span>
-                              <span style={styles.softPill}>Confidence: {safeText(projectPlan.project_plan_summary?.confidence_level) || "—"}</span>
-                            </div>
+                      <div style={styles.pmSetupGrid}>
+                        <div style={styles.pmSetupCard}>
+                          <p style={styles.label}>Schedule Inputs</p>
+                          <div style={styles.pmInputGrid}>
+                            <label style={styles.projectField}>
+                              <span style={styles.projectLabel}>Start date</span>
+                              <input type="date" value={planningInputs.project_start_date} onChange={(e) => updatePlanningInput("project_start_date", e.target.value)} style={styles.projectInputCompact} />
+                            </label>
+                            <label style={styles.projectField}>
+                              <span style={styles.projectLabel}>Go-live date</span>
+                              <input type="date" value={planningInputs.target_go_live_date} onChange={(e) => updatePlanningInput("target_go_live_date", e.target.value)} style={styles.projectInputCompact} />
+                            </label>
+                            <label style={styles.projectField}>
+                              <span style={styles.projectLabel}>Delivery model</span>
+                              <select value={planningInputs.delivery_model} onChange={(e) => updatePlanningInput("delivery_model", e.target.value as PlanningInputs["delivery_model"])} style={styles.workspaceSelectCompact}>
+                                <option value="aggressive">Aggressive</option>
+                                <option value="normal">Normal</option>
+                                <option value="conservative">Conservative</option>
+                              </select>
+                            </label>
+                            <label style={styles.projectField}>
+                              <span style={styles.projectLabel}>Currency</span>
+                              <select value={planningInputs.currency} onChange={(e) => updatePlanningInput("currency", e.target.value)} style={styles.workspaceSelectCompact}>
+                                <option value="USD">USD</option><option value="CAD">CAD</option><option value="GBP">GBP</option><option value="EUR">EUR</option><option value="INR">INR</option>
+                              </select>
+                            </label>
                           </div>
+                        </div>
 
-                          <div style={isMobile ? styles.mobileOneColumnGrid : styles.threeColumnGrid}>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Likely LOE</p>
-                              <p style={styles.snapshotNumber}>{safeText(projectPlan.total_loe?.likely_hours) || "—"}</p>
-                              <p style={styles.snapshotText}>hours</p>
-                            </div>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Likely Implementation</p>
-                              <p style={styles.snapshotNumber}>{formatPlanCurrency(projectPlan.cost_estimate?.implementation_likely, planningInputs.currency)}</p>
-                            </div>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Monthly Maintenance</p>
-                              <p style={styles.snapshotNumber}>{formatPlanCurrency(projectPlan.cost_estimate?.monthly_maintenance_cost, planningInputs.currency)}</p>
-                            </div>
+                        <div style={styles.pmSetupCard}>
+                          <p style={styles.label}>Delivery Scope Add-ons</p>
+                          <div style={styles.pmToggleGrid}>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.include_maintenance} onChange={(e) => updatePlanningInput("include_maintenance", e.target.checked)} />Maintenance</label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.include_training} onChange={(e) => updatePlanningInput("include_training", e.target.checked)} />Training / change</label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.data_migration_needed} onChange={(e) => updatePlanningInput("data_migration_needed", e.target.checked)} />Data migration</label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.integrations_needed} onChange={(e) => updatePlanningInput("integrations_needed", e.target.checked)} />Integrations</label>
                           </div>
+                          <div style={styles.pmInputGrid}>
+                            <label style={styles.projectField}>
+                              <span style={styles.projectLabel}>Hypercare weeks</span>
+                              <input type="number" min="0" value={planningInputs.hypercare_weeks} onChange={(e) => updatePlanningInput("hypercare_weeks", Number(e.target.value) || 0)} style={styles.projectInputCompact} />
+                            </label>
+                            <label style={styles.projectField}>
+                              <span style={styles.projectLabel}>Maintenance months</span>
+                              <input type="number" min="0" value={planningInputs.maintenance_months} onChange={(e) => updatePlanningInput("maintenance_months", Number(e.target.value) || 0)} style={styles.projectInputCompact} />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
 
-                          <div style={styles.innerCard}>
-                            <p style={styles.label}>Phase Plan</p>
-                            <div style={styles.stackSmall}>
-                              {safeList(projectPlan.phase_plan).map((phase: any, index) => (
-                                <div key={index} style={styles.riskBox}>
-                                  <p style={styles.riskTitle}>{index + 1}. {safeText(phase.phase)}</p>
-                                  <p style={styles.bodyText}>{safeText(phase.objective)}</p>
-                                  <p style={styles.muted}>Duration: {safeText(phase.duration_weeks)} weeks · Cost: {formatPlanCurrency(phase.estimated_cost, planningInputs.currency)}</p>
-                                  <ul style={styles.list}>
-                                    {safeList(phase.deliverables).slice(0, 6).map((item, itemIndex) => (
-                                      <li key={itemIndex}>{safeText(item)}</li>
-                                    ))}
-                                  </ul>
-                                </div>
+                      {projectPlan && (() => {
+                        const adjustedPhases = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides);
+                        const timelineWeeks = getTimelineWeeksFromPhases(adjustedPhases);
+                        const sprintList = getPlanSprintList(projectPlan, adjustedPhases);
+                        const costItems = getCostChartItems(projectPlan, planningInputs.currency);
+                        const maxCost = Math.max(1, ...costItems.map((item) => item.value));
+                        const roleHourItems = getRoleHourItems(projectPlan, planningInputs.role_rates);
+                        const maxRoleHours = Math.max(1, ...roleHourItems.map((item) => item.hours));
+
+                        return (
+                          <div style={styles.stack}>
+                            <div style={styles.pmKpiGrid}>
+                              <div style={styles.pmKpiCard}><p style={styles.label}>Likely Cost</p><p style={styles.pmKpiNumber}>{formatPlanCurrency(projectPlan.cost_estimate?.implementation_likely, planningInputs.currency)}</p><p style={styles.snapshotText}>implementation estimate</p></div>
+                              <div style={styles.pmKpiCard}><p style={styles.label}>Likely Hours</p><p style={styles.pmKpiNumber}>{safeText(projectPlan.total_loe?.likely_hours) || "—"}</p><p style={styles.snapshotText}>delivery LOE</p></div>
+                              <div style={styles.pmKpiCard}><p style={styles.label}>Timeline</p><p style={styles.pmKpiNumber}>{safeText(projectPlan.project_plan_summary?.estimated_duration_weeks) || timelineWeeks}</p><p style={styles.snapshotText}>weeks estimated</p></div>
+                              <div style={styles.pmKpiCard}><p style={styles.label}>Monthly Support</p><p style={styles.pmKpiNumber}>{formatPlanCurrency(projectPlan.cost_estimate?.monthly_maintenance_cost, planningInputs.currency)}</p><p style={styles.snapshotText}>post go-live</p></div>
+                            </div>
+
+                            <div style={styles.pmPlanSummaryCard}>
+                              <div>
+                                <p style={styles.label}>Plan Verdict</p>
+                                <h3 style={styles.itemTitle}>{safeText(projectPlan.project_plan_summary?.target_deployment_feasibility) || "Timeline feasibility not provided"}</h3>
+                                <p style={styles.bodyText}>{safeText(projectPlan.project_plan_summary?.summary)}</p>
+                              </div>
+                              <div style={styles.packagePillRow}>
+                                <span style={styles.softPill}>Complexity: {safeText(projectPlan.project_plan_summary?.complexity) || "—"}</span>
+                                <span style={styles.softPill}>Confidence: {safeText(projectPlan.project_plan_summary?.confidence_level) || "—"}</span>
+                                <span style={styles.softPill}>Model: {planningInputs.delivery_model}</span>
+                              </div>
+                            </div>
+
+                            <div style={styles.pmViewTabs}>
+                              {[["overview", "Overview"], ["timeline", "Timeline / Sprints"], ["cost", "Cost"], ["team", "Team"]].map(([view, label]) => (
+                                <button key={view} onClick={() => setActivePlanView(view as typeof activePlanView)} style={activePlanView === view ? styles.pmViewTabActive : styles.pmViewTab}>{label}</button>
                               ))}
                             </div>
-                          </div>
 
-                          <div style={isMobile ? styles.mobileOneColumnGrid : styles.twoColumnGrid}>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Timeline Risks</p>
-                              <ul style={styles.list}>{safeList(projectPlan.timeline_risks).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul>
-                            </div>
-                            <div style={styles.innerCard}>
-                              <p style={styles.label}>Cost Risks</p>
-                              <ul style={styles.list}>{safeList(projectPlan.cost_risks).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul>
-                            </div>
-                          </div>
+                            {activePlanView === "overview" && (
+                              <div style={isMobile ? styles.mobileOneColumnGrid : styles.twoColumnGrid}>
+                                <div style={styles.innerCard}>
+                                  <p style={styles.label}>LOE Range</p>
+                                  <div style={styles.pmRangeBar}>
+                                    <div style={{ ...styles.pmRangeSegment, width: "30%" }}><strong>{safeText(projectPlan.total_loe?.low_hours) || "—"}</strong><span>Low</span></div>
+                                    <div style={{ ...styles.pmRangeSegment, width: "40%" }}><strong>{safeText(projectPlan.total_loe?.likely_hours) || "—"}</strong><span>Likely</span></div>
+                                    <div style={{ ...styles.pmRangeSegment, width: "30%" }}><strong>{safeText(projectPlan.total_loe?.high_hours) || "—"}</strong><span>High</span></div>
+                                  </div>
+                                </div>
+                                <div style={styles.innerCard}><p style={styles.label}>Recommended Next Steps</p><ul style={styles.list}>{safeList(projectPlan.recommended_next_steps).slice(0, 5).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
+                                <div style={styles.innerCard}><p style={styles.label}>Scope Reductions If Date Is Tight</p><ul style={styles.list}>{safeList(projectPlan.mvp_scope_adjustments_to_hit_date).slice(0, 6).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
+                                <div style={styles.innerCard}><p style={styles.label}>Delivery Sequence Rationale</p><ul style={styles.list}>{safeList(projectPlan.delivery_sequence_rationale).slice(0, 6).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
+                              </div>
+                            )}
 
-                          <div style={styles.innerCard}>
-                            <p style={styles.label}>Recommended Next Steps</p>
-                            <ul style={styles.list}>{safeList(projectPlan.recommended_next_steps).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul>
+                            {activePlanView === "timeline" && (
+                              <div style={styles.stack}>
+                                <div style={styles.pmTimelineHeader}><div><p style={styles.label}>Editable Delivery Timeline</p><p style={styles.bodyText}>Use + / - to adjust phase bars locally. Recalculate the plan to have the PM agent rebuild costs and sprint sequencing.</p></div><button onClick={resetPhaseDurations} style={styles.secondaryButton}>Reset Bars</button></div>
+                                <div style={styles.pmGanttCard}>
+                                  <div style={styles.pmGanttScale}>{Array.from({ length: Math.min(timelineWeeks, 18) }).map((_item, weekIndex) => <span key={weekIndex}>W{weekIndex + 1}</span>)}</div>
+                                  {adjustedPhases.map((phase, index) => {
+                                    const left = `${((phase.startWeek - 1) / timelineWeeks) * 100}%`;
+                                    const width = `${Math.max(8, (phase.durationWeeks / timelineWeeks) * 100)}%`;
+                                    return (
+                                      <div key={index} style={styles.pmGanttRow}>
+                                        <div style={styles.pmGanttLabel}><strong>{phase.label}</strong><span>{phase.durationWeeks} wk Â· {formatPlanCurrency(phase.estimated_cost, planningInputs.currency)}</span></div>
+                                        <div style={styles.pmGanttTrack}><div style={{ ...styles.pmGanttBar, left, width }}>W{phase.startWeek}–W{phase.endWeek}</div></div>
+                                        <div style={styles.pmGanttControls}><button onClick={() => adjustPhaseDuration(index, -1)} style={styles.tinyControlButton}>−</button><button onClick={() => adjustPhaseDuration(index, 1)} style={styles.tinyControlButton}>+</button></div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                <div style={styles.innerCard}>
+                                  <p style={styles.label}>Sprint Plan</p>
+                                  <div style={styles.pmSprintGrid}>
+                                    {sprintList.map((sprint: any, index: number) => (
+                                      <div key={index} style={styles.pmSprintCard}>
+                                        <div style={styles.cardTitleRow}><p style={styles.riskTitle}>{safeText(sprint.sprintLabel)}</p><span style={styles.softPill}>W{sprint.startWeek}–W{sprint.endWeek}</span></div>
+                                        <p style={styles.bodyText}>{safeText(sprint.objective)}</p>
+                                        <ul style={styles.list}>{safeList(sprint.workItems).slice(0, 5).map((item, itemIndex) => <li key={itemIndex}>{safeText(item)}</li>)}</ul>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {activePlanView === "cost" && (
+                              <div style={styles.stack}>
+                                <div style={styles.innerCard}>
+                                  <p style={styles.label}>Cost Breakdown</p>
+                                  <div style={styles.pmCostChart}>{costItems.map((item) => <div key={item.label} style={styles.pmCostRow}><div style={styles.pmCostLabel}>{item.label}</div><div style={styles.pmCostTrack}><div style={{ ...styles.pmCostBar, width: `${Math.max(4, (item.value / maxCost) * 100)}%` }} /></div><div style={styles.pmCostValue}>{item.display}</div></div>)}</div>
+                                </div>
+                                <div style={isMobile ? styles.mobileOneColumnGrid : styles.twoColumnGrid}>
+                                  <div style={styles.innerCard}><p style={styles.label}>Timeline Risks</p><ul style={styles.list}>{safeList(projectPlan.timeline_risks).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
+                                  <div style={styles.innerCard}><p style={styles.label}>Cost Risks</p><ul style={styles.list}>{safeList(projectPlan.cost_risks).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
+                                </div>
+                              </div>
+                            )}
+
+                            {activePlanView === "team" && (
+                              <div style={styles.stack}>
+                                <div style={styles.innerCard}>
+                                  <div style={styles.cardTitleRow}><div><p style={styles.label}>Team and Rates</p><p style={styles.bodyText}>Adjust rate, count, and weekly capacity. Recalculate to update cost and delivery feasibility.</p></div><button onClick={addPlanningRole} style={styles.secondaryButton}>Add Role</button></div>
+                                  <div style={styles.stackSmall}>{planningInputs.role_rates.map((role, index) => <div key={`${role.role}-${index}`} style={isMobile ? styles.mobileOneColumnGrid : styles.pmRoleGrid}><input value={role.role} onChange={(e) => updatePlanningRole(index, "role", e.target.value)} style={styles.projectInputCompact} aria-label="Role" /><input type="number" value={role.hourly_rate} onChange={(e) => updatePlanningRole(index, "hourly_rate", e.target.value)} style={styles.projectInputCompact} aria-label="Hourly rate" /><input type="number" value={role.count} onChange={(e) => updatePlanningRole(index, "count", e.target.value)} style={styles.projectInputCompact} aria-label="Count" /><input type="number" value={role.weekly_capacity_hours} onChange={(e) => updatePlanningRole(index, "weekly_capacity_hours", e.target.value)} style={styles.projectInputCompact} aria-label="Weekly capacity" /><button onClick={() => removePlanningRole(index)} style={styles.deleteButtonCompact}>Remove</button></div>)}</div>
+                                </div>
+                                <div style={styles.innerCard}>
+                                  <p style={styles.label}>Hours by Role</p>
+                                  <div style={styles.pmCostChart}>{roleHourItems.map((item: any) => <div key={item.role} style={styles.pmCostRow}><div style={styles.pmCostLabel}>{item.role}</div><div style={styles.pmCostTrack}><div style={{ ...styles.pmRoleBar, width: `${Math.max(4, (item.hours / maxRoleHours) * 100)}%` }} /></div><div style={styles.pmCostValue}>{safeText(item.hours)} hrs</div></div>)}</div>
+                                </div>
+                              </div>
+                            )}
                           </div>
+                        );
+                      })()}
+
+                      {!projectPlan && (
+                        <div style={styles.pmEmptyState}>
+                          <p style={styles.label}>No Plan Yet</p>
+                          <h3 style={styles.itemTitle}>Generate a delivery plan from the current package.</h3>
+                          <p style={styles.bodyText}>The output will show graphs, likely cost, LOE, phase timeline, sprint-by-sprint work, SIT/UAT, deployment, hypercare, and maintenance.</p>
                         </div>
                       )}
                     </div>
                   </Card>
                 )}
+
 
                 {packageTab === "delivery_lead" && (
                   <Card title="Delivery Lead Copilot">
@@ -10457,5 +10567,49 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "16px",
     padding: "14px",
   },
+
+  pmHeroPanel: {
+    border: "1px solid #CBD5E1",
+    background: "linear-gradient(135deg, #F8FAFC 0%, #EEF2FF 100%)",
+    borderRadius: "18px",
+    padding: "18px",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "16px",
+    alignItems: "flex-start",
+  },
+  pmHeroActions: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" },
+  pmSetupGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "14px" },
+  pmSetupCard: { border: "1px solid #E2E8F0", background: "#FFFFFF", borderRadius: "16px", padding: "14px" },
+  pmInputGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px", marginTop: "10px" },
+  pmToggleGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", marginTop: "10px", marginBottom: "10px" },
+  pmKpiGrid: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "12px" },
+  pmKpiCard: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "18px", padding: "16px", minHeight: "112px" },
+  pmKpiNumber: { color: "#2563EB", fontSize: "28px", lineHeight: 1.1, fontWeight: 950, margin: "8px 0 4px" },
+  pmPlanSummaryCard: { border: "1px solid #CBD5E1", background: "#F8FAFC", borderRadius: "18px", padding: "16px", display: "flex", justifyContent: "space-between", gap: "14px", alignItems: "flex-start" },
+  pmViewTabs: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px", padding: "8px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "16px" },
+  pmViewTab: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "12px", padding: "10px 12px", color: "#334155", fontWeight: 900, cursor: "pointer" },
+  pmViewTabActive: { border: "1px solid #4F46E5", background: "linear-gradient(135deg, #2563EB, #7C3AED)", borderRadius: "12px", padding: "10px 12px", color: "#FFFFFF", fontWeight: 950, cursor: "pointer" },
+  pmRangeBar: { display: "flex", overflow: "hidden", borderRadius: "14px", border: "1px solid #CBD5E1", background: "#EFF6FF", minHeight: "84px" },
+  pmRangeSegment: { padding: "14px", display: "flex", flexDirection: "column", justifyContent: "center", gap: "4px", borderRight: "1px solid #CBD5E1", color: "#1E293B", fontSize: "13px", fontWeight: 800 },
+  pmTimelineHeader: { display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center" },
+  pmGanttCard: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "18px", padding: "14px", overflowX: "auto" },
+  pmGanttScale: { display: "grid", gridTemplateColumns: "repeat(18, minmax(44px, 1fr))", color: "#64748B", fontSize: "11px", fontWeight: 800, marginLeft: "220px", marginBottom: "8px" },
+  pmGanttRow: { display: "grid", gridTemplateColumns: "200px minmax(420px, 1fr) 72px", gap: "10px", alignItems: "center", padding: "10px 0", borderTop: "1px solid #E2E8F0" },
+  pmGanttLabel: { display: "flex", flexDirection: "column", gap: "4px", color: "#334155", fontSize: "12px" },
+  pmGanttTrack: { position: "relative", height: "34px", borderRadius: "999px", background: "#F1F5F9", border: "1px solid #E2E8F0", overflow: "hidden" },
+  pmGanttBar: { position: "absolute", top: "4px", bottom: "4px", borderRadius: "999px", background: "linear-gradient(135deg, #2563EB, #7C3AED)", color: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" },
+  pmGanttControls: { display: "flex", gap: "6px", justifyContent: "flex-end" },
+  tinyControlButton: { width: "30px", height: "30px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#1D4ED8", fontWeight: 950, cursor: "pointer" },
+  pmSprintGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px" },
+  pmSprintCard: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "16px", padding: "14px" },
+  pmCostChart: { display: "flex", flexDirection: "column", gap: "12px" },
+  pmCostRow: { display: "grid", gridTemplateColumns: "180px minmax(220px, 1fr) 140px", gap: "12px", alignItems: "center" },
+  pmCostLabel: { color: "#334155", fontSize: "13px", fontWeight: 900 },
+  pmCostTrack: { height: "18px", borderRadius: "999px", background: "#F1F5F9", border: "1px solid #E2E8F0", overflow: "hidden" },
+  pmCostBar: { height: "100%", borderRadius: "999px", background: "linear-gradient(135deg, #2563EB, #7C3AED)" },
+  pmRoleBar: { height: "100%", borderRadius: "999px", background: "linear-gradient(135deg, #0EA5E9, #2563EB)" },
+  pmCostValue: { color: "#0F172A", fontSize: "13px", fontWeight: 900, textAlign: "right" },
+  pmEmptyState: { border: "1px dashed #CBD5E1", background: "#F8FAFC", borderRadius: "18px", padding: "24px", textAlign: "center" },
 
 };
