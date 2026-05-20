@@ -4012,6 +4012,9 @@ ${uat.expected_result}
   }
 
   async function exportDocx() {
+    const exportResult = buildPersistentResult() || result;
+    if (!exportResult) return;
+
     const blockReason = getExportBlockReason();
     if (blockReason) {
       alert(blockReason);
@@ -4033,97 +4036,97 @@ ${uat.expected_result}
 
     children.push(docHeading("Delivery Lead Review"));
     children.push(docHeading("Understanding", HeadingLevel.HEADING_2));
-    children.push(docParagraph(result.delivery_lead_review?.understanding));
+    children.push(docParagraph(exportResult.delivery_lead_review?.understanding));
 
     children.push(docHeading("MVP Scope", HeadingLevel.HEADING_2));
-    result.delivery_lead_review?.mvp_scope?.forEach((item) =>
+    exportResult.delivery_lead_review?.mvp_scope?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Phase 2 Scope", HeadingLevel.HEADING_2));
-    result.delivery_lead_review?.phase_2_scope?.forEach((item) =>
+    exportResult.delivery_lead_review?.phase_2_scope?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Clarifying Questions", HeadingLevel.HEADING_2));
-    result.delivery_lead_review?.clarifying_questions?.forEach((item) =>
+    exportResult.delivery_lead_review?.clarifying_questions?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(
       docHeading("Missing / Weak Requirements", HeadingLevel.HEADING_2),
     );
-    result.delivery_lead_review?.missing_requirements?.forEach((item) => {
+    exportResult.delivery_lead_review?.missing_requirements?.forEach((item) => {
       children.push(docBullet(`Gap: ${item.gap}`));
       children.push(docParagraph(`Why it matters: ${item.why_it_matters}`));
     });
 
     children.push(docHeading("Assumptions", HeadingLevel.HEADING_2));
-    result.delivery_lead_review?.assumptions?.forEach((item) =>
+    exportResult.delivery_lead_review?.assumptions?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Recommended Next Steps", HeadingLevel.HEADING_2));
-    result.delivery_lead_review?.recommended_next_steps?.forEach((item) =>
+    exportResult.delivery_lead_review?.recommended_next_steps?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(
       docHeading(
-        result.generation_mode === "quick"
+        exportResult.generation_mode === "quick"
           ? "Quick Readiness Score"
           : "Delivery Quality Score",
       ),
     );
     children.push(
       docParagraph(
-        `Overall Score: ${scoreText(result.quality_score?.overall_score)}`,
+        `Overall Score: ${scoreText(exportResult.quality_score?.overall_score)}`,
       ),
     );
     children.push(
       docParagraph(
-        `Completeness Score: ${scoreText(result.quality_score?.completeness_score)}`,
+        `Completeness Score: ${scoreText(exportResult.quality_score?.completeness_score)}`,
       ),
     );
     children.push(
       docParagraph(
-        `Risk Score: ${scoreText(result.quality_score?.risk_score)}`,
+        `Risk Score: ${scoreText(exportResult.quality_score?.risk_score)}`,
       ),
     );
     children.push(
       docParagraph(
-        `Readiness Score: ${scoreText(result.quality_score?.readiness_score)}`,
+        `Readiness Score: ${scoreText(exportResult.quality_score?.readiness_score)}`,
       ),
     );
     children.push(
       docParagraph(
-        `Rating: ${result.quality_score?.rating || "Score unavailable"}`,
+        `Rating: ${exportResult.quality_score?.rating || "Score unavailable"}`,
       ),
     );
-    children.push(docParagraph(result.quality_score?.summary));
+    children.push(docParagraph(exportResult.quality_score?.summary));
 
     children.push(docHeading("Strengths", HeadingLevel.HEADING_2));
-    result.quality_score?.strengths?.forEach((item) =>
+    exportResult.quality_score?.strengths?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Weaknesses", HeadingLevel.HEADING_2));
-    result.quality_score?.weaknesses?.forEach((item) =>
+    exportResult.quality_score?.weaknesses?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Recommended Fixes", HeadingLevel.HEADING_2));
-    result.quality_score?.recommended_fixes?.forEach((item) =>
+    exportResult.quality_score?.recommended_fixes?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
-    if (result.agent_review) {
+    if (exportResult.agent_review) {
       children.push(docHeading("Agent Review Board"));
       children.push(docHeading("Overall Review Summary", HeadingLevel.HEADING_2));
-      children.push(docParagraph(result.agent_review.overall_review_summary));
-      children.push(docParagraph(`Final Verdict: ${result.agent_review.final_verdict || "Not provided"}`));
+      children.push(docParagraph(exportResult.agent_review.overall_review_summary));
+      children.push(docParagraph(`Final Verdict: ${exportResult.agent_review.final_verdict || "Not provided"}`));
 
-      const consolidatedDecisions = getConsolidatedDecisions(result.agent_review);
+      const consolidatedDecisions = getConsolidatedDecisions(exportResult.agent_review);
       children.push(docHeading("Business Decisions Needed", HeadingLevel.HEADING_2));
       if (consolidatedDecisions.length) {
         consolidatedDecisions.forEach((decision, index) => {
@@ -4139,7 +4142,7 @@ ${uat.expected_result}
       }
 
       children.push(docHeading("Priority Fixes", HeadingLevel.HEADING_2));
-      result.agent_review.priority_fixes?.forEach((fix) =>
+      exportResult.agent_review.priority_fixes?.forEach((fix) =>
         children.push(docBullet(`${fix.priority}: ${fix.fix} — ${fix.reason}`)),
       );
     }
@@ -4233,20 +4236,20 @@ ${uat.expected_result}
 
 
     children.push(docHeading("Process / State Flow Diagram"));
-    children.push(docParagraph(result.process_diagram?.title));
-    children.push(docParagraph(result.process_diagram?.summary));
+    children.push(docParagraph(exportResult.process_diagram?.title));
+    children.push(docParagraph(exportResult.process_diagram?.summary));
     children.push(docHeading("Mermaid Code", HeadingLevel.HEADING_2));
-    children.push(docParagraph(result.process_diagram?.mermaid_code));
+    children.push(docParagraph(exportResult.process_diagram?.mermaid_code));
     children.push(docHeading("Diagram Notes", HeadingLevel.HEADING_2));
-    result.process_diagram?.diagram_notes?.forEach((item) =>
+    exportResult.process_diagram?.diagram_notes?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Requirement Summary"));
-    children.push(docParagraph(result.requirement_summary));
+    children.push(docParagraph(exportResult.requirement_summary));
 
     children.push(docHeading("Recommended App Type"));
-    children.push(docParagraph(result.recommended_app_type));
+    children.push(docParagraph(exportResult.recommended_app_type));
 
     const platformFitDecision = getPlatformFitDecision(result);
     children.push(docHeading("ServiceNow Platform Fit / OOB vs Custom Decision"));
@@ -4394,13 +4397,13 @@ ${uat.expected_result}
     }
 
     children.push(docHeading("Solution Design"));
-    children.push(docParagraph(result.solution_design));
+    children.push(docParagraph(exportResult.solution_design));
 
     children.push(docHeading("Proposed Tables"));
     children.push(
       docTable(
         ["Table", "Type", "Purpose"],
-        result.tables?.map((table) => [
+        exportResult.tables?.map((table) => [
           table.table_name,
           table.type,
           table.purpose,
@@ -4409,23 +4412,23 @@ ${uat.expected_result}
     );
 
     children.push(docHeading("Workflow Steps"));
-    result.workflow_steps?.forEach((step) => children.push(docBullet(step)));
+    exportResult.workflow_steps?.forEach((step) => children.push(docBullet(step)));
 
     children.push(docHeading("Risks"));
-    result.risks?.forEach((risk) => {
+    exportResult.risks?.forEach((risk) => {
       children.push(docBullet(`Risk: ${risk.risk}`));
       children.push(docParagraph(`Mitigation: ${risk.mitigation}`));
     });
 
     children.push(docHeading("Open Questions"));
-    result.open_questions?.forEach((question) =>
+    exportResult.open_questions?.forEach((question) =>
       children.push(docBullet(question)),
     );
 
     children.push(docHeading("Stories by Delivery Epic"));
-    if (result.epic) {
+    if (exportResult.epic) {
       children.push(docHeading("Package Epic", HeadingLevel.HEADING_2));
-      children.push(docParagraph(result.epic));
+      children.push(docParagraph(exportResult.epic));
     }
 
     const groupedStoriesForExport = getNormalizedStoryGroups(result);
@@ -4480,23 +4483,23 @@ ${uat.expected_result}
     }
 
     children.push(docHeading("Technical Notes"));
-    children.push(docParagraph(result.developer?.implementation_summary));
+    children.push(docParagraph(exportResult.developer?.implementation_summary));
 
     children.push(docHeading("ServiceNow Objects", HeadingLevel.HEADING_2));
-    result.developer?.service_now_objects?.forEach((object) => {
+    exportResult.developer?.service_now_objects?.forEach((object) => {
       children.push(docBullet(`${object.name} (${object.object_type})`));
       children.push(docParagraph(object.purpose));
     });
 
     children.push(docHeading("Flow Designer Notes", HeadingLevel.HEADING_2));
-    result.developer?.flow_designer_notes?.forEach((flow) => {
+    exportResult.developer?.flow_designer_notes?.forEach((flow) => {
       children.push(docHeading(flow.flow_name, HeadingLevel.HEADING_3));
       children.push(docParagraph(`Trigger: ${flow.trigger}`));
       flow.steps?.forEach((step) => children.push(docBullet(step)));
     });
 
     children.push(docHeading("Business Rules", HeadingLevel.HEADING_2));
-    result.developer?.business_rules?.forEach((rule) => {
+    exportResult.developer?.business_rules?.forEach((rule) => {
       children.push(docHeading(rule.name, HeadingLevel.HEADING_3));
       children.push(docParagraph(`When: ${rule.when}`));
       children.push(docParagraph(`Condition: ${rule.condition}`));
@@ -4504,30 +4507,30 @@ ${uat.expected_result}
     });
 
     children.push(docHeading("ACL Notes", HeadingLevel.HEADING_2));
-    result.developer?.acl_notes?.forEach((item) =>
+    exportResult.developer?.acl_notes?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Notification Notes", HeadingLevel.HEADING_2));
-    result.developer?.notification_notes?.forEach((item) =>
+    exportResult.developer?.notification_notes?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Deployment Notes", HeadingLevel.HEADING_2));
-    result.developer?.deployment_notes?.forEach((item) =>
+    exportResult.developer?.deployment_notes?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("QA"));
-    children.push(docParagraph(result.qa?.test_strategy));
+    children.push(docParagraph(exportResult.qa?.test_strategy));
 
     children.push(docHeading("Test Scenarios", HeadingLevel.HEADING_2));
-    result.qa?.test_scenarios?.forEach((scenario) =>
+    exportResult.qa?.test_scenarios?.forEach((scenario) =>
       children.push(docBullet(scenario)),
     );
 
     children.push(docHeading("Test Cases", HeadingLevel.HEADING_2));
-    result.qa?.test_cases?.forEach((test) => {
+    exportResult.qa?.test_cases?.forEach((test) => {
       children.push(
         docHeading(`${test.id}: ${test.title}`, HeadingLevel.HEADING_3),
       );
@@ -4541,7 +4544,7 @@ ${uat.expected_result}
     });
 
     children.push(docHeading("UAT Cases", HeadingLevel.HEADING_2));
-    result.qa?.uat_cases?.forEach((uat) => {
+    exportResult.qa?.uat_cases?.forEach((uat) => {
       children.push(
         docHeading(`${uat.id}: ${uat.title}`, HeadingLevel.HEADING_3),
       );
@@ -4551,17 +4554,17 @@ ${uat.expected_result}
     });
 
     children.push(docHeading("Edge Cases", HeadingLevel.HEADING_2));
-    result.qa?.edge_cases?.forEach((edgeCase) =>
+    exportResult.qa?.edge_cases?.forEach((edgeCase) =>
       children.push(docBullet(edgeCase)),
     );
 
     children.push(docHeading("Test Data Needs", HeadingLevel.HEADING_2));
-    result.qa?.test_data_needs?.forEach((item) =>
+    exportResult.qa?.test_data_needs?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Regression Areas", HeadingLevel.HEADING_2));
-    result.qa?.regression_areas?.forEach((item) =>
+    exportResult.qa?.regression_areas?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
