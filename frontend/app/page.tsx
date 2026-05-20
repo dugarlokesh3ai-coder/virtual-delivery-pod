@@ -248,9 +248,6 @@ type DeliveryResult = {
   developer: DeveloperOutput | null;
   qa: QAOutput | null;
   quality_score: QualityScore | null;
-  project_manager_plan?: ProjectManagerPlan | null;
-  planning_inputs?: PlanningInputs | null;
-  phase_duration_overrides?: Record<number, number> | null;
 };
 
 type QualityScore = {
@@ -858,7 +855,7 @@ function getPhaseDurationWeeks(phase: any, override?: number) {
 function getPhaseEndWeek(phase: any, startWeek: number, durationWeeks: number) {
   const explicitEnd = parsePlanNumber(phase?.end_week, 0);
   if (explicitEnd > 0) return Math.max(startWeek, explicitEnd);
-  return startWeek + Math.max(durationWeeks, 1) - 1;
+  return Number((startWeek + Math.max(durationWeeks, 0.5) - 0.5).toFixed(1));
 }
 
 function getAdjustedPhaseTimeline(plan: ProjectManagerPlan | null | undefined, overrides: Record<number, number>) {
@@ -870,7 +867,7 @@ function getAdjustedPhaseTimeline(plan: ProjectManagerPlan | null | undefined, o
     const explicitStart = parsePlanNumber(phase?.start_week, 0);
     const startWeek = explicitStart > 0 ? explicitStart : cursor;
     const endWeek = getPhaseEndWeek(phase, startWeek, durationWeeks);
-    cursor = endWeek + 1;
+    cursor = Number((endWeek + 0.5).toFixed(1));
 
     return {
       ...phase,
@@ -944,6 +941,232 @@ function getRoleHourItems(plan: ProjectManagerPlan | null | undefined, roleInput
     const hours = Math.round(likelyHours * weight);
     return { role: role.role, hours, cost: hours * role.hourly_rate };
   });
+}
+
+
+function getRoleRate(inputs: PlanningInputs, roleName: string) {
+  const role = inputs.role_rates.find(
+    (item) => item.role.toLowerCase() === roleName.toLowerCase(),
+  );
+  return role?.hourly_rate || 100;
+}
+
+function getPackageComplexityProfile(data: DeliveryResult | null | undefined) {
+  const appType = safeText(data?.recommended_app_type).toLowerCase();
+  const design = `${safeText(data?.solution_design)} ${safeText(data?.requirement_summary)} ${safeText(getPlatformFitDecision(data)?.recommended_approach)}`.toLowerCase();
+  const storyCount = safeList(data?.stories).length;
+  const objectCount = safeList(data?.developer?.service_now_objects).length;
+  const flowCount = safeList(data?.developer?.flow_designer_notes).length;
+  const hasCustomApp = /scoped|custom application|custom app/.test(appType + " " + design);
+  const isCatalog = /catalog|service catalog|request item|sc_cat_item/.test(appType + " " + design);
+  const hasIntegration = /integration|api|external|provisioning/.test(design);
+  const hasSensitive = Boolean(getSensitiveDataControls(data)?.sensitive_data_present === true);
+
+  if (hasCustomApp || storyCount >= 12 || objectCount >= 18 || hasIntegration || hasSensitive) {
+    return { complexity: hasCustomApp ? "Medium" : "High", likelyWeeks: hasCustomApp ? 8 : 12, likelyHours: hasCustomApp ? 420 : 700 };
+  }
+
+  if (isCatalog && storyCount <= 8 && objectCount <= 12 && flowCount <= 2) {
+    return { complexity: "Low", likelyWeeks: 5, likelyHours: 120 };
+  }
+
+  return { complexity: "Medium", likelyWeeks: 7, likelyHours: 240 };
+}
+
+function calculatePhaseCost(loeByRole: Record<string, any>, inputs: PlanningInputs) {
+  return Object.entries(loeByRole || {}).reduce((sum, [role, hours]) => {
+    return sum + parsePlanNumber(hours, 0) * getRoleRate(inputs, role);
+  }, 0);
+}
+
+function buildFallbackPhases(data: DeliveryResult | null | undefined, inputs: PlanningInputs, likelyHours: number) {
+  const profile = getPackageComplexityProfile(data);
+  const isLow = profile.complexity === "Low";
+  const phases = isLow
+    ? [
+        { phase: "Phase 0: Discovery / Decisions", objective: "Confirm approval owners, support group, notification expectations, and go-live assumptions.", duration_weeks: 0.5, activities: ["Confirm app owner and fulfillment group", "Confirm MVP scope", "Validate OOB Service Catalog + Flow Designer approach"], deliverables: ["Decision log", "Confirmed MVP scope"] },
+        { phase: "Phase 1: Catalog Foundation", objective: "Configure catalog item, variables, basic request data capture, and foundation flow shell.", duration_weeks: 1, activities: ["Build catalog item", "Configure access type variable", "Create flow skeleton"], deliverables: ["Catalog item", "Variable set/configuration", "Initial flow"] },
+        { phase: "Phase 2: Approvals and Fulfillment", objective: "Configure manager approval, conditional app owner approval, rejection handling, and fulfillment task creation.", duration_weeks: 1, activities: ["Configure manager approval", "Configure Admin app owner approval", "Create fulfillment task action"], deliverables: ["Approval flow", "Fulfillment task routing"] },
+        { phase: "Phase 3: Notifications and Security Review", objective: "Configure lifecycle notifications and validate standard access controls.", duration_weeks: 0.75, activities: ["Configure notifications", "Validate request/task visibility", "Review audit trail"], deliverables: ["Notification set", "Security validation notes"] },
+        { phase: "Phase 4: SIT / UAT / Fixes", objective: "Execute SIT and UAT flows, resolve defects, and prepare release package.", duration_weeks: 1, activities: ["Run SIT", "Support UAT", "Fix defects"], deliverables: ["Test evidence", "UAT signoff"] },
+        { phase: "Phase 5: Deployment / Hypercare", objective: "Deploy to production, validate go-live, and support early usage.", duration_weeks: Math.max(1, inputs.hypercare_weeks || 1), activities: ["Production deployment", "Smoke test", "Hypercare triage"], deliverables: ["Deployment record", "Hypercare tracker"] },
+      ]
+    : [
+        { phase: "Phase 0: Discovery / Workshop", objective: "Resolve delivery decisions, confirm MVP scope, and validate architecture.", duration_weeks: 1, activities: ["Run workshop", "Confirm decisions", "Validate platform approach"], deliverables: ["Workshop notes", "Decision log"] },
+        { phase: "Phase 1: Foundation Build", objective: "Build data model, core intake experience, roles, and baseline workflow.", duration_weeks: 2, activities: ["Configure data model", "Build form/catalog", "Configure roles"], deliverables: ["Foundation configuration"] },
+        { phase: "Phase 2: Workflow / Approvals", objective: "Build routing, approvals, tasks, and exception handling.", duration_weeks: 2, activities: ["Build workflow", "Configure approvals", "Configure task routing"], deliverables: ["Workflow configuration"] },
+        { phase: "Phase 3: Notifications / Reporting / Security", objective: "Complete communications, reporting, and security validation.", duration_weeks: 1.5, activities: ["Configure notifications", "Build reports", "Validate ACLs"], deliverables: ["Reports", "Security validation"] },
+        { phase: "Phase 4: SIT / UAT / Deployment", objective: "Test, fix, obtain signoff, and deploy.", duration_weeks: 2, activities: ["SIT", "UAT", "Deployment"], deliverables: ["Test evidence", "Go-live approval"] },
+        { phase: "Phase 5: Hypercare", objective: "Support post-go-live stabilization.", duration_weeks: Math.max(1, inputs.hypercare_weeks || 1), activities: ["Daily triage", "Minor fixes", "Transition to support"], deliverables: ["Hypercare closure"] },
+      ];
+
+  const totalDuration = phases.reduce((sum, phase) => sum + Number(phase.duration_weeks || 0), 0) || 1;
+  let cursor = 1;
+
+  return phases.map((phase) => {
+    const duration = Number(phase.duration_weeks || 1);
+    const phaseHours = Math.max(8, Math.round((likelyHours * duration) / totalDuration));
+    const loe_hours_by_role: Record<string, number> = {
+      "Project Manager": Math.round(phaseHours * 0.12),
+      "Delivery Lead": Math.round(phaseHours * 0.08),
+      "Product Owner": Math.round(phaseHours * 0.08),
+      "ServiceNow Architect": Math.round(phaseHours * 0.15),
+      "Business Analyst": Math.round(phaseHours * 0.18),
+      "ServiceNow Developer": Math.round(phaseHours * 0.30),
+      "QA Tester": Math.round(phaseHours * 0.09),
+    };
+    const start = cursor;
+    const end = Number((cursor + duration - 0.5).toFixed(1));
+    cursor = Number((cursor + duration).toFixed(1));
+
+    return {
+      ...phase,
+      start_week: start,
+      end_week: end,
+      loe_hours_by_role,
+      estimated_cost: Math.round(calculatePhaseCost(loe_hours_by_role, inputs)),
+      exit_criteria: ["Phase deliverables reviewed", "No critical blockers remain"],
+    };
+  });
+}
+
+function normalizeProjectManagerPlan(
+  rawPlan: ProjectManagerPlan | null | undefined,
+  data: DeliveryResult | null | undefined,
+  inputs: PlanningInputs,
+): ProjectManagerPlan | null {
+  if (!rawPlan) return null;
+
+  const profile = getPackageComplexityProfile(data);
+  const rawPhases = safeList(rawPlan.phase_plan);
+  const statedWeeks = parsePlanNumber(rawPlan.project_plan_summary?.estimated_duration_weeks, 0);
+  const phaseWeeks = rawPhases.reduce((sum, phase: any) => sum + Math.max(0, parsePlanNumber(phase.duration_weeks, 0)), 0);
+  const planLooksIncomplete = rawPhases.length < 3 || (statedWeeks > 0 && phaseWeeks < statedWeeks * 0.55);
+  const likelyHours = parsePlanNumber(rawPlan.total_loe?.likely_hours, profile.likelyHours) || profile.likelyHours;
+
+  const phase_plan = planLooksIncomplete
+    ? buildFallbackPhases(data, inputs, likelyHours)
+    : rawPhases.map((phase: any) => ({
+        ...phase,
+        duration_weeks: Math.max(0.5, parsePlanNumber(phase.duration_weeks, 1)),
+        estimated_cost: parsePlanNumber(phase.estimated_cost, calculatePhaseCost(phase.loe_hours_by_role || {}, inputs)),
+      }));
+
+  const actualWeeks = Math.max(1, ...phase_plan.map((phase: any) => parsePlanNumber(phase.end_week, 1)));
+  const totalLikelyHours = phase_plan.reduce((sum: number, phase: any) => {
+    return sum + Object.values(phase.loe_hours_by_role || {}).reduce((roleSum: number, value: any) => roleSum + parsePlanNumber(value, 0), 0);
+  }, 0) || likelyHours;
+  const implementationLikely = phase_plan.reduce((sum: number, phase: any) => sum + parsePlanNumber(phase.estimated_cost, 0), 0);
+  const implementationLow = Math.round(implementationLikely * 0.8);
+  const implementationHigh = Math.round(implementationLikely * 1.2);
+  const weeklyHypercareHours = inputs.role_rates.reduce((sum, role) => {
+    const normalizedRole = role.role.toLowerCase();
+    const factor = normalizedRole.includes("developer") || normalizedRole.includes("qa") || normalizedRole.includes("project manager") || normalizedRole.includes("delivery lead") ? 0.2 : 0.05;
+    return sum + role.count * role.weekly_capacity_hours * factor;
+  }, 0);
+  const blendedRate = inputs.role_rates.length
+    ? inputs.role_rates.reduce((sum, role) => sum + role.hourly_rate, 0) / inputs.role_rates.length
+    : 100;
+  const hypercareCost = Math.round(Math.max(0, inputs.hypercare_weeks || 0) * weeklyHypercareHours * blendedRate);
+  const monthlyMaintenanceCost = inputs.include_maintenance
+    ? Math.round(Math.max(8, totalLikelyHours * 0.04) * blendedRate)
+    : 0;
+  const firstYearTotal = implementationLikely + hypercareCost + monthlyMaintenanceCost * Math.max(0, inputs.maintenance_months || 0);
+
+  const roleTotals = new Map<string, { total_hours: number; estimated_cost: number; responsibilities: string[] }>();
+  inputs.role_rates.forEach((role) => roleTotals.set(role.role, { total_hours: 0, estimated_cost: 0, responsibilities: [] }));
+  phase_plan.forEach((phase: any) => {
+    Object.entries(phase.loe_hours_by_role || {}).forEach(([role, hours]) => {
+      const current = roleTotals.get(role) || { total_hours: 0, estimated_cost: 0, responsibilities: [] };
+      const parsedHours = parsePlanNumber(hours, 0);
+      current.total_hours += parsedHours;
+      current.estimated_cost += Math.round(parsedHours * getRoleRate(inputs, role));
+      roleTotals.set(role, current);
+    });
+  });
+
+  const sprint_plan = phase_plan.map((phase: any, index: number) => ({
+    sprint: index === 0 ? "Sprint 0 / Discovery" : `Sprint ${index}`,
+    sprint_number: index,
+    start_week: phase.start_week,
+    end_week: phase.end_week,
+    duration_weeks: phase.duration_weeks,
+    objective: phase.objective,
+    planned_work: safeList(phase.activities),
+    deliverables: safeList(phase.deliverables),
+    dependency_notes: index === 0 ? ["Business decisions and platform assumptions must be confirmed before build."] : ["Depends on prior phase exit criteria."],
+    owner_roles: Object.keys(phase.loe_hours_by_role || {}).filter((role) => parsePlanNumber(phase.loe_hours_by_role?.[role], 0) > 0),
+    estimated_hours: Object.values(phase.loe_hours_by_role || {}).reduce((sum: number, value: any) => sum + parsePlanNumber(value, 0), 0),
+    estimated_cost: phase.estimated_cost,
+  }));
+
+  return {
+    ...rawPlan,
+    project_plan_summary: {
+      ...(rawPlan.project_plan_summary || {}),
+      estimated_duration_weeks: actualWeeks,
+      complexity: safeText(rawPlan.project_plan_summary?.complexity) || profile.complexity,
+      summary: planLooksIncomplete
+        ? `${safeText(rawPlan.project_plan_summary?.summary)} The original PM response did not include a complete phase plan, so the UI normalized the delivery timeline to cover all delivery phases.`.trim()
+        : rawPlan.project_plan_summary?.summary,
+    },
+    total_loe: {
+      low_hours: Math.round(totalLikelyHours * 0.8),
+      likely_hours: Math.round(totalLikelyHours),
+      high_hours: Math.round(totalLikelyHours * 1.2),
+    },
+    cost_estimate: {
+      ...(rawPlan.cost_estimate || {}),
+      implementation_low: implementationLow,
+      implementation_likely: implementationLikely,
+      implementation_high: implementationHigh,
+      hypercare_cost: hypercareCost,
+      monthly_maintenance_cost: monthlyMaintenanceCost,
+      first_year_total: firstYearTotal,
+    },
+    phase_plan,
+    sprint_plan,
+    role_allocation: Array.from(roleTotals.entries()).map(([role, totals]) => ({
+      role,
+      total_hours: Math.round(totals.total_hours),
+      estimated_cost: Math.round(totals.estimated_cost),
+      responsibilities: ["Support assigned delivery activities for the implementation plan."],
+    })),
+    diagnostics: [
+      ...safeList(rawPlan.diagnostics),
+      ...(planLooksIncomplete ? ["Frontend normalized incomplete PM phase/sprint plan into a complete delivery timeline."] : []),
+    ],
+  };
+}
+
+function sanitizeMermaidCode(code: any) {
+  return safeText(code)
+    .replace(/--\s*Approved\s*-->\s*CAccess\s*Type\s*Admin/gi, "-- Approved --> C{Access Type = Admin?}")
+    .replace(/--\s*Approved\s*-->\s*CAccess\s+type\s+Admin/gi, "-- Approved --> C{Access Type = Admin?}");
+}
+
+function formatElapsed(seconds: number) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function getGenerationStages(mode: "quick" | "full" | null, elapsedSeconds: number) {
+  const stages = mode === "quick"
+    ? ["Read requirement", "Architect quick design", "Core stories", "Readiness check", "Package assembly"]
+    : ["Read requirement and files", "Delivery Lead scope review", "Architect OOB/custom design", "Stories by epic", "Developer build map", "QA / UAT plan", "Review board", "Quality score", "Package assembly"];
+  const currentIndex = Math.min(stages.length - 1, Math.floor(elapsedSeconds / (mode === "quick" ? 3 : 25)));
+  return stages.map((label, index) => ({
+    label,
+    state: index < currentIndex ? "done" : index === currentIndex ? "active" : "pending",
+  }));
+}
+
+function getGenerationHint(mode: "quick" | "full" | null, elapsedSeconds: number) {
+  if (elapsedSeconds > 420) return "Still running. If this exceeds 7 minutes, open diagnostics and backend logs.";
+  if (elapsedSeconds > 180) return "Still working. Full packages can take several minutes depending on document size and agent count.";
+  if (mode === "quick") return "Quick package is creating a concise solution and readiness view.";
+  return "Full package is coordinating Delivery Lead, Architect, Story, Developer, QA, Review, and Quality agents.";
 }
 
 
@@ -1365,9 +1588,6 @@ export default function Home() {
 
   const [projectPlan, setProjectPlan] = useState<ProjectManagerPlan | null>(null);
   const [projectPlanLoading, setProjectPlanLoading] = useState(false);
-  const [exportLoading, setExportLoading] = useState(false);
-  const [projectPlanNeedsRecalculation, setProjectPlanNeedsRecalculation] =
-    useState(false);
   const [activePlanView, setActivePlanView] = useState<"overview" | "timeline" | "cost" | "team">("overview");
   const [phaseDurationOverrides, setPhaseDurationOverrides] = useState<Record<number, number>>({});
   const [planningInputs, setPlanningInputs] = useState<PlanningInputs>({
@@ -1376,8 +1596,8 @@ export default function Home() {
     currency: "USD",
     delivery_model: "normal",
     role_rates: [
-      { role: "Delivery Lead", hourly_rate: 125, count: 1, weekly_capacity_hours: 8 },
-      { role: "Product Owner", hourly_rate: 105, count: 1, weekly_capacity_hours: 8 },
+      { role: "Delivery Lead", hourly_rate: 125, count: 1, weekly_capacity_hours: 6 },
+      { role: "Product Owner", hourly_rate: 105, count: 1, weekly_capacity_hours: 6 },
       { role: "Project Manager", hourly_rate: 95, count: 1, weekly_capacity_hours: 12 },
       { role: "ServiceNow Architect", hourly_rate: 140, count: 1, weekly_capacity_hours: 10 },
       { role: "Business Analyst", hourly_rate: 95, count: 1, weekly_capacity_hours: 20 },
@@ -1392,6 +1612,9 @@ export default function Home() {
     data_migration_needed: false,
     integrations_needed: false,
   });
+  const [pmPlanNeedsRecalculation, setPmPlanNeedsRecalculation] = useState(false);
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
+  const [elapsedGenerationSeconds, setElapsedGenerationSeconds] = useState(0);
 
   useEffect(() => {
     const updateLayout = () => {
@@ -1403,6 +1626,20 @@ export default function Home() {
 
     return () => window.removeEventListener("resize", updateLayout);
   }, []);
+
+  useEffect(() => {
+    if (!generationStartedAt) {
+      setElapsedGenerationSeconds(0);
+      return;
+    }
+
+    setElapsedGenerationSeconds(Math.max(0, Math.floor((Date.now() - generationStartedAt) / 1000)));
+    const timer = window.setInterval(() => {
+      setElapsedGenerationSeconds(Math.max(0, Math.floor((Date.now() - generationStartedAt) / 1000)));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [generationStartedAt]);
 
   async function signUp() {
     const email = authEmail.trim();
@@ -1708,9 +1945,6 @@ export default function Home() {
     reviewAgentChats,
     projectStatus,
     projectVersions,
-    projectPlan,
-    planningInputs,
-    phaseDurationOverrides,
     loading,
     analyzing,
     projectSaving,
@@ -1824,7 +2058,7 @@ export default function Home() {
       label,
       requirement,
       clarification_answers: clarificationAnswers,
-      result: buildPersistentResult(),
+      result: serializeResultWithPlanningState(),
       project_status: projectStatus,
     };
   }
@@ -1847,6 +2081,37 @@ export default function Home() {
   function getUpdatedVersions(label: string) {
     const nextVersion = buildProjectVersion(label);
     return [nextVersion, ...projectVersions].slice(0, 15);
+  }
+
+  function serializeResultWithPlanningState() {
+    if (!result) return null;
+    const normalizedPlan = normalizeProjectManagerPlan(projectPlan, result, planningInputs);
+    return {
+      ...result,
+      project_manager_plan: normalizedPlan,
+      planning_inputs: planningInputs,
+      phase_duration_overrides: phaseDurationOverrides,
+      pm_plan_needs_recalculation: pmPlanNeedsRecalculation,
+    } as any;
+  }
+
+  function hydratePlanningStateFromResult(nextResult: any) {
+    const embeddedPlan = nextResult?.project_manager_plan || null;
+    const embeddedInputs = nextResult?.planning_inputs || null;
+    const embeddedOverrides = nextResult?.phase_duration_overrides || {};
+
+    setProjectPlan(normalizeProjectManagerPlan(embeddedPlan, nextResult, embeddedInputs || planningInputs));
+    if (embeddedInputs && typeof embeddedInputs === "object") {
+      setPlanningInputs((previous) => ({
+        ...previous,
+        ...embeddedInputs,
+        role_rates: Array.isArray(embeddedInputs.role_rates) ? embeddedInputs.role_rates : previous.role_rates,
+      }));
+    }
+    setPhaseDurationOverrides(
+      embeddedOverrides && typeof embeddedOverrides === "object" ? embeddedOverrides : {},
+    );
+    setPmPlanNeedsRecalculation(Boolean(nextResult?.pm_plan_needs_recalculation));
   }
 
   function mergeRequirementUpdate(currentText: string, updateText: string) {
@@ -1930,7 +2195,7 @@ Answer: ${answer.trim()}`;
     setClarificationAnswers("");
     setIntakeAnalysis(null);
     setPackageNeedsRegeneration(true);
-    setProjectPlanNeedsRecalculation(true);
+    setPmPlanNeedsRecalculation(true);
     setIntakeExpanded(false);
 
     const nextIndex = Math.min(
@@ -1944,13 +2209,6 @@ Answer: ${answer.trim()}`;
       status: "success",
       message: `Applied decision ${displayIndex + 1} to the requirement.`,
     });
-
-    window.setTimeout(() => {
-      document.getElementById("business-decisions")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }, 80);
   }
 
   function applyAllDecisionAnswers() {
@@ -1974,7 +2232,7 @@ Answer: ${answer.trim()}`;
     setClarificationAnswers("");
     setIntakeAnalysis(null);
     setPackageNeedsRegeneration(true);
-    setProjectPlanNeedsRecalculation(true);
+    setPmPlanNeedsRecalculation(true);
     setIntakeExpanded(false);
 
     addDiagnostic({
@@ -1985,18 +2243,12 @@ Answer: ${answer.trim()}`;
   }
 
 
-  function markProjectPlanStale() {
-    if (projectPlan) {
-      setProjectPlanNeedsRecalculation(true);
-    }
-  }
-
   function updatePlanningInput<K extends keyof PlanningInputs>(key: K, value: PlanningInputs[K]) {
     setPlanningInputs((previous) => ({
       ...previous,
       [key]: value,
     }));
-    markProjectPlanStale();
+    if (projectPlan) setPmPlanNeedsRecalculation(true);
   }
 
   function updatePlanningRole(index: number, field: keyof PlanningRoleInput, value: string | number) {
@@ -2014,7 +2266,7 @@ Answer: ${answer.trim()}`;
         role_rates,
       };
     });
-    markProjectPlanStale();
+    if (projectPlan) setPmPlanNeedsRecalculation(true);
   }
 
   function addPlanningRole() {
@@ -2025,7 +2277,7 @@ Answer: ${answer.trim()}`;
         { role: "Additional Role", hourly_rate: 100, count: 1, weekly_capacity_hours: 10 },
       ],
     }));
-    markProjectPlanStale();
+    if (projectPlan) setPmPlanNeedsRecalculation(true);
   }
 
   function removePlanningRole(index: number) {
@@ -2033,46 +2285,24 @@ Answer: ${answer.trim()}`;
       ...previous,
       role_rates: previous.role_rates.filter((_role, roleIndex) => roleIndex !== index),
     }));
-    markProjectPlanStale();
+    if (projectPlan) setPmPlanNeedsRecalculation(true);
   }
 
   function adjustPhaseDuration(index: number, delta: number) {
     const adjustedPhases = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides);
     const currentDuration = getPhaseDurationWeeks(adjustedPhases[index], phaseDurationOverrides[index]);
-    const nextDuration = Math.max(0.5, Math.round((currentDuration + delta) * 2) / 2);
+    const nextDuration = Math.max(0.5, Number((currentDuration + delta).toFixed(1)));
 
     setPhaseDurationOverrides((previous) => ({
       ...previous,
       [index]: nextDuration,
     }));
-    markProjectPlanStale();
+    setPmPlanNeedsRecalculation(true);
   }
 
   function resetPhaseDurations() {
     setPhaseDurationOverrides({});
-    markProjectPlanStale();
-  }
-
-  function getAdjustedPhaseDurationPayload() {
-    const adjustedPhases = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides);
-
-    return adjustedPhases.map((phase, index) => ({
-      phase: safeText(phase.phase || phase.label || `Phase ${index + 1}`),
-      duration_weeks: phase.durationWeeks,
-      start_week: phase.startWeek,
-      end_week: phase.endWeek,
-    }));
-  }
-
-  function buildPersistentResult() {
-    if (!result) return null;
-
-    return {
-      ...(result as any),
-      project_manager_plan: projectPlan || (result as any).project_manager_plan || null,
-      planning_inputs: planningInputs,
-      phase_duration_overrides: phaseDurationOverrides,
-    } as DeliveryResult;
+    if (projectPlan) setPmPlanNeedsRecalculation(true);
   }
 
   async function generateProjectManagerPlan() {
@@ -2085,6 +2315,9 @@ Answer: ${answer.trim()}`;
     setLoadingStage("Project Manager is building LOE, cost, and timeline...");
 
     try {
+      const adjustedPhases = projectPlan
+        ? getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides)
+        : [];
       const response = await fetch(`${API_BASE_URL}/project-plan`, {
         method: "POST",
         headers: {
@@ -2095,7 +2328,12 @@ Answer: ${answer.trim()}`;
           current_package: result,
           planning_inputs: {
             ...planningInputs,
-            adjusted_phase_durations: getAdjustedPhaseDurationPayload(),
+            adjusted_phase_durations: adjustedPhases.map((phase: any) => ({
+              phase: phase.label,
+              duration_weeks: phase.durationWeeks,
+              start_week: phase.startWeek,
+              end_week: phase.endWeek,
+            })),
           },
         }),
       });
@@ -2106,24 +2344,15 @@ Answer: ${answer.trim()}`;
       }
 
       const data: ProjectManagerPlan = await response.json();
-      setProjectPlan(data);
+      const normalizedPlan = normalizeProjectManagerPlan(data, result, planningInputs);
+      setProjectPlan(normalizedPlan);
       setPhaseDurationOverrides({});
-      setProjectPlanNeedsRecalculation(false);
+      setPmPlanNeedsRecalculation(false);
       setActivePlanView("overview");
-      setResult((previousResult) =>
-        previousResult
-          ? ({
-              ...(previousResult as any),
-              project_manager_plan: data,
-              planning_inputs: planningInputs,
-              phase_duration_overrides: {},
-            } as DeliveryResult)
-          : previousResult,
-      );
       addDiagnostic({
         area: "Project Manager",
         status: "success",
-        message: "Project plan generated.",
+        message: "Project plan generated and validated for phase/sprint completeness.",
       });
     } catch (error) {
       console.error(error);
@@ -2157,7 +2386,7 @@ Answer: ${answer.trim()}`;
       requirement,
       clarification_answers: clarificationAnswers,
       uploaded_file_names: files.map((file) => file.name),
-      result: buildPersistentResult(),
+      result: result || null,
       delivery_lead_chat: deliveryLeadChat || [],
       review_agent_chats: reviewAgentChats || emptyReviewAgentChats(),
       project_status: projectStatus,
@@ -2545,15 +2774,9 @@ Answer: ${answer.trim()}`;
     setProjectName(project.project_name);
     setRequirement(project.requirement || "");
     setClarificationAnswers(project.clarification_answers || "");
-    setResult(project.result);
-    setProjectPlan(((project.result as any)?.project_manager_plan as ProjectManagerPlan) || null);
-    setPlanningInputs(
-      ((project.result as any)?.planning_inputs as PlanningInputs) || planningInputs,
-    );
-    setPhaseDurationOverrides(
-      ((project.result as any)?.phase_duration_overrides as Record<number, number>) || {},
-    );
-    setProjectPlanNeedsRecalculation(false);
+    const loadedResult = project.result || null;
+    setResult(loadedResult);
+    hydratePlanningStateFromResult(loadedResult as any);
     clearUploadedFiles();
     setIntakeAnalysis(null);
     setIntakeExpanded(!project.result);
@@ -2572,7 +2795,7 @@ Answer: ${answer.trim()}`;
     setPackageNeedsRegeneration(false);
     setProjectPlan(null);
     setPhaseDurationOverrides({});
-    setProjectPlanNeedsRecalculation(false);
+    setPmPlanNeedsRecalculation(false);
     setCompareVersionId("");
     setShowComparePanel(false);
     setDeliveryLeadPendingRequirementUpdate("");
@@ -2596,6 +2819,9 @@ Answer: ${answer.trim()}`;
 
     setIntakeAnalysis(null);
     setResult(null);
+    setProjectPlan(null);
+    setPhaseDurationOverrides({});
+    setPmPlanNeedsRecalculation(false);
     setIntakeExpanded(true);
 
     setActiveTab("stories");
@@ -2632,7 +2858,7 @@ Answer: ${answer.trim()}`;
     setPackageNeedsRegeneration(false);
     setProjectPlan(null);
     setPhaseDurationOverrides({});
-    setProjectPlanNeedsRecalculation(false);
+    setPmPlanNeedsRecalculation(false);
     setCompareVersionId("");
     setShowComparePanel(false);
     setWorkspacePanel("none");
@@ -2709,7 +2935,7 @@ Answer: ${answer.trim()}`;
     setPackageNeedsRegeneration(false);
     setProjectPlan(null);
     setPhaseDurationOverrides({});
-    setProjectPlanNeedsRecalculation(false);
+    setPmPlanNeedsRecalculation(false);
     setCompareVersionId("");
     setShowComparePanel(false);
     setRequirement(template.requirement);
@@ -2717,6 +2943,9 @@ Answer: ${answer.trim()}`;
     clearUploadedFiles();
     setIntakeAnalysis(null);
     setResult(null);
+    setProjectPlan(null);
+    setPhaseDurationOverrides({});
+    setPmPlanNeedsRecalculation(false);
     setIntakeExpanded(true);
     setActiveProjectId(null);
     setActiveTab("stories");
@@ -2746,10 +2975,11 @@ Answer: ${answer.trim()}`;
     }
 
     setLoading(true);
+    setActiveGenerationMode(mode);
+    setGenerationStartedAt(Date.now());
     setProjectPlan(null);
     setPhaseDurationOverrides({});
-    setProjectPlanNeedsRecalculation(false);
-    setActiveGenerationMode(mode);
+    setPmPlanNeedsRecalculation(false);
     setLoadingStage(
       mode === "quick"
         ? "Generating quick delivery package..."
@@ -2846,7 +3076,7 @@ Answer: ${answer.trim()}`;
       setResult(data);
       setProjectPlan(null);
       setPhaseDurationOverrides({});
-      setProjectPlanNeedsRecalculation(false);
+      setPmPlanNeedsRecalculation(false);
       setProjectStatus("Draft");
       setPackageNeedsRegeneration(false);
       setIntakeExpanded(false);
@@ -2876,6 +3106,7 @@ Answer: ${answer.trim()}`;
       stageTimers.forEach((timer) => clearTimeout(timer));
       setLoading(false);
       setActiveGenerationMode(null);
+      setGenerationStartedAt(null);
       setLoadingStage("");
     }
   }
@@ -3326,6 +3557,7 @@ ${JSON.stringify(activeFeedback, null, 2)}`,
     setIntakeAnalysis(null);
     setReviewAgentPendingRequirementUpdate("");
     setPackageNeedsRegeneration(true);
+    setPmPlanNeedsRecalculation(true);
     setPackageTab("design");
   }
 
@@ -3453,6 +3685,7 @@ ${JSON.stringify(activeFeedback, null, 2)}`,
     setIntakeAnalysis(null);
     setDeliveryLeadPendingRequirementUpdate("");
     setPackageNeedsRegeneration(true);
+    setPmPlanNeedsRecalculation(true);
     setPackageTab("design");
   }
 
@@ -3537,7 +3770,7 @@ ${data.delivery_lead_review?.recommended_next_steps
 ${data.process_diagram?.summary || ""}
 
 \`\`\`mermaid
-${data.process_diagram?.mermaid_code || ""}
+${sanitizeMermaidCode(data.process_diagram?.mermaid_code)}
 \`\`\`
 
 ### Diagram Notes
@@ -3565,7 +3798,7 @@ ${data.quality_score?.recommended_fixes?.map((item) => `- ${item}`).join("\n")}
 
 ${data.agent_review ? `## Agent Review Board\n\n### Overall Review Summary\n${data.agent_review.overall_review_summary || ""}\n\n### Final Verdict\n${data.agent_review.final_verdict || ""}\n\n${buildConsolidatedDecisionsMarkdown(data.agent_review)}\n\n### Priority Fixes\n${data.agent_review.priority_fixes?.map((fix) => `- **${fix.priority}: ${fix.fix}** — ${fix.reason}`).join("\n") || "- Not provided"}` : ""}
 
-${buildProjectPlanMarkdown(projectPlan, planningInputs.currency)}
+${buildProjectPlanMarkdown(normalizeProjectManagerPlan(projectPlan, data, planningInputs), planningInputs.currency)}
 
 ---
 
@@ -3694,35 +3927,22 @@ ${uat.expected_result}
 `;
   }
 
-  function getExportBlockReason() {
-    if (!result) return "Generate a package before exporting.";
-    if (loading || analyzing || projectSaving || projectPlanLoading || exportLoading) {
-      return "Wait until generation, save/update, or PM planning finishes before exporting.";
-    }
-    if (packageNeedsRegeneration) {
-      return "The requirement changed after this package was generated. Regenerate the package before exporting.";
-    }
-    if (projectPlanNeedsRecalculation) {
-      return "The PM plan changed. Recalculate the PM plan before exporting.";
-    }
-    return "";
-  }
-
-  function canExportCurrentPackage() {
-    return !getExportBlockReason();
-  }
-
   function exportMarkdown() {
-    const blockReason = getExportBlockReason();
-    if (blockReason) {
-      alert(blockReason);
+    if (!result) return;
+    if (loading || projectSaving || projectPlanLoading) {
+      alert("Wait for the current operation to finish before exporting.");
       return;
     }
-    if (!result) return;
+    if (packageNeedsRegeneration) {
+      alert("Regenerate the package before exporting so the export matches the latest requirement.");
+      return;
+    }
+    if (pmPlanNeedsRecalculation) {
+      alert("Recalculate the Project Manager plan before exporting so cost and timeline are current.");
+      return;
+    }
 
-    setExportLoading(true);
-    try {
-      const markdown = buildMarkdown(buildPersistentResult() || result);
+    const markdown = buildMarkdown(result);
     const blob = new Blob([markdown], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
 
@@ -3732,9 +3952,6 @@ ${uat.expected_result}
     a.click();
 
     URL.revokeObjectURL(url);
-    } finally {
-      setExportLoading(false);
-    }
   }
 
   async function generateCodeForCard(card: any, title: string) {
@@ -4012,19 +4229,23 @@ ${uat.expected_result}
   }
 
   async function exportDocx() {
-    const exportResult = buildPersistentResult() || result;
-    if (!exportResult) return;
-
-    const blockReason = getExportBlockReason();
-    if (blockReason) {
-      alert(blockReason);
+    if (!result) return;
+    if (loading || projectSaving || projectPlanLoading) {
+      alert("Wait for the current operation to finish before exporting.");
+      return;
+    }
+    if (packageNeedsRegeneration) {
+      alert("Regenerate the package before exporting so the export matches the latest requirement.");
+      return;
+    }
+    if (pmPlanNeedsRecalculation) {
+      alert("Recalculate the Project Manager plan before exporting so cost and timeline are current.");
       return;
     }
 
-    setExportLoading(true);
-
-    try {
-      const children: any[] = [];
+    const exportResult = result;
+    const exportProjectPlan = normalizeProjectManagerPlan(projectPlan, exportResult, planningInputs);
+    const children: any[] = [];
 
     children.push(
       new Paragraph({
@@ -4036,97 +4257,97 @@ ${uat.expected_result}
 
     children.push(docHeading("Delivery Lead Review"));
     children.push(docHeading("Understanding", HeadingLevel.HEADING_2));
-    children.push(docParagraph(exportResult.delivery_lead_review?.understanding));
+    children.push(docParagraph(result.delivery_lead_review?.understanding));
 
     children.push(docHeading("MVP Scope", HeadingLevel.HEADING_2));
-    exportResult.delivery_lead_review?.mvp_scope?.forEach((item) =>
+    result.delivery_lead_review?.mvp_scope?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Phase 2 Scope", HeadingLevel.HEADING_2));
-    exportResult.delivery_lead_review?.phase_2_scope?.forEach((item) =>
+    result.delivery_lead_review?.phase_2_scope?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Clarifying Questions", HeadingLevel.HEADING_2));
-    exportResult.delivery_lead_review?.clarifying_questions?.forEach((item) =>
+    result.delivery_lead_review?.clarifying_questions?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(
       docHeading("Missing / Weak Requirements", HeadingLevel.HEADING_2),
     );
-    exportResult.delivery_lead_review?.missing_requirements?.forEach((item) => {
+    result.delivery_lead_review?.missing_requirements?.forEach((item) => {
       children.push(docBullet(`Gap: ${item.gap}`));
       children.push(docParagraph(`Why it matters: ${item.why_it_matters}`));
     });
 
     children.push(docHeading("Assumptions", HeadingLevel.HEADING_2));
-    exportResult.delivery_lead_review?.assumptions?.forEach((item) =>
+    result.delivery_lead_review?.assumptions?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Recommended Next Steps", HeadingLevel.HEADING_2));
-    exportResult.delivery_lead_review?.recommended_next_steps?.forEach((item) =>
+    result.delivery_lead_review?.recommended_next_steps?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(
       docHeading(
-        exportResult.generation_mode === "quick"
+        result.generation_mode === "quick"
           ? "Quick Readiness Score"
           : "Delivery Quality Score",
       ),
     );
     children.push(
       docParagraph(
-        `Overall Score: ${scoreText(exportResult.quality_score?.overall_score)}`,
+        `Overall Score: ${scoreText(result.quality_score?.overall_score)}`,
       ),
     );
     children.push(
       docParagraph(
-        `Completeness Score: ${scoreText(exportResult.quality_score?.completeness_score)}`,
+        `Completeness Score: ${scoreText(result.quality_score?.completeness_score)}`,
       ),
     );
     children.push(
       docParagraph(
-        `Risk Score: ${scoreText(exportResult.quality_score?.risk_score)}`,
+        `Risk Score: ${scoreText(result.quality_score?.risk_score)}`,
       ),
     );
     children.push(
       docParagraph(
-        `Readiness Score: ${scoreText(exportResult.quality_score?.readiness_score)}`,
+        `Readiness Score: ${scoreText(result.quality_score?.readiness_score)}`,
       ),
     );
     children.push(
       docParagraph(
-        `Rating: ${exportResult.quality_score?.rating || "Score unavailable"}`,
+        `Rating: ${result.quality_score?.rating || "Score unavailable"}`,
       ),
     );
-    children.push(docParagraph(exportResult.quality_score?.summary));
+    children.push(docParagraph(result.quality_score?.summary));
 
     children.push(docHeading("Strengths", HeadingLevel.HEADING_2));
-    exportResult.quality_score?.strengths?.forEach((item) =>
+    result.quality_score?.strengths?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Weaknesses", HeadingLevel.HEADING_2));
-    exportResult.quality_score?.weaknesses?.forEach((item) =>
+    result.quality_score?.weaknesses?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Recommended Fixes", HeadingLevel.HEADING_2));
-    exportResult.quality_score?.recommended_fixes?.forEach((item) =>
+    result.quality_score?.recommended_fixes?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
-    if (exportResult.agent_review) {
+    if (result.agent_review) {
       children.push(docHeading("Agent Review Board"));
       children.push(docHeading("Overall Review Summary", HeadingLevel.HEADING_2));
-      children.push(docParagraph(exportResult.agent_review.overall_review_summary));
-      children.push(docParagraph(`Final Verdict: ${exportResult.agent_review.final_verdict || "Not provided"}`));
+      children.push(docParagraph(result.agent_review.overall_review_summary));
+      children.push(docParagraph(`Final Verdict: ${result.agent_review.final_verdict || "Not provided"}`));
 
-      const consolidatedDecisions = getConsolidatedDecisions(exportResult.agent_review);
+      const consolidatedDecisions = getConsolidatedDecisions(result.agent_review);
       children.push(docHeading("Business Decisions Needed", HeadingLevel.HEADING_2));
       if (consolidatedDecisions.length) {
         consolidatedDecisions.forEach((decision, index) => {
@@ -4142,16 +4363,16 @@ ${uat.expected_result}
       }
 
       children.push(docHeading("Priority Fixes", HeadingLevel.HEADING_2));
-      exportResult.agent_review.priority_fixes?.forEach((fix) =>
+      result.agent_review.priority_fixes?.forEach((fix) =>
         children.push(docBullet(`${fix.priority}: ${fix.fix} — ${fix.reason}`)),
       );
     }
 
     children.push(docHeading("Project Manager Plan / LOE, Cost, and Timeline"));
-    if (projectPlan) {
-      const summary = projectPlan.project_plan_summary || {};
-      const totalLoe = projectPlan.total_loe || {};
-      const cost = projectPlan.cost_estimate || {};
+    if (exportProjectPlan) {
+      const summary = exportProjectPlan.project_plan_summary || {};
+      const totalLoe = exportProjectPlan.total_loe || {};
+      const cost = exportProjectPlan.cost_estimate || {};
 
       children.push(docHeading("Plan Summary", HeadingLevel.HEADING_2));
       children.push(docParagraph(`Recommended Approach: ${safeText(summary.recommended_delivery_approach) || "Not provided"}`));
@@ -4174,7 +4395,7 @@ ${uat.expected_result}
       children.push(docParagraph(`Monthly Maintenance: ${formatPlanCurrency(cost.monthly_maintenance_cost, planningInputs.currency)}`));
       children.push(docParagraph(`First-Year Total: ${formatPlanCurrency(cost.first_year_total, planningInputs.currency)}`));
 
-      const adjustedPhases = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides);
+      const adjustedPhases = getAdjustedPhaseTimeline(exportProjectPlan, phaseDurationOverrides);
       children.push(docHeading("Phase / Gantt Plan", HeadingLevel.HEADING_2));
       if (adjustedPhases.length) {
         children.push(
@@ -4193,7 +4414,7 @@ ${uat.expected_result}
         children.push(docParagraph("No phase plan was generated."));
       }
 
-      const sprintList = getPlanSprintList(projectPlan, adjustedPhases);
+      const sprintList = getPlanSprintList(exportProjectPlan, adjustedPhases);
       children.push(docHeading("Sprint Plan", HeadingLevel.HEADING_2));
       if (sprintList.length) {
         sprintList.forEach((sprint: any) => {
@@ -4208,7 +4429,7 @@ ${uat.expected_result}
       }
 
       children.push(docHeading("Team / Role Allocation", HeadingLevel.HEADING_2));
-      const roleItems = getRoleHourItems(projectPlan, planningInputs.role_rates);
+      const roleItems = getRoleHourItems(exportProjectPlan, planningInputs.role_rates);
       if (roleItems.length) {
         children.push(
           docTable(
@@ -4225,31 +4446,31 @@ ${uat.expected_result}
       }
 
       children.push(docHeading("Timeline Risks", HeadingLevel.HEADING_2));
-      safeList(projectPlan.timeline_risks).forEach((item) => children.push(docBullet(safeText(item))));
+      safeList(exportProjectPlan.timeline_risks).forEach((item) => children.push(docBullet(safeText(item))));
       children.push(docHeading("Cost Risks", HeadingLevel.HEADING_2));
-      safeList(projectPlan.cost_risks).forEach((item) => children.push(docBullet(safeText(item))));
+      safeList(exportProjectPlan.cost_risks).forEach((item) => children.push(docBullet(safeText(item))));
       children.push(docHeading("Recommended PM Next Steps", HeadingLevel.HEADING_2));
-      safeList(projectPlan.recommended_next_steps).forEach((item) => children.push(docBullet(safeText(item))));
+      safeList(exportProjectPlan.recommended_next_steps).forEach((item) => children.push(docBullet(safeText(item))));
     } else {
       children.push(docParagraph("No Project Manager plan has been generated yet. Open the PM / Cost tab, enter planning inputs, and click Recalculate Plan before exporting."));
     }
 
 
     children.push(docHeading("Process / State Flow Diagram"));
-    children.push(docParagraph(exportResult.process_diagram?.title));
-    children.push(docParagraph(exportResult.process_diagram?.summary));
+    children.push(docParagraph(result.process_diagram?.title));
+    children.push(docParagraph(result.process_diagram?.summary));
     children.push(docHeading("Mermaid Code", HeadingLevel.HEADING_2));
-    children.push(docParagraph(exportResult.process_diagram?.mermaid_code));
+    children.push(docParagraph(sanitizeMermaidCode(result.process_diagram?.mermaid_code)));
     children.push(docHeading("Diagram Notes", HeadingLevel.HEADING_2));
-    exportResult.process_diagram?.diagram_notes?.forEach((item) =>
+    result.process_diagram?.diagram_notes?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Requirement Summary"));
-    children.push(docParagraph(exportResult.requirement_summary));
+    children.push(docParagraph(result.requirement_summary));
 
     children.push(docHeading("Recommended App Type"));
-    children.push(docParagraph(exportResult.recommended_app_type));
+    children.push(docParagraph(result.recommended_app_type));
 
     const platformFitDecision = getPlatformFitDecision(result);
     children.push(docHeading("ServiceNow Platform Fit / OOB vs Custom Decision"));
@@ -4397,13 +4618,13 @@ ${uat.expected_result}
     }
 
     children.push(docHeading("Solution Design"));
-    children.push(docParagraph(exportResult.solution_design));
+    children.push(docParagraph(result.solution_design));
 
     children.push(docHeading("Proposed Tables"));
     children.push(
       docTable(
         ["Table", "Type", "Purpose"],
-        exportResult.tables?.map((table) => [
+        result.tables?.map((table) => [
           table.table_name,
           table.type,
           table.purpose,
@@ -4412,23 +4633,23 @@ ${uat.expected_result}
     );
 
     children.push(docHeading("Workflow Steps"));
-    exportResult.workflow_steps?.forEach((step) => children.push(docBullet(step)));
+    result.workflow_steps?.forEach((step) => children.push(docBullet(step)));
 
     children.push(docHeading("Risks"));
-    exportResult.risks?.forEach((risk) => {
+    result.risks?.forEach((risk) => {
       children.push(docBullet(`Risk: ${risk.risk}`));
       children.push(docParagraph(`Mitigation: ${risk.mitigation}`));
     });
 
     children.push(docHeading("Open Questions"));
-    exportResult.open_questions?.forEach((question) =>
+    result.open_questions?.forEach((question) =>
       children.push(docBullet(question)),
     );
 
     children.push(docHeading("Stories by Delivery Epic"));
-    if (exportResult.epic) {
+    if (result.epic) {
       children.push(docHeading("Package Epic", HeadingLevel.HEADING_2));
-      children.push(docParagraph(exportResult.epic));
+      children.push(docParagraph(result.epic));
     }
 
     const groupedStoriesForExport = getNormalizedStoryGroups(result);
@@ -4483,23 +4704,23 @@ ${uat.expected_result}
     }
 
     children.push(docHeading("Technical Notes"));
-    children.push(docParagraph(exportResult.developer?.implementation_summary));
+    children.push(docParagraph(result.developer?.implementation_summary));
 
     children.push(docHeading("ServiceNow Objects", HeadingLevel.HEADING_2));
-    exportResult.developer?.service_now_objects?.forEach((object) => {
+    result.developer?.service_now_objects?.forEach((object) => {
       children.push(docBullet(`${object.name} (${object.object_type})`));
       children.push(docParagraph(object.purpose));
     });
 
     children.push(docHeading("Flow Designer Notes", HeadingLevel.HEADING_2));
-    exportResult.developer?.flow_designer_notes?.forEach((flow) => {
+    result.developer?.flow_designer_notes?.forEach((flow) => {
       children.push(docHeading(flow.flow_name, HeadingLevel.HEADING_3));
       children.push(docParagraph(`Trigger: ${flow.trigger}`));
       flow.steps?.forEach((step) => children.push(docBullet(step)));
     });
 
     children.push(docHeading("Business Rules", HeadingLevel.HEADING_2));
-    exportResult.developer?.business_rules?.forEach((rule) => {
+    result.developer?.business_rules?.forEach((rule) => {
       children.push(docHeading(rule.name, HeadingLevel.HEADING_3));
       children.push(docParagraph(`When: ${rule.when}`));
       children.push(docParagraph(`Condition: ${rule.condition}`));
@@ -4507,30 +4728,30 @@ ${uat.expected_result}
     });
 
     children.push(docHeading("ACL Notes", HeadingLevel.HEADING_2));
-    exportResult.developer?.acl_notes?.forEach((item) =>
+    result.developer?.acl_notes?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Notification Notes", HeadingLevel.HEADING_2));
-    exportResult.developer?.notification_notes?.forEach((item) =>
+    result.developer?.notification_notes?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Deployment Notes", HeadingLevel.HEADING_2));
-    exportResult.developer?.deployment_notes?.forEach((item) =>
+    result.developer?.deployment_notes?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("QA"));
-    children.push(docParagraph(exportResult.qa?.test_strategy));
+    children.push(docParagraph(result.qa?.test_strategy));
 
     children.push(docHeading("Test Scenarios", HeadingLevel.HEADING_2));
-    exportResult.qa?.test_scenarios?.forEach((scenario) =>
+    result.qa?.test_scenarios?.forEach((scenario) =>
       children.push(docBullet(scenario)),
     );
 
     children.push(docHeading("Test Cases", HeadingLevel.HEADING_2));
-    exportResult.qa?.test_cases?.forEach((test) => {
+    result.qa?.test_cases?.forEach((test) => {
       children.push(
         docHeading(`${test.id}: ${test.title}`, HeadingLevel.HEADING_3),
       );
@@ -4544,7 +4765,7 @@ ${uat.expected_result}
     });
 
     children.push(docHeading("UAT Cases", HeadingLevel.HEADING_2));
-    exportResult.qa?.uat_cases?.forEach((uat) => {
+    result.qa?.uat_cases?.forEach((uat) => {
       children.push(
         docHeading(`${uat.id}: ${uat.title}`, HeadingLevel.HEADING_3),
       );
@@ -4554,17 +4775,17 @@ ${uat.expected_result}
     });
 
     children.push(docHeading("Edge Cases", HeadingLevel.HEADING_2));
-    exportResult.qa?.edge_cases?.forEach((edgeCase) =>
+    result.qa?.edge_cases?.forEach((edgeCase) =>
       children.push(docBullet(edgeCase)),
     );
 
     children.push(docHeading("Test Data Needs", HeadingLevel.HEADING_2));
-    exportResult.qa?.test_data_needs?.forEach((item) =>
+    result.qa?.test_data_needs?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
     children.push(docHeading("Regression Areas", HeadingLevel.HEADING_2));
-    exportResult.qa?.regression_areas?.forEach((item) =>
+    result.qa?.regression_areas?.forEach((item) =>
       children.push(docBullet(item)),
     );
 
@@ -4578,9 +4799,6 @@ ${uat.expected_result}
 
     const blob = await Packer.toBlob(doc);
     saveAs(blob, "servicenow-delivery-package.docx");
-    } finally {
-      setExportLoading(false);
-    }
   }
 
   const responsiveContainer = isMobile
@@ -4658,11 +4876,8 @@ ${uat.expected_result}
   const blockingDecisionCount = decisionTasks.filter(
     (task) => task.decision.blocks_build_readiness === true,
   ).length;
-  const unansweredDecisionCount = decisionTasks.filter(
-    (_task, index) => !(decisionAnswers[index] || "").trim(),
-  ).length;
   const unresolvedCount =
-    unansweredDecisionCount ||
+    decisionTasks.length ||
     result?.delivery_lead_review?.missing_requirements?.length ||
     result?.open_questions?.length ||
     0;
@@ -5423,9 +5638,40 @@ ${uat.expected_result}
               </section>
             )}
 
-            {loadingStage && (
+            {loading && activeGenerationMode ? (
+              <section style={styles.generationConsole}>
+                <div style={styles.rowBetween}>
+                  <div>
+                    <p style={styles.label}>{activeGenerationMode === "quick" ? "Quick package generation" : "Full package generation"}</p>
+                    <h3 style={styles.itemTitle}>{loadingStage || "Generating delivery package..."}</h3>
+                    <p style={styles.bodyText}>{getGenerationHint(activeGenerationMode, elapsedGenerationSeconds)}</p>
+                  </div>
+                  <div style={styles.generationTimer}>
+                    <span>Elapsed</span>
+                    <strong>{formatElapsed(elapsedGenerationSeconds)}</strong>
+                  </div>
+                </div>
+                <div style={styles.generationStageGrid}>
+                  {getGenerationStages(activeGenerationMode, elapsedGenerationSeconds).map((stage) => (
+                    <div key={stage.label} style={stage.state === "done" ? styles.generationStageDone : stage.state === "active" ? styles.generationStageActive : styles.generationStagePending}>
+                      <span>{stage.state === "done" ? "✓" : stage.state === "active" ? "→" : "○"}</span>
+                      <p>{stage.label}</p>
+                    </div>
+                  ))}
+                </div>
+                <div style={styles.generationChecklist}>
+                  <span>This run will produce:</span>
+                  <strong>Delivery review</strong>
+                  <strong>OOB/custom decision</strong>
+                  <strong>Epic stories</strong>
+                  <strong>Technical map</strong>
+                  <strong>QA/UAT</strong>
+                  <strong>Review board</strong>
+                </div>
+              </section>
+            ) : loadingStage ? (
               <div style={styles.loadingStage}>{loadingStage}</div>
-            )}
+            ) : null}
 
 
 
@@ -7125,7 +7371,7 @@ ${uat.expected_result}
                 {packageTab === "project_manager" && (
                   <Card
                     title="Project Manager"
-                    copyValue={buildProjectPlanMarkdown(projectPlan, planningInputs.currency)}
+                    copyValue={buildProjectPlanMarkdown(normalizeProjectManagerPlan(projectPlan, result, planningInputs), planningInputs.currency)}
                     onCopy={copyToClipboard}
                   >
                     <div style={styles.stack}>
@@ -7147,19 +7393,25 @@ ${uat.expected_result}
                               cursor: projectPlanLoading || loading ? "not-allowed" : "pointer",
                             }}
                           >
-                            {projectPlanLoading ? "Building Plan..." : projectPlanNeedsRecalculation ? "Recalculate Plan" : projectPlan ? "Refresh Plan" : "Generate Plan"}
+                            {projectPlanLoading ? "Building Plan..." : projectPlan ? "Recalculate Plan" : "Generate Plan"}
                           </button>
                           {projectPlan && (
-                            <button onClick={() => copyToClipboard(buildProjectPlanMarkdown(projectPlan, planningInputs.currency))} style={styles.secondaryButton}>
+                            <button onClick={() => copyToClipboard(buildProjectPlanMarkdown(normalizeProjectManagerPlan(projectPlan, result, planningInputs), planningInputs.currency))} style={styles.secondaryButton}>
                               Copy Plan
                             </button>
                           )}
                         </div>
                       </div>
 
-                      {projectPlanNeedsRecalculation && (
-                        <div style={styles.warningCallout}>
-                          PM inputs or timeline bars changed. Recalculate the plan before exporting or saving a final handoff.
+                      {pmPlanNeedsRecalculation && projectPlan && (
+                        <div style={styles.regenerationNotice}>
+                          <div>
+                            <p style={styles.label}>PM plan needs recalculation</p>
+                            <p style={styles.bodyText}>Timeline bars, dates, rates, team capacity, or package content changed. Recalculate before export so hours, cost, and sprint sequencing stay accurate.</p>
+                          </div>
+                          <button onClick={generateProjectManagerPlan} disabled={projectPlanLoading || loading} style={styles.button}>
+                            Regenerate PM Plan
+                          </button>
                         </div>
                       )}
 
@@ -7195,10 +7447,10 @@ ${uat.expected_result}
                         <div style={styles.pmSetupCard}>
                           <p style={styles.label}>Delivery Scope Add-ons</p>
                           <div style={styles.pmToggleGrid}>
-                            <label style={styles.toggleCard}><input type="checkbox" checked={planningInputs.include_maintenance} onChange={(e) => updatePlanningInput("include_maintenance", e.target.checked)} /><span><strong>Maintenance</strong><small>Post-go-live admin support, fixes, and enhancements.</small></span></label>
-                            <label style={styles.toggleCard}><input type="checkbox" checked={planningInputs.include_training} onChange={(e) => updatePlanningInput("include_training", e.target.checked)} /><span><strong>Training / change</strong><small>User enablement, quick guides, and adoption support.</small></span></label>
-                            <label style={styles.toggleCard}><input type="checkbox" checked={planningInputs.data_migration_needed} onChange={(e) => updatePlanningInput("data_migration_needed", e.target.checked)} /><span><strong>Data migration</strong><small>Import legacy records, mappings, or configuration data.</small></span></label>
-                            <label style={styles.toggleCard}><input type="checkbox" checked={planningInputs.integrations_needed} onChange={(e) => updatePlanningInput("integrations_needed", e.target.checked)} /><span><strong>Integrations</strong><small>External system/API work beyond manual fulfillment.</small></span></label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.include_maintenance} onChange={(e) => updatePlanningInput("include_maintenance", e.target.checked)} />Maintenance</label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.include_training} onChange={(e) => updatePlanningInput("include_training", e.target.checked)} />Training / change</label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.data_migration_needed} onChange={(e) => updatePlanningInput("data_migration_needed", e.target.checked)} />Data migration</label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.integrations_needed} onChange={(e) => updatePlanningInput("integrations_needed", e.target.checked)} />Integrations</label>
                           </div>
                           <div style={styles.pmInputGrid}>
                             <label style={styles.projectField}>
@@ -7214,32 +7466,34 @@ ${uat.expected_result}
                       </div>
 
                       {projectPlan && (() => {
-                        const adjustedPhases = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides);
+                        const displayProjectPlan = normalizeProjectManagerPlan(projectPlan, result, planningInputs);
+                        if (!displayProjectPlan) return null;
+                        const adjustedPhases = getAdjustedPhaseTimeline(displayProjectPlan, phaseDurationOverrides);
                         const timelineWeeks = getTimelineWeeksFromPhases(adjustedPhases);
-                        const sprintList = getPlanSprintList(projectPlan, adjustedPhases);
-                        const costItems = getCostChartItems(projectPlan, planningInputs.currency);
+                        const sprintList = getPlanSprintList(displayProjectPlan, adjustedPhases);
+                        const costItems = getCostChartItems(displayProjectPlan, planningInputs.currency);
                         const maxCost = Math.max(1, ...costItems.map((item) => item.value));
-                        const roleHourItems = getRoleHourItems(projectPlan, planningInputs.role_rates);
+                        const roleHourItems = getRoleHourItems(displayProjectPlan, planningInputs.role_rates);
                         const maxRoleHours = Math.max(1, ...roleHourItems.map((item) => item.hours));
 
                         return (
                           <div style={styles.stack}>
                             <div style={styles.pmKpiGrid}>
-                              <div style={styles.pmKpiCard}><p style={styles.label}>Likely Cost</p><p style={styles.pmKpiNumber}>{formatPlanCurrency(projectPlan.cost_estimate?.implementation_likely, planningInputs.currency)}</p><p style={styles.snapshotText}>implementation estimate</p></div>
-                              <div style={styles.pmKpiCard}><p style={styles.label}>Likely Hours</p><p style={styles.pmKpiNumber}>{safeText(projectPlan.total_loe?.likely_hours) || "—"}</p><p style={styles.snapshotText}>delivery LOE</p></div>
-                              <div style={styles.pmKpiCard}><p style={styles.label}>Timeline</p><p style={styles.pmKpiNumber}>{safeText(projectPlan.project_plan_summary?.estimated_duration_weeks) || timelineWeeks}</p><p style={styles.snapshotText}>weeks estimated</p></div>
-                              <div style={styles.pmKpiCard}><p style={styles.label}>Monthly Support</p><p style={styles.pmKpiNumber}>{formatPlanCurrency(projectPlan.cost_estimate?.monthly_maintenance_cost, planningInputs.currency)}</p><p style={styles.snapshotText}>post go-live</p></div>
+                              <div style={styles.pmKpiCard}><p style={styles.label}>Likely Cost</p><p style={styles.pmKpiNumber}>{formatPlanCurrency(displayProjectPlan.cost_estimate?.implementation_likely, planningInputs.currency)}</p><p style={styles.snapshotText}>implementation estimate</p></div>
+                              <div style={styles.pmKpiCard}><p style={styles.label}>Likely Hours</p><p style={styles.pmKpiNumber}>{safeText(displayProjectPlan.total_loe?.likely_hours) || "—"}</p><p style={styles.snapshotText}>delivery LOE</p></div>
+                              <div style={styles.pmKpiCard}><p style={styles.label}>Timeline</p><p style={styles.pmKpiNumber}>{safeText(displayProjectPlan.project_plan_summary?.estimated_duration_weeks) || timelineWeeks}</p><p style={styles.snapshotText}>weeks estimated</p></div>
+                              <div style={styles.pmKpiCard}><p style={styles.label}>Monthly Support</p><p style={styles.pmKpiNumber}>{formatPlanCurrency(displayProjectPlan.cost_estimate?.monthly_maintenance_cost, planningInputs.currency)}</p><p style={styles.snapshotText}>post go-live</p></div>
                             </div>
 
                             <div style={styles.pmPlanSummaryCard}>
                               <div>
                                 <p style={styles.label}>Plan Verdict</p>
-                                <h3 style={styles.itemTitle}>{safeText(projectPlan.project_plan_summary?.target_deployment_feasibility) || "Timeline feasibility not provided"}</h3>
-                                <p style={styles.bodyText}>{safeText(projectPlan.project_plan_summary?.summary)}</p>
+                                <h3 style={styles.itemTitle}>{safeText(displayProjectPlan.project_plan_summary?.target_deployment_feasibility) || "Timeline feasibility not provided"}</h3>
+                                <p style={styles.bodyText}>{safeText(displayProjectPlan.project_plan_summary?.summary)}</p>
                               </div>
                               <div style={styles.packagePillRow}>
-                                <span style={styles.softPill}>Complexity: {safeText(projectPlan.project_plan_summary?.complexity) || "—"}</span>
-                                <span style={styles.softPill}>Confidence: {safeText(projectPlan.project_plan_summary?.confidence_level) || "—"}</span>
+                                <span style={styles.softPill}>Complexity: {safeText(displayProjectPlan.project_plan_summary?.complexity) || "—"}</span>
+                                <span style={styles.softPill}>Confidence: {safeText(displayProjectPlan.project_plan_summary?.confidence_level) || "—"}</span>
                                 <span style={styles.softPill}>Model: {planningInputs.delivery_model}</span>
                               </div>
                             </div>
@@ -7255,20 +7509,20 @@ ${uat.expected_result}
                                 <div style={styles.innerCard}>
                                   <p style={styles.label}>LOE Range</p>
                                   <div style={styles.pmRangeBar}>
-                                    <div style={{ ...styles.pmRangeSegment, width: "30%" }}><strong>{safeText(projectPlan.total_loe?.low_hours) || "—"}</strong><span>Low</span></div>
-                                    <div style={{ ...styles.pmRangeSegment, width: "40%" }}><strong>{safeText(projectPlan.total_loe?.likely_hours) || "—"}</strong><span>Likely</span></div>
-                                    <div style={{ ...styles.pmRangeSegment, width: "30%" }}><strong>{safeText(projectPlan.total_loe?.high_hours) || "—"}</strong><span>High</span></div>
+                                    <div style={{ ...styles.pmRangeSegment, width: "30%" }}><strong>{safeText(displayProjectPlan.total_loe?.low_hours) || "—"}</strong><span>Low</span></div>
+                                    <div style={{ ...styles.pmRangeSegment, width: "40%" }}><strong>{safeText(displayProjectPlan.total_loe?.likely_hours) || "—"}</strong><span>Likely</span></div>
+                                    <div style={{ ...styles.pmRangeSegment, width: "30%" }}><strong>{safeText(displayProjectPlan.total_loe?.high_hours) || "—"}</strong><span>High</span></div>
                                   </div>
                                 </div>
-                                <div style={styles.innerCard}><p style={styles.label}>Recommended Next Steps</p><ul style={styles.list}>{safeList(projectPlan.recommended_next_steps).slice(0, 5).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
-                                <div style={styles.innerCard}><p style={styles.label}>Scope Reductions If Date Is Tight</p><ul style={styles.list}>{safeList(projectPlan.mvp_scope_adjustments_to_hit_date).slice(0, 6).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
-                                <div style={styles.innerCard}><p style={styles.label}>Delivery Sequence Rationale</p><ul style={styles.list}>{safeList(projectPlan.delivery_sequence_rationale).slice(0, 6).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
+                                <div style={styles.innerCard}><p style={styles.label}>Recommended Next Steps</p><ul style={styles.list}>{safeList(displayProjectPlan.recommended_next_steps).slice(0, 5).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
+                                <div style={styles.innerCard}><p style={styles.label}>Scope Reductions If Date Is Tight</p><ul style={styles.list}>{safeList(displayProjectPlan.mvp_scope_adjustments_to_hit_date).slice(0, 6).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
+                                <div style={styles.innerCard}><p style={styles.label}>Delivery Sequence Rationale</p><ul style={styles.list}>{safeList(displayProjectPlan.delivery_sequence_rationale).slice(0, 6).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
                               </div>
                             )}
 
                             {activePlanView === "timeline" && (
                               <div style={styles.stack}>
-                                <div style={styles.pmTimelineHeader}><div><p style={styles.label}>Editable Delivery Timeline</p><p style={styles.bodyText}>Use + / - to adjust phase bars locally. Each + / - changes the phase by 0.5 week. Click Recalculate Plan after changing bars so cost, hours, staffing, and sprint sequencing update.</p></div><button onClick={resetPhaseDurations} style={styles.secondaryButton}>Reset Bars</button></div>
+                                <div style={styles.pmTimelineHeader}><div><p style={styles.label}>Editable Delivery Timeline</p><p style={styles.bodyText}>Use + / - to adjust phase bars locally. Recalculate the plan to have the PM agent rebuild costs and sprint sequencing.</p></div><button onClick={resetPhaseDurations} style={styles.secondaryButton}>Reset Bars</button></div>
                                 <div style={styles.pmGanttCard}>
                                   <div style={styles.pmGanttScale}>{Array.from({ length: Math.min(timelineWeeks, 18) }).map((_item, weekIndex) => <span key={weekIndex}>W{weekIndex + 1}</span>)}</div>
                                   {adjustedPhases.map((phase, index) => {
@@ -7305,8 +7559,8 @@ ${uat.expected_result}
                                   <div style={styles.pmCostChart}>{costItems.map((item) => <div key={item.label} style={styles.pmCostRow}><div style={styles.pmCostLabel}>{item.label}</div><div style={styles.pmCostTrack}><div style={{ ...styles.pmCostBar, width: `${Math.max(4, (item.value / maxCost) * 100)}%` }} /></div><div style={styles.pmCostValue}>{item.display}</div></div>)}</div>
                                 </div>
                                 <div style={isMobile ? styles.mobileOneColumnGrid : styles.twoColumnGrid}>
-                                  <div style={styles.innerCard}><p style={styles.label}>Timeline Risks</p><ul style={styles.list}>{safeList(projectPlan.timeline_risks).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
-                                  <div style={styles.innerCard}><p style={styles.label}>Cost Risks</p><ul style={styles.list}>{safeList(projectPlan.cost_risks).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
+                                  <div style={styles.innerCard}><p style={styles.label}>Timeline Risks</p><ul style={styles.list}>{safeList(displayProjectPlan.timeline_risks).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
+                                  <div style={styles.innerCard}><p style={styles.label}>Cost Risks</p><ul style={styles.list}>{safeList(displayProjectPlan.cost_risks).map((item, index) => <li key={index}>{safeText(item)}</li>)}</ul></div>
                                 </div>
                               </div>
                             )}
@@ -7315,10 +7569,7 @@ ${uat.expected_result}
                               <div style={styles.stack}>
                                 <div style={styles.innerCard}>
                                   <div style={styles.cardTitleRow}><div><p style={styles.label}>Team and Rates</p><p style={styles.bodyText}>Adjust rate, count, and weekly capacity. Recalculate to update cost and delivery feasibility.</p></div><button onClick={addPlanningRole} style={styles.secondaryButton}>Add Role</button></div>
-                                  <div style={styles.stackSmall}>
-                                    {!isMobile && <div style={styles.pmRoleGridHeader}><span>Role</span><span>Rate/hr</span><span>Count</span><span>Hrs/week</span><span></span></div>}
-                                    {planningInputs.role_rates.map((role, index) => <div key={`${role.role}-${index}`} style={isMobile ? styles.mobileOneColumnGrid : styles.pmRoleGrid}><input value={role.role} onChange={(e) => updatePlanningRole(index, "role", e.target.value)} style={styles.projectInputCompact} aria-label="Role" /><input type="number" value={role.hourly_rate} onChange={(e) => updatePlanningRole(index, "hourly_rate", e.target.value)} style={styles.projectInputCompact} aria-label="Hourly rate" /><input type="number" value={role.count} onChange={(e) => updatePlanningRole(index, "count", e.target.value)} style={styles.projectInputCompact} aria-label="Count" /><input type="number" value={role.weekly_capacity_hours} onChange={(e) => updatePlanningRole(index, "weekly_capacity_hours", e.target.value)} style={styles.projectInputCompact} aria-label="Weekly capacity" /><button onClick={() => removePlanningRole(index)} style={styles.deleteButtonCompact}>Remove</button></div>)}
-                                  </div>
+                                  <div style={styles.stackSmall}>{planningInputs.role_rates.map((role, index) => <div key={`${role.role}-${index}`} style={isMobile ? styles.mobileOneColumnGrid : styles.pmRoleGrid}><input value={role.role} onChange={(e) => updatePlanningRole(index, "role", e.target.value)} style={styles.projectInputCompact} aria-label="Role" /><input type="number" value={role.hourly_rate} onChange={(e) => updatePlanningRole(index, "hourly_rate", e.target.value)} style={styles.projectInputCompact} aria-label="Hourly rate" /><input type="number" value={role.count} onChange={(e) => updatePlanningRole(index, "count", e.target.value)} style={styles.projectInputCompact} aria-label="Count" /><input type="number" value={role.weekly_capacity_hours} onChange={(e) => updatePlanningRole(index, "weekly_capacity_hours", e.target.value)} style={styles.projectInputCompact} aria-label="Weekly capacity" /><button onClick={() => removePlanningRole(index)} style={styles.deleteButtonCompact}>Remove</button></div>)}</div>
                                 </div>
                                 <div style={styles.innerCard}>
                                   <p style={styles.label}>Hours by Role</p>
@@ -7763,16 +8014,22 @@ ${uat.expected_result}
                       >
                         <button
                           onClick={exportMarkdown}
-                          style={styles.secondaryButton}
+                          disabled={loading || projectSaving || projectPlanLoading || packageNeedsRegeneration || pmPlanNeedsRecalculation}
+                          style={{ ...styles.secondaryButton, opacity: loading || projectSaving || projectPlanLoading || packageNeedsRegeneration || pmPlanNeedsRecalculation ? 0.55 : 1 }}
                         >
                           Export Markdown
                         </button>
-                        <button onClick={exportDocx} style={styles.button}>
+                        <button
+                          onClick={exportDocx}
+                          disabled={loading || projectSaving || projectPlanLoading || packageNeedsRegeneration || pmPlanNeedsRecalculation}
+                          style={{ ...styles.button, opacity: loading || projectSaving || projectPlanLoading || packageNeedsRegeneration || pmPlanNeedsRecalculation ? 0.55 : 1 }}
+                        >
                           Export DOCX
                         </button>
                         <button
                           onClick={() => copyToClipboard(buildMarkdown(result))}
-                          style={styles.secondaryButton}
+                          disabled={loading || projectSaving || projectPlanLoading || packageNeedsRegeneration || pmPlanNeedsRecalculation}
+                          style={{ ...styles.secondaryButton, opacity: loading || projectSaving || projectPlanLoading || packageNeedsRegeneration || pmPlanNeedsRecalculation ? 0.55 : 1 }}
                         >
                           Copy Full Package
                         </button>
@@ -9589,6 +9846,72 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 850,
   },
 
+  generationConsole: {
+    marginBottom: "20px",
+    padding: "20px",
+    borderRadius: "22px",
+    background: "linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 100%)",
+    border: "1px solid #BFDBFE",
+    boxShadow: "0 18px 50px rgba(37, 99, 235, 0.12)",
+  },
+  generationTimer: {
+    minWidth: "116px",
+    padding: "12px 14px",
+    borderRadius: "16px",
+    background: "rgba(255,255,255,0.86)",
+    border: "1px solid #DBEAFE",
+    textAlign: "center" as const,
+  },
+  generationStageGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+    gap: "10px",
+    marginTop: "16px",
+  },
+  generationStageDone: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "10px 12px",
+    borderRadius: "14px",
+    background: "#DCFCE7",
+    border: "1px solid #BBF7D0",
+    color: "#166534",
+    fontSize: "13px",
+    fontWeight: 800,
+  },
+  generationStageActive: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "10px 12px",
+    borderRadius: "14px",
+    background: "#DBEAFE",
+    border: "1px solid #93C5FD",
+    color: "#1D4ED8",
+    fontSize: "13px",
+    fontWeight: 900,
+  },
+  generationStagePending: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "10px 12px",
+    borderRadius: "14px",
+    background: "rgba(255,255,255,0.74)",
+    border: "1px solid #E2E8F0",
+    color: "#64748B",
+    fontSize: "13px",
+    fontWeight: 800,
+  },
+  generationChecklist: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: "8px",
+    marginTop: "14px",
+    color: "#475569",
+    fontSize: "13px",
+  },
   loadingStage: {
     marginBottom: "20px",
     padding: "14px 16px",
@@ -11074,44 +11397,5 @@ const styles: Record<string, React.CSSProperties> = {
   pmRoleBar: { height: "100%", borderRadius: "999px", background: "linear-gradient(135deg, #0EA5E9, #2563EB)" },
   pmCostValue: { color: "#0F172A", fontSize: "13px", fontWeight: 900, textAlign: "right" },
   pmEmptyState: { border: "1px dashed #CBD5E1", background: "#F8FAFC", borderRadius: "18px", padding: "24px", textAlign: "center" },
-  warningCallout: {
-    border: "1px solid #F59E0B",
-    background: "#FFFBEB",
-    color: "#92400E",
-    borderRadius: "14px",
-    padding: "12px 14px",
-    fontSize: "13px",
-    fontWeight: 800,
-  },
-  toggleCard: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "10px",
-    border: "1px solid #CBD5E1",
-    background: "#F8FAFC",
-    borderRadius: "14px",
-    padding: "12px",
-    cursor: "pointer",
-    minHeight: "72px",
-    color: "#334155",
-    fontSize: "13px",
-    lineHeight: 1.35,
-  },
-  pmRoleGrid: {
-    display: "grid",
-    gridTemplateColumns: "1.3fr 0.8fr 0.7fr 0.8fr auto",
-    gap: "8px",
-    alignItems: "center",
-  },
-  pmRoleGridHeader: {
-    display: "grid",
-    gridTemplateColumns: "1.3fr 0.8fr 0.7fr 0.8fr auto",
-    gap: "8px",
-    color: "#64748B",
-    fontSize: "11px",
-    fontWeight: 950,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
-  },
 
 };

@@ -1,102 +1,93 @@
+from openai import OpenAI
+from dotenv import load_dotenv
+import os
 import json
 import re
-from typing import Any, Dict
 
-from agents._common import _chat_json, _safe_dict
+load_dotenv()
 
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-FALLBACK_DIAGRAM_PROMPT = """
-You create simple Mermaid flowcharts for ServiceNow workflows.
-Use only flowchart TD.
-Avoid style declarations, subgraphs, classDef, linkStyle, click, HTML, quotes, parentheses, and special characters in labels.
-Return only valid JSON.
-"""
-
-
-def _fallback_diagram() -> Dict[str, Any]:
-    return {
-        "title": "Process Flow",
-        "summary": "Fallback process flow because the diagram agent failed.",
-        "mermaid_code": "flowchart TD\nA[Requirement Intake] --> B[Review]\nB --> C[Decision]\nC --> D[Complete]",
-        "diagram_notes": [
-            "Diagram agent failed or returned invalid Mermaid. Review process manually."
-        ],
-    }
 
 
 def _sanitize_mermaid(code: str) -> str:
     if not code:
-        return _fallback_diagram()["mermaid_code"]
+        return "flowchart TD\nA[Requirement Intake] --> B[Review Required]"
+    cleaned = str(code).strip().replace("```mermaid", "").replace("```", "").strip()
+    cleaned = re.sub(r"--\s*Approved\s*-->\s*CAccess\s*Type\s*Admin", "-- Approved --> C{Access Type = Admin?}", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"--\s*Approved\s*-->\s*CAccess\s+type\s+Admin", "-- Approved --> C{Access Type = Admin?}", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bCAccess\s*Type\s*Admin\b", "C{Access Type = Admin?}", cleaned, flags=re.IGNORECASE)
+    if not cleaned.lower().startswith("flowchart"):
+        cleaned = "flowchart TD\n" + cleaned
+    return cleaned
 
-    text = code.strip()
-    text = re.sub(r"^```(?:mermaid)?\s*", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s*```$", "", text)
+def generate_process_diagram(requirement: str, architecture: dict, story_output: dict):
+    prompt = f"""
+You are a senior ServiceNow process architect.
 
-    lines = []
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
+Create a Mermaid process/state flow diagram from the business requirement and architecture.
 
-        lower = line.lower()
-        if lower.startswith(("style ", "classdef ", "class ", "linkstyle ", "click ", "subgraph ", "end")):
-            continue
+Return ONLY valid JSON.
+Do not include markdown.
+Do not include explanations outside JSON.
+Do not wrap Mermaid code in ``` fences.
+Use Mermaid flowchart syntax.
+Prefer simple, readable process/state flow.
+Include approval, rejection, routing, assignment, notification, and completion steps if relevant.
+Do not invent steps not supported by the requirement.
+Mermaid quality rules:
+- Decision nodes must use braces, for example C{{Access Type = Admin?}}.
+- Never concatenate node id and label, such as CAccess Type Admin.
+- Every edge must point to a valid node id.
+- Use simple node ids such as A, B, C, D.
+- Validate that the Mermaid code can render before returning it.
 
-        # Replace labels that often break Mermaid parsing.
-        line = line.replace("(", "").replace(")", "")
-        line = line.replace("{", "").replace("}", "")
-        line = line.replace("|", "-")
-        line = line.replace('"', "").replace("'", "")
-        line = re.sub(r"<[^>]+>", "", line)
-        lines.append(line)
-
-    if not lines or not lines[0].lower().startswith("flowchart"):
-        lines.insert(0, "flowchart TD")
-
-    return "\n".join(lines)
-
-
-def generate_process_diagram(
-    requirement: str,
-    architecture: dict,
-    story_output: dict,
-) -> Dict[str, Any]:
-    user_payload = f"""
 Business Requirement:
 {requirement}
 
-Architecture Context:
+Architecture Output:
 {json.dumps(architecture, indent=2)}
 
-Story Context:
+Story Output:
 {json.dumps(story_output, indent=2)}
 
-Return JSON exactly in this structure:
+Return this JSON structure exactly:
+
 {{
-  "title": "Diagram title",
-  "summary": "Short summary",
-  "mermaid_code": "flowchart TD\\nA[Start] --> B[Next]",
+  "title": "Short diagram title",
+  "summary": "Short explanation of what this diagram shows.",
+  "mermaid_code": "flowchart TD\\nA[Start] --> B[Next Step]",
   "diagram_notes": [
     "Note 1"
   ]
 }}
 """
 
-    output = _chat_json(
-        prompt_name="diagram.txt",
-        fallback_prompt=FALLBACK_DIAGRAM_PROMPT,
-        user_payload=user_payload,
-        fallback=_fallback_diagram(),
-        temperature=0.05,
+    response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a senior ServiceNow process architect. Return only valid JSON."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        temperature=0.2,
     )
 
-    output = _safe_dict(output)
-    fallback = _fallback_diagram()
-    mermaid_code = _sanitize_mermaid(output.get("mermaid_code") or fallback["mermaid_code"])
+    content = response.choices[0].message.content
 
-    return {
-        "title": output.get("title") or fallback["title"],
-        "summary": output.get("summary") or fallback["summary"],
-        "mermaid_code": mermaid_code,
-        "diagram_notes": output.get("diagram_notes") if isinstance(output.get("diagram_notes"), list) else fallback["diagram_notes"],
-    }
+    try:
+        parsed = json.loads(content)
+        parsed["mermaid_code"] = _sanitize_mermaid(parsed.get("mermaid_code", ""))
+        return parsed
+    except json.JSONDecodeError:
+        return {
+            "title": "Process Flow Diagram",
+            "summary": "Unable to parse diagram output.",
+            "mermaid_code": "flowchart TD\nA[Requirement Intake] --> B[Review Required]",
+            "diagram_notes": []
+        }
