@@ -702,8 +702,7 @@ ${safeText(gate.reason) || "Not provided"}
 ### Must Resolve Before Production Build / Deployment
 ${safeList(gate.must_resolve_before_build)
     .map((item) => `- ${safeText(item)}`)
-    .join("
-") || "- Not provided"}`;
+    .join("\n") || "- Not provided"}`;
 }
 
 function sensitiveDataControlsMarkdown(data: DeliveryResult | null | undefined) {
@@ -841,9 +840,7 @@ ${tasks
 
 **Blocks build readiness:** ${safeText(decision.blocks_build_readiness) || "Not provided"}`;
     })
-    .join("
-
-")}`;
+    .join("\n\n")}`;
 }
 
 
