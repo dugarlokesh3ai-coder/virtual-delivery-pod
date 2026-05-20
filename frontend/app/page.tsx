@@ -248,6 +248,9 @@ type DeliveryResult = {
   developer: DeveloperOutput | null;
   qa: QAOutput | null;
   quality_score: QualityScore | null;
+  project_manager_plan?: ProjectManagerPlan | null;
+  planning_inputs?: PlanningInputs | null;
+  phase_duration_overrides?: Record<number, number> | null;
 };
 
 type QualityScore = {
@@ -1362,6 +1365,9 @@ export default function Home() {
 
   const [projectPlan, setProjectPlan] = useState<ProjectManagerPlan | null>(null);
   const [projectPlanLoading, setProjectPlanLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [projectPlanNeedsRecalculation, setProjectPlanNeedsRecalculation] =
+    useState(false);
   const [activePlanView, setActivePlanView] = useState<"overview" | "timeline" | "cost" | "team">("overview");
   const [phaseDurationOverrides, setPhaseDurationOverrides] = useState<Record<number, number>>({});
   const [planningInputs, setPlanningInputs] = useState<PlanningInputs>({
@@ -1370,6 +1376,8 @@ export default function Home() {
     currency: "USD",
     delivery_model: "normal",
     role_rates: [
+      { role: "Delivery Lead", hourly_rate: 125, count: 1, weekly_capacity_hours: 8 },
+      { role: "Product Owner", hourly_rate: 105, count: 1, weekly_capacity_hours: 8 },
       { role: "Project Manager", hourly_rate: 95, count: 1, weekly_capacity_hours: 12 },
       { role: "ServiceNow Architect", hourly_rate: 140, count: 1, weekly_capacity_hours: 10 },
       { role: "Business Analyst", hourly_rate: 95, count: 1, weekly_capacity_hours: 20 },
@@ -1700,6 +1708,9 @@ export default function Home() {
     reviewAgentChats,
     projectStatus,
     projectVersions,
+    projectPlan,
+    planningInputs,
+    phaseDurationOverrides,
     loading,
     analyzing,
     projectSaving,
@@ -1813,7 +1824,7 @@ export default function Home() {
       label,
       requirement,
       clarification_answers: clarificationAnswers,
-      result: result || null,
+      result: buildPersistentResult(),
       project_status: projectStatus,
     };
   }
@@ -1919,6 +1930,7 @@ Answer: ${answer.trim()}`;
     setClarificationAnswers("");
     setIntakeAnalysis(null);
     setPackageNeedsRegeneration(true);
+    setProjectPlanNeedsRecalculation(true);
     setIntakeExpanded(false);
 
     const nextIndex = Math.min(
@@ -1932,6 +1944,13 @@ Answer: ${answer.trim()}`;
       status: "success",
       message: `Applied decision ${displayIndex + 1} to the requirement.`,
     });
+
+    window.setTimeout(() => {
+      document.getElementById("business-decisions")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 80);
   }
 
   function applyAllDecisionAnswers() {
@@ -1955,6 +1974,7 @@ Answer: ${answer.trim()}`;
     setClarificationAnswers("");
     setIntakeAnalysis(null);
     setPackageNeedsRegeneration(true);
+    setProjectPlanNeedsRecalculation(true);
     setIntakeExpanded(false);
 
     addDiagnostic({
@@ -1965,11 +1985,18 @@ Answer: ${answer.trim()}`;
   }
 
 
+  function markProjectPlanStale() {
+    if (projectPlan) {
+      setProjectPlanNeedsRecalculation(true);
+    }
+  }
+
   function updatePlanningInput<K extends keyof PlanningInputs>(key: K, value: PlanningInputs[K]) {
     setPlanningInputs((previous) => ({
       ...previous,
       [key]: value,
     }));
+    markProjectPlanStale();
   }
 
   function updatePlanningRole(index: number, field: keyof PlanningRoleInput, value: string | number) {
@@ -1987,6 +2014,7 @@ Answer: ${answer.trim()}`;
         role_rates,
       };
     });
+    markProjectPlanStale();
   }
 
   function addPlanningRole() {
@@ -1997,6 +2025,7 @@ Answer: ${answer.trim()}`;
         { role: "Additional Role", hourly_rate: 100, count: 1, weekly_capacity_hours: 10 },
       ],
     }));
+    markProjectPlanStale();
   }
 
   function removePlanningRole(index: number) {
@@ -2004,21 +2033,46 @@ Answer: ${answer.trim()}`;
       ...previous,
       role_rates: previous.role_rates.filter((_role, roleIndex) => roleIndex !== index),
     }));
+    markProjectPlanStale();
   }
 
   function adjustPhaseDuration(index: number, delta: number) {
     const adjustedPhases = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides);
     const currentDuration = getPhaseDurationWeeks(adjustedPhases[index], phaseDurationOverrides[index]);
-    const nextDuration = Math.max(1, currentDuration + delta);
+    const nextDuration = Math.max(0.5, Math.round((currentDuration + delta) * 2) / 2);
 
     setPhaseDurationOverrides((previous) => ({
       ...previous,
       [index]: nextDuration,
     }));
+    markProjectPlanStale();
   }
 
   function resetPhaseDurations() {
     setPhaseDurationOverrides({});
+    markProjectPlanStale();
+  }
+
+  function getAdjustedPhaseDurationPayload() {
+    const adjustedPhases = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides);
+
+    return adjustedPhases.map((phase, index) => ({
+      phase: safeText(phase.phase || phase.label || `Phase ${index + 1}`),
+      duration_weeks: phase.durationWeeks,
+      start_week: phase.startWeek,
+      end_week: phase.endWeek,
+    }));
+  }
+
+  function buildPersistentResult() {
+    if (!result) return null;
+
+    return {
+      ...(result as any),
+      project_manager_plan: projectPlan || (result as any).project_manager_plan || null,
+      planning_inputs: planningInputs,
+      phase_duration_overrides: phaseDurationOverrides,
+    } as DeliveryResult;
   }
 
   async function generateProjectManagerPlan() {
@@ -2039,7 +2093,10 @@ Answer: ${answer.trim()}`;
         body: JSON.stringify({
           requirement: buildRequirementWithClarifications(),
           current_package: result,
-          planning_inputs: planningInputs,
+          planning_inputs: {
+            ...planningInputs,
+            adjusted_phase_durations: getAdjustedPhaseDurationPayload(),
+          },
         }),
       });
 
@@ -2051,7 +2108,18 @@ Answer: ${answer.trim()}`;
       const data: ProjectManagerPlan = await response.json();
       setProjectPlan(data);
       setPhaseDurationOverrides({});
+      setProjectPlanNeedsRecalculation(false);
       setActivePlanView("overview");
+      setResult((previousResult) =>
+        previousResult
+          ? ({
+              ...(previousResult as any),
+              project_manager_plan: data,
+              planning_inputs: planningInputs,
+              phase_duration_overrides: {},
+            } as DeliveryResult)
+          : previousResult,
+      );
       addDiagnostic({
         area: "Project Manager",
         status: "success",
@@ -2089,7 +2157,7 @@ Answer: ${answer.trim()}`;
       requirement,
       clarification_answers: clarificationAnswers,
       uploaded_file_names: files.map((file) => file.name),
-      result: result || null,
+      result: buildPersistentResult(),
       delivery_lead_chat: deliveryLeadChat || [],
       review_agent_chats: reviewAgentChats || emptyReviewAgentChats(),
       project_status: projectStatus,
@@ -2478,6 +2546,14 @@ Answer: ${answer.trim()}`;
     setRequirement(project.requirement || "");
     setClarificationAnswers(project.clarification_answers || "");
     setResult(project.result);
+    setProjectPlan(((project.result as any)?.project_manager_plan as ProjectManagerPlan) || null);
+    setPlanningInputs(
+      ((project.result as any)?.planning_inputs as PlanningInputs) || planningInputs,
+    );
+    setPhaseDurationOverrides(
+      ((project.result as any)?.phase_duration_overrides as Record<number, number>) || {},
+    );
+    setProjectPlanNeedsRecalculation(false);
     clearUploadedFiles();
     setIntakeAnalysis(null);
     setIntakeExpanded(!project.result);
@@ -2494,6 +2570,9 @@ Answer: ${answer.trim()}`;
       project.last_autosaved_at ? "Loaded saved autosave" : "Auto-save idle",
     );
     setPackageNeedsRegeneration(false);
+    setProjectPlan(null);
+    setPhaseDurationOverrides({});
+    setProjectPlanNeedsRecalculation(false);
     setCompareVersionId("");
     setShowComparePanel(false);
     setDeliveryLeadPendingRequirementUpdate("");
@@ -2551,6 +2630,9 @@ Answer: ${answer.trim()}`;
     setLastAutoSavedAt(null);
     setAutoSaveState("Auto-save idle");
     setPackageNeedsRegeneration(false);
+    setProjectPlan(null);
+    setPhaseDurationOverrides({});
+    setProjectPlanNeedsRecalculation(false);
     setCompareVersionId("");
     setShowComparePanel(false);
     setWorkspacePanel("none");
@@ -2625,6 +2707,9 @@ Answer: ${answer.trim()}`;
     setProjectVersions([]);
     setLastAutoSavedAt(null);
     setPackageNeedsRegeneration(false);
+    setProjectPlan(null);
+    setPhaseDurationOverrides({});
+    setProjectPlanNeedsRecalculation(false);
     setCompareVersionId("");
     setShowComparePanel(false);
     setRequirement(template.requirement);
@@ -2661,6 +2746,9 @@ Answer: ${answer.trim()}`;
     }
 
     setLoading(true);
+    setProjectPlan(null);
+    setPhaseDurationOverrides({});
+    setProjectPlanNeedsRecalculation(false);
     setActiveGenerationMode(mode);
     setLoadingStage(
       mode === "quick"
@@ -2756,6 +2844,9 @@ Answer: ${answer.trim()}`;
 
       const data = await response.json();
       setResult(data);
+      setProjectPlan(null);
+      setPhaseDurationOverrides({});
+      setProjectPlanNeedsRecalculation(false);
       setProjectStatus("Draft");
       setPackageNeedsRegeneration(false);
       setIntakeExpanded(false);
@@ -3603,10 +3694,35 @@ ${uat.expected_result}
 `;
   }
 
+  function getExportBlockReason() {
+    if (!result) return "Generate a package before exporting.";
+    if (loading || analyzing || projectSaving || projectPlanLoading || exportLoading) {
+      return "Wait until generation, save/update, or PM planning finishes before exporting.";
+    }
+    if (packageNeedsRegeneration) {
+      return "The requirement changed after this package was generated. Regenerate the package before exporting.";
+    }
+    if (projectPlanNeedsRecalculation) {
+      return "The PM plan changed. Recalculate the PM plan before exporting.";
+    }
+    return "";
+  }
+
+  function canExportCurrentPackage() {
+    return !getExportBlockReason();
+  }
+
   function exportMarkdown() {
+    const blockReason = getExportBlockReason();
+    if (blockReason) {
+      alert(blockReason);
+      return;
+    }
     if (!result) return;
 
-    const markdown = buildMarkdown(result);
+    setExportLoading(true);
+    try {
+      const markdown = buildMarkdown(buildPersistentResult() || result);
     const blob = new Blob([markdown], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
 
@@ -3616,6 +3732,9 @@ ${uat.expected_result}
     a.click();
 
     URL.revokeObjectURL(url);
+    } finally {
+      setExportLoading(false);
+    }
   }
 
   async function generateCodeForCard(card: any, title: string) {
@@ -3893,9 +4012,16 @@ ${uat.expected_result}
   }
 
   async function exportDocx() {
-    if (!result) return;
+    const blockReason = getExportBlockReason();
+    if (blockReason) {
+      alert(blockReason);
+      return;
+    }
 
-    const children: any[] = [];
+    setExportLoading(true);
+
+    try {
+      const children: any[] = [];
 
     children.push(
       new Paragraph({
@@ -4449,6 +4575,9 @@ ${uat.expected_result}
 
     const blob = await Packer.toBlob(doc);
     saveAs(blob, "servicenow-delivery-package.docx");
+    } finally {
+      setExportLoading(false);
+    }
   }
 
   const responsiveContainer = isMobile
@@ -4526,8 +4655,11 @@ ${uat.expected_result}
   const blockingDecisionCount = decisionTasks.filter(
     (task) => task.decision.blocks_build_readiness === true,
   ).length;
+  const unansweredDecisionCount = decisionTasks.filter(
+    (_task, index) => !(decisionAnswers[index] || "").trim(),
+  ).length;
   const unresolvedCount =
-    decisionTasks.length ||
+    unansweredDecisionCount ||
     result?.delivery_lead_review?.missing_requirements?.length ||
     result?.open_questions?.length ||
     0;
@@ -7012,7 +7144,7 @@ ${uat.expected_result}
                               cursor: projectPlanLoading || loading ? "not-allowed" : "pointer",
                             }}
                           >
-                            {projectPlanLoading ? "Building Plan..." : projectPlan ? "Recalculate Plan" : "Generate Plan"}
+                            {projectPlanLoading ? "Building Plan..." : projectPlanNeedsRecalculation ? "Recalculate Plan" : projectPlan ? "Refresh Plan" : "Generate Plan"}
                           </button>
                           {projectPlan && (
                             <button onClick={() => copyToClipboard(buildProjectPlanMarkdown(projectPlan, planningInputs.currency))} style={styles.secondaryButton}>
@@ -7021,6 +7153,12 @@ ${uat.expected_result}
                           )}
                         </div>
                       </div>
+
+                      {projectPlanNeedsRecalculation && (
+                        <div style={styles.warningCallout}>
+                          PM inputs or timeline bars changed. Recalculate the plan before exporting or saving a final handoff.
+                        </div>
+                      )}
 
                       <div style={styles.pmSetupGrid}>
                         <div style={styles.pmSetupCard}>
@@ -7054,10 +7192,10 @@ ${uat.expected_result}
                         <div style={styles.pmSetupCard}>
                           <p style={styles.label}>Delivery Scope Add-ons</p>
                           <div style={styles.pmToggleGrid}>
-                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.include_maintenance} onChange={(e) => updatePlanningInput("include_maintenance", e.target.checked)} />Maintenance</label>
-                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.include_training} onChange={(e) => updatePlanningInput("include_training", e.target.checked)} />Training / change</label>
-                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.data_migration_needed} onChange={(e) => updatePlanningInput("data_migration_needed", e.target.checked)} />Data migration</label>
-                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.integrations_needed} onChange={(e) => updatePlanningInput("integrations_needed", e.target.checked)} />Integrations</label>
+                            <label style={styles.toggleCard}><input type="checkbox" checked={planningInputs.include_maintenance} onChange={(e) => updatePlanningInput("include_maintenance", e.target.checked)} /><span><strong>Maintenance</strong><small>Post-go-live admin support, fixes, and enhancements.</small></span></label>
+                            <label style={styles.toggleCard}><input type="checkbox" checked={planningInputs.include_training} onChange={(e) => updatePlanningInput("include_training", e.target.checked)} /><span><strong>Training / change</strong><small>User enablement, quick guides, and adoption support.</small></span></label>
+                            <label style={styles.toggleCard}><input type="checkbox" checked={planningInputs.data_migration_needed} onChange={(e) => updatePlanningInput("data_migration_needed", e.target.checked)} /><span><strong>Data migration</strong><small>Import legacy records, mappings, or configuration data.</small></span></label>
+                            <label style={styles.toggleCard}><input type="checkbox" checked={planningInputs.integrations_needed} onChange={(e) => updatePlanningInput("integrations_needed", e.target.checked)} /><span><strong>Integrations</strong><small>External system/API work beyond manual fulfillment.</small></span></label>
                           </div>
                           <div style={styles.pmInputGrid}>
                             <label style={styles.projectField}>
@@ -7127,7 +7265,7 @@ ${uat.expected_result}
 
                             {activePlanView === "timeline" && (
                               <div style={styles.stack}>
-                                <div style={styles.pmTimelineHeader}><div><p style={styles.label}>Editable Delivery Timeline</p><p style={styles.bodyText}>Use + / - to adjust phase bars locally. Recalculate the plan to have the PM agent rebuild costs and sprint sequencing.</p></div><button onClick={resetPhaseDurations} style={styles.secondaryButton}>Reset Bars</button></div>
+                                <div style={styles.pmTimelineHeader}><div><p style={styles.label}>Editable Delivery Timeline</p><p style={styles.bodyText}>Use + / - to adjust phase bars locally. Each + / - changes the phase by 0.5 week. Click Recalculate Plan after changing bars so cost, hours, staffing, and sprint sequencing update.</p></div><button onClick={resetPhaseDurations} style={styles.secondaryButton}>Reset Bars</button></div>
                                 <div style={styles.pmGanttCard}>
                                   <div style={styles.pmGanttScale}>{Array.from({ length: Math.min(timelineWeeks, 18) }).map((_item, weekIndex) => <span key={weekIndex}>W{weekIndex + 1}</span>)}</div>
                                   {adjustedPhases.map((phase, index) => {
@@ -7137,7 +7275,7 @@ ${uat.expected_result}
                                       <div key={index} style={styles.pmGanttRow}>
                                         <div style={styles.pmGanttLabel}><strong>{phase.label}</strong><span>{phase.durationWeeks} wk Â· {formatPlanCurrency(phase.estimated_cost, planningInputs.currency)}</span></div>
                                         <div style={styles.pmGanttTrack}><div style={{ ...styles.pmGanttBar, left, width }}>W{phase.startWeek}–W{phase.endWeek}</div></div>
-                                        <div style={styles.pmGanttControls}><button onClick={() => adjustPhaseDuration(index, -1)} style={styles.tinyControlButton}>−</button><button onClick={() => adjustPhaseDuration(index, 1)} style={styles.tinyControlButton}>+</button></div>
+                                        <div style={styles.pmGanttControls}><button onClick={() => adjustPhaseDuration(index, -0.5)} style={styles.tinyControlButton}>−</button><button onClick={() => adjustPhaseDuration(index, 0.5)} style={styles.tinyControlButton}>+</button></div>
                                       </div>
                                     );
                                   })}
@@ -7174,7 +7312,10 @@ ${uat.expected_result}
                               <div style={styles.stack}>
                                 <div style={styles.innerCard}>
                                   <div style={styles.cardTitleRow}><div><p style={styles.label}>Team and Rates</p><p style={styles.bodyText}>Adjust rate, count, and weekly capacity. Recalculate to update cost and delivery feasibility.</p></div><button onClick={addPlanningRole} style={styles.secondaryButton}>Add Role</button></div>
-                                  <div style={styles.stackSmall}>{planningInputs.role_rates.map((role, index) => <div key={`${role.role}-${index}`} style={isMobile ? styles.mobileOneColumnGrid : styles.pmRoleGrid}><input value={role.role} onChange={(e) => updatePlanningRole(index, "role", e.target.value)} style={styles.projectInputCompact} aria-label="Role" /><input type="number" value={role.hourly_rate} onChange={(e) => updatePlanningRole(index, "hourly_rate", e.target.value)} style={styles.projectInputCompact} aria-label="Hourly rate" /><input type="number" value={role.count} onChange={(e) => updatePlanningRole(index, "count", e.target.value)} style={styles.projectInputCompact} aria-label="Count" /><input type="number" value={role.weekly_capacity_hours} onChange={(e) => updatePlanningRole(index, "weekly_capacity_hours", e.target.value)} style={styles.projectInputCompact} aria-label="Weekly capacity" /><button onClick={() => removePlanningRole(index)} style={styles.deleteButtonCompact}>Remove</button></div>)}</div>
+                                  <div style={styles.stackSmall}>
+                                    {!isMobile && <div style={styles.pmRoleGridHeader}><span>Role</span><span>Rate/hr</span><span>Count</span><span>Hrs/week</span><span></span></div>}
+                                    {planningInputs.role_rates.map((role, index) => <div key={`${role.role}-${index}`} style={isMobile ? styles.mobileOneColumnGrid : styles.pmRoleGrid}><input value={role.role} onChange={(e) => updatePlanningRole(index, "role", e.target.value)} style={styles.projectInputCompact} aria-label="Role" /><input type="number" value={role.hourly_rate} onChange={(e) => updatePlanningRole(index, "hourly_rate", e.target.value)} style={styles.projectInputCompact} aria-label="Hourly rate" /><input type="number" value={role.count} onChange={(e) => updatePlanningRole(index, "count", e.target.value)} style={styles.projectInputCompact} aria-label="Count" /><input type="number" value={role.weekly_capacity_hours} onChange={(e) => updatePlanningRole(index, "weekly_capacity_hours", e.target.value)} style={styles.projectInputCompact} aria-label="Weekly capacity" /><button onClick={() => removePlanningRole(index)} style={styles.deleteButtonCompact}>Remove</button></div>)}
+                                  </div>
                                 </div>
                                 <div style={styles.innerCard}>
                                   <p style={styles.label}>Hours by Role</p>
@@ -10930,5 +11071,44 @@ const styles: Record<string, React.CSSProperties> = {
   pmRoleBar: { height: "100%", borderRadius: "999px", background: "linear-gradient(135deg, #0EA5E9, #2563EB)" },
   pmCostValue: { color: "#0F172A", fontSize: "13px", fontWeight: 900, textAlign: "right" },
   pmEmptyState: { border: "1px dashed #CBD5E1", background: "#F8FAFC", borderRadius: "18px", padding: "24px", textAlign: "center" },
+  warningCallout: {
+    border: "1px solid #F59E0B",
+    background: "#FFFBEB",
+    color: "#92400E",
+    borderRadius: "14px",
+    padding: "12px 14px",
+    fontSize: "13px",
+    fontWeight: 800,
+  },
+  toggleCard: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "10px",
+    border: "1px solid #CBD5E1",
+    background: "#F8FAFC",
+    borderRadius: "14px",
+    padding: "12px",
+    cursor: "pointer",
+    minHeight: "72px",
+    color: "#334155",
+    fontSize: "13px",
+    lineHeight: 1.35,
+  },
+  pmRoleGrid: {
+    display: "grid",
+    gridTemplateColumns: "1.3fr 0.8fr 0.7fr 0.8fr auto",
+    gap: "8px",
+    alignItems: "center",
+  },
+  pmRoleGridHeader: {
+    display: "grid",
+    gridTemplateColumns: "1.3fr 0.8fr 0.7fr 0.8fr auto",
+    gap: "8px",
+    color: "#64748B",
+    fontSize: "11px",
+    fontWeight: 950,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+  },
 
 };
