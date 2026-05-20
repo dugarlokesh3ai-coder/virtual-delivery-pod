@@ -845,12 +845,6 @@ function parsePlanNumber(value: any, fallback = 0) {
   return fallback;
 }
 
-function formatPlanWeeks(value: any) {
-  const numberValue = parsePlanNumber(value, 0);
-  if (!numberValue) return "—";
-  return Number.isInteger(numberValue) ? String(numberValue) : numberValue.toFixed(1).replace(/\.0$/, "");
-}
-
 function getPhaseDurationWeeks(phase: any, override?: number) {
   if (typeof override === "number" && Number.isFinite(override) && override > 0) {
     return override;
@@ -1377,8 +1371,6 @@ export default function Home() {
     delivery_model: "normal",
     role_rates: [
       { role: "Project Manager", hourly_rate: 95, count: 1, weekly_capacity_hours: 12 },
-      { role: "Delivery Lead", hourly_rate: 125, count: 1, weekly_capacity_hours: 8 },
-      { role: "Product Owner", hourly_rate: 105, count: 1, weekly_capacity_hours: 8 },
       { role: "ServiceNow Architect", hourly_rate: 140, count: 1, weekly_capacity_hours: 10 },
       { role: "Business Analyst", hourly_rate: 95, count: 1, weekly_capacity_hours: 20 },
       { role: "ServiceNow Developer", hourly_rate: 110, count: 2, weekly_capacity_hours: 30 },
@@ -2017,7 +2009,7 @@ Answer: ${answer.trim()}`;
   function adjustPhaseDuration(index: number, delta: number) {
     const adjustedPhases = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides);
     const currentDuration = getPhaseDurationWeeks(adjustedPhases[index], phaseDurationOverrides[index]);
-    const nextDuration = Math.max(0.5, Math.round((currentDuration + delta) * 2) / 2);
+    const nextDuration = Math.max(1, currentDuration + delta);
 
     setPhaseDurationOverrides((previous) => ({
       ...previous,
@@ -2038,13 +2030,6 @@ Answer: ${answer.trim()}`;
     setProjectPlanLoading(true);
     setLoadingStage("Project Manager is building LOE, cost, and timeline...");
 
-    const adjustedPhasesForRegeneration = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides).map((phase) => ({
-      phase: phase.label,
-      start_week: phase.startWeek,
-      end_week: phase.endWeek,
-      duration_weeks: phase.durationWeeks,
-    }));
-
     try {
       const response = await fetch(`${API_BASE_URL}/project-plan`, {
         method: "POST",
@@ -2054,10 +2039,7 @@ Answer: ${answer.trim()}`;
         body: JSON.stringify({
           requirement: buildRequirementWithClarifications(),
           current_package: result,
-          planning_inputs: {
-            ...planningInputs,
-            phase_duration_overrides: adjustedPhasesForRegeneration,
-          },
+          planning_inputs: planningInputs,
         }),
       });
 
@@ -4036,6 +4018,94 @@ ${uat.expected_result}
       );
     }
 
+    children.push(docHeading("Project Manager Plan / LOE, Cost, and Timeline"));
+    if (projectPlan) {
+      const summary = projectPlan.project_plan_summary || {};
+      const totalLoe = projectPlan.total_loe || {};
+      const cost = projectPlan.cost_estimate || {};
+
+      children.push(docHeading("Plan Summary", HeadingLevel.HEADING_2));
+      children.push(docParagraph(`Recommended Approach: ${safeText(summary.recommended_delivery_approach) || "Not provided"}`));
+      children.push(docParagraph(`Estimated Duration: ${safeText(summary.estimated_duration_weeks) || "Not provided"} weeks`));
+      children.push(docParagraph(`Target Feasibility: ${safeText(summary.target_deployment_feasibility) || "Not provided"}`));
+      children.push(docParagraph(`Complexity: ${safeText(summary.complexity) || "Not provided"}`));
+      children.push(docParagraph(`Confidence: ${safeText(summary.confidence_level) || "Not provided"}`));
+      if (safeText(summary.summary)) children.push(docParagraph(safeText(summary.summary)));
+
+      children.push(docHeading("LOE Range", HeadingLevel.HEADING_2));
+      children.push(docParagraph(`Low: ${safeText(totalLoe.low_hours) || "Not provided"} hours`));
+      children.push(docParagraph(`Likely: ${safeText(totalLoe.likely_hours) || "Not provided"} hours`));
+      children.push(docParagraph(`High: ${safeText(totalLoe.high_hours) || "Not provided"} hours`));
+
+      children.push(docHeading("Cost Estimate", HeadingLevel.HEADING_2));
+      children.push(docParagraph(`Implementation Low: ${formatPlanCurrency(cost.implementation_low, planningInputs.currency)}`));
+      children.push(docParagraph(`Implementation Likely: ${formatPlanCurrency(cost.implementation_likely, planningInputs.currency)}`));
+      children.push(docParagraph(`Implementation High: ${formatPlanCurrency(cost.implementation_high, planningInputs.currency)}`));
+      children.push(docParagraph(`Hypercare: ${formatPlanCurrency(cost.hypercare_cost, planningInputs.currency)}`));
+      children.push(docParagraph(`Monthly Maintenance: ${formatPlanCurrency(cost.monthly_maintenance_cost, planningInputs.currency)}`));
+      children.push(docParagraph(`First-Year Total: ${formatPlanCurrency(cost.first_year_total, planningInputs.currency)}`));
+
+      const adjustedPhases = getAdjustedPhaseTimeline(projectPlan, phaseDurationOverrides);
+      children.push(docHeading("Phase / Gantt Plan", HeadingLevel.HEADING_2));
+      if (adjustedPhases.length) {
+        children.push(
+          docTable(
+            ["Phase", "Weeks", "Duration", "Estimated Cost", "Objective"],
+            adjustedPhases.map((phase: any) => [
+              safeText(phase.label),
+              `W${safeText(phase.startWeek)}–W${safeText(phase.endWeek)}`,
+              `${safeText(phase.durationWeeks)} weeks`,
+              formatPlanCurrency(phase.estimated_cost, planningInputs.currency),
+              safeText(phase.objective),
+            ]),
+          ),
+        );
+      } else {
+        children.push(docParagraph("No phase plan was generated."));
+      }
+
+      const sprintList = getPlanSprintList(projectPlan, adjustedPhases);
+      children.push(docHeading("Sprint Plan", HeadingLevel.HEADING_2));
+      if (sprintList.length) {
+        sprintList.forEach((sprint: any) => {
+          children.push(docHeading(`${safeText(sprint.sprintLabel)} (${safeText(sprint.startWeek) ? `W${safeText(sprint.startWeek)}–W${safeText(sprint.endWeek)}` : "Weeks not provided"})`, HeadingLevel.HEADING_3));
+          if (safeText(sprint.objective)) children.push(docParagraph(safeText(sprint.objective)));
+          safeList(sprint.workItems).forEach((item) => children.push(docBullet(safeText(item))));
+          if (safeText(sprint.estimated_hours)) children.push(docParagraph(`Estimated Hours: ${safeText(sprint.estimated_hours)}`));
+          if (safeText(sprint.estimated_cost)) children.push(docParagraph(`Estimated Cost: ${formatPlanCurrency(sprint.estimated_cost, planningInputs.currency)}`));
+        });
+      } else {
+        children.push(docParagraph("No sprint plan was generated."));
+      }
+
+      children.push(docHeading("Team / Role Allocation", HeadingLevel.HEADING_2));
+      const roleItems = getRoleHourItems(projectPlan, planningInputs.role_rates);
+      if (roleItems.length) {
+        children.push(
+          docTable(
+            ["Role", "Hours", "Estimated Cost"],
+            roleItems.map((role: any) => [
+              safeText(role.role),
+              safeText(role.hours),
+              formatPlanCurrency(role.cost, planningInputs.currency),
+            ]),
+          ),
+        );
+      } else {
+        children.push(docParagraph("No role allocation was generated."));
+      }
+
+      children.push(docHeading("Timeline Risks", HeadingLevel.HEADING_2));
+      safeList(projectPlan.timeline_risks).forEach((item) => children.push(docBullet(safeText(item))));
+      children.push(docHeading("Cost Risks", HeadingLevel.HEADING_2));
+      safeList(projectPlan.cost_risks).forEach((item) => children.push(docBullet(safeText(item))));
+      children.push(docHeading("Recommended PM Next Steps", HeadingLevel.HEADING_2));
+      safeList(projectPlan.recommended_next_steps).forEach((item) => children.push(docBullet(safeText(item))));
+    } else {
+      children.push(docParagraph("No Project Manager plan has been generated yet. Open the PM / Cost tab, enter planning inputs, and click Recalculate Plan before exporting."));
+    }
+
+
     children.push(docHeading("Process / State Flow Diagram"));
     children.push(docParagraph(result.process_diagram?.title));
     children.push(docParagraph(result.process_diagram?.summary));
@@ -4226,24 +4296,62 @@ ${uat.expected_result}
       children.push(docBullet(question)),
     );
 
-    children.push(docHeading("Stories"));
+    children.push(docHeading("Stories by Delivery Epic"));
     if (result.epic) {
-      children.push(docHeading("Epic", HeadingLevel.HEADING_2));
+      children.push(docHeading("Package Epic", HeadingLevel.HEADING_2));
       children.push(docParagraph(result.epic));
     }
 
-    result.stories?.forEach((story) => {
-      children.push(docHeading(story.title, HeadingLevel.HEADING_2));
-      children.push(docParagraph(story.story));
-      children.push(docParagraph(`Priority: ${story.priority}`));
-      children.push(docHeading("Acceptance Criteria", HeadingLevel.HEADING_3));
-      story.acceptance_criteria?.forEach((criteria) =>
-        children.push(docBullet(criteria)),
-      );
-      if (story.notes) {
-        children.push(docParagraph(`Notes: ${story.notes}`));
-      }
-    });
+    const groupedStoriesForExport = getNormalizedStoryGroups(result);
+    if (groupedStoriesForExport.length) {
+      groupedStoriesForExport.forEach((group) => {
+        children.push(docHeading(group.epic_name, HeadingLevel.HEADING_2));
+        if (group.epic_summary) children.push(docParagraph(group.epic_summary));
+
+        group.stories.forEach((story, index) => {
+          const storyId = getStoryId(story, index, group.epic_name);
+          children.push(docHeading(`${storyId} - ${story.title}`, HeadingLevel.HEADING_3));
+          children.push(docParagraph(story.story));
+          children.push(docParagraph(`Persona: ${safeText(story.persona) || "Not provided"}`));
+          children.push(docParagraph(`Priority: ${safeText(story.priority) || "Not provided"}`));
+          children.push(docParagraph(`Implementation Type: ${safeText(story.implementation_type) || "Not specified"}`));
+          children.push(docParagraph(`Build Sequence: ${safeText(story.build_sequence) || "Not specified"}`));
+
+          children.push(docHeading("Related ServiceNow Objects", HeadingLevel.HEADING_4));
+          const relatedObjects = safeList(story.related_service_now_objects);
+          if (relatedObjects.length) {
+            relatedObjects.forEach((item) => children.push(docBullet(safeText(item))));
+          } else {
+            children.push(docParagraph("Not specified."));
+          }
+
+          children.push(docHeading("Acceptance Criteria", HeadingLevel.HEADING_4));
+          story.acceptance_criteria?.forEach((criteria) => children.push(docBullet(criteria)));
+
+          const developerNotesNeeded = safeList(story.developer_notes_needed);
+          if (developerNotesNeeded.length) {
+            children.push(docHeading("Developer Notes Needed", HeadingLevel.HEADING_4));
+            developerNotesNeeded.forEach((item) => children.push(docBullet(safeText(item))));
+          }
+
+          const qaFocus = safeList(story.qa_focus);
+          if (qaFocus.length) {
+            children.push(docHeading("QA Focus", HeadingLevel.HEADING_4));
+            qaFocus.forEach((item) => children.push(docBullet(safeText(item))));
+          }
+
+          const dependencies = safeList(story.dependencies);
+          if (dependencies.length) {
+            children.push(docHeading("Dependencies", HeadingLevel.HEADING_4));
+            dependencies.forEach((item) => children.push(docBullet(safeText(item))));
+          }
+
+          if (story.notes) children.push(docParagraph(`Notes: ${story.notes}`));
+        });
+      });
+    } else {
+      children.push(docParagraph("No stories were generated."));
+    }
 
     children.push(docHeading("Technical Notes"));
     children.push(docParagraph(result.developer?.implementation_summary));
@@ -5564,6 +5672,19 @@ ${uat.expected_result}
                   </div>
 
                   <div style={styles.packageCommandActions}>
+                    {(!result.developer || !result.qa || !result.quality_score) && (
+                      <button
+                        onClick={upgradeQuickPackageToFull}
+                        disabled={loading}
+                        style={{
+                          ...styles.button,
+                          opacity: loading ? 0.65 : 1,
+                          cursor: loading ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {loading ? "Upgrading..." : "Make Full"}
+                      </button>
+                    )}
                     <button
                       onClick={runAgentReview}
                       disabled={loading}
@@ -5574,6 +5695,15 @@ ${uat.expected_result}
                       }}
                     >
                       {loading ? "Reviewing..." : result.agent_review ? "Refresh Review" : "Run Review"}
+                    </button>
+                    <button onClick={() => selectPackageTab("review")} style={styles.secondaryButton}>
+                      Decisions
+                    </button>
+                    <button onClick={() => selectPackageTab("project_manager")} style={styles.secondaryButton}>
+                      Plan / Cost
+                    </button>
+                    <button onClick={() => selectPackageTab("delivery_lead")} style={styles.secondaryButton}>
+                      Ask Lead
                     </button>
                     <button onClick={() => selectPackageTab("export")} style={styles.secondaryButton}>
                       Export
@@ -6924,10 +7054,10 @@ ${uat.expected_result}
                         <div style={styles.pmSetupCard}>
                           <p style={styles.label}>Delivery Scope Add-ons</p>
                           <div style={styles.pmToggleGrid}>
-                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.include_maintenance} onChange={(e) => updatePlanningInput("include_maintenance", e.target.checked)} /><span><strong>Maintenance</strong><small>Monthly post go-live support and small fixes</small></span></label>
-                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.include_training} onChange={(e) => updatePlanningInput("include_training", e.target.checked)} /><span><strong>Training / change</strong><small>UAT enablement, job aids, and stakeholder prep</small></span></label>
-                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.data_migration_needed} onChange={(e) => updatePlanningInput("data_migration_needed", e.target.checked)} /><span><strong>Data migration</strong><small>Import, transform, validation, and reconciliation</small></span></label>
-                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.integrations_needed} onChange={(e) => updatePlanningInput("integrations_needed", e.target.checked)} /><span><strong>Integrations</strong><small>API, file, or external system touchpoints</small></span></label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.include_maintenance} onChange={(e) => updatePlanningInput("include_maintenance", e.target.checked)} />Maintenance</label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.include_training} onChange={(e) => updatePlanningInput("include_training", e.target.checked)} />Training / change</label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.data_migration_needed} onChange={(e) => updatePlanningInput("data_migration_needed", e.target.checked)} />Data migration</label>
+                            <label style={styles.toggleRow}><input type="checkbox" checked={planningInputs.integrations_needed} onChange={(e) => updatePlanningInput("integrations_needed", e.target.checked)} />Integrations</label>
                           </div>
                           <div style={styles.pmInputGrid}>
                             <label style={styles.projectField}>
@@ -6997,30 +7127,17 @@ ${uat.expected_result}
 
                             {activePlanView === "timeline" && (
                               <div style={styles.stack}>
-                                <div style={styles.pmTimelineHeader}>
-                                  <div>
-                                    <p style={styles.label}>Editable Delivery Timeline</p>
-                                    <p style={styles.bodyText}>Use + / - to adjust phase bars by half-week increments. Regenerate after changing bars so the PM agent can rebuild cost, staffing, and sprint sequencing.</p>
-                                  </div>
-                                  <div style={styles.pmTimelineActions}>
-                                    <button onClick={resetPhaseDurations} style={styles.secondaryButton}>Reset Bars</button>
-                                    <button onClick={generateProjectManagerPlan} disabled={projectPlanLoading || loading} style={styles.button}>{projectPlanLoading ? "Regenerating..." : "Regenerate with Weeks"}</button>
-                                  </div>
-                                </div>
+                                <div style={styles.pmTimelineHeader}><div><p style={styles.label}>Editable Delivery Timeline</p><p style={styles.bodyText}>Use + / - to adjust phase bars locally. Recalculate the plan to have the PM agent rebuild costs and sprint sequencing.</p></div><button onClick={resetPhaseDurations} style={styles.secondaryButton}>Reset Bars</button></div>
                                 <div style={styles.pmGanttCard}>
-                                  <div style={styles.pmGanttHeaderRow}>
-                                    <div />
-                                    <div style={{ ...styles.pmGanttScale, gridTemplateColumns: `repeat(${timelineWeeks}, minmax(56px, 1fr))` }}>{Array.from({ length: timelineWeeks }).map((_item, weekIndex) => <span key={weekIndex}>W{weekIndex + 1}</span>)}</div>
-                                    <div />
-                                  </div>
+                                  <div style={styles.pmGanttScale}>{Array.from({ length: Math.min(timelineWeeks, 18) }).map((_item, weekIndex) => <span key={weekIndex}>W{weekIndex + 1}</span>)}</div>
                                   {adjustedPhases.map((phase, index) => {
                                     const left = `${((phase.startWeek - 1) / timelineWeeks) * 100}%`;
-                                    const width = `${Math.max(6, (phase.durationWeeks / timelineWeeks) * 100)}%`;
+                                    const width = `${Math.max(8, (phase.durationWeeks / timelineWeeks) * 100)}%`;
                                     return (
                                       <div key={index} style={styles.pmGanttRow}>
-                                        <div style={styles.pmGanttLabel}><strong>{phase.label}</strong><span>{formatPlanWeeks(phase.durationWeeks)} wk · {formatPlanCurrency(phase.estimated_cost, planningInputs.currency)}</span></div>
-                                        <div style={styles.pmGanttTrack}><div style={{ ...styles.pmGanttBar, left, width }}>W{formatPlanWeeks(phase.startWeek)}–W{formatPlanWeeks(phase.endWeek)}</div></div>
-                                        <div style={styles.pmGanttControls}><button onClick={() => adjustPhaseDuration(index, -0.5)} style={styles.tinyControlButton}>−</button><button onClick={() => adjustPhaseDuration(index, 0.5)} style={styles.tinyControlButton}>+</button></div>
+                                        <div style={styles.pmGanttLabel}><strong>{phase.label}</strong><span>{phase.durationWeeks} wk Â· {formatPlanCurrency(phase.estimated_cost, planningInputs.currency)}</span></div>
+                                        <div style={styles.pmGanttTrack}><div style={{ ...styles.pmGanttBar, left, width }}>W{phase.startWeek}–W{phase.endWeek}</div></div>
+                                        <div style={styles.pmGanttControls}><button onClick={() => adjustPhaseDuration(index, -1)} style={styles.tinyControlButton}>−</button><button onClick={() => adjustPhaseDuration(index, 1)} style={styles.tinyControlButton}>+</button></div>
                                       </div>
                                     );
                                   })}
@@ -7057,7 +7174,6 @@ ${uat.expected_result}
                               <div style={styles.stack}>
                                 <div style={styles.innerCard}>
                                   <div style={styles.cardTitleRow}><div><p style={styles.label}>Team and Rates</p><p style={styles.bodyText}>Adjust rate, count, and weekly capacity. Recalculate to update cost and delivery feasibility.</p></div><button onClick={addPlanningRole} style={styles.secondaryButton}>Add Role</button></div>
-                                  <div style={styles.pmRoleHeader}><span>Role</span><span>Rate</span><span>Count</span><span>Hrs / week</span><span /></div>
                                   <div style={styles.stackSmall}>{planningInputs.role_rates.map((role, index) => <div key={`${role.role}-${index}`} style={isMobile ? styles.mobileOneColumnGrid : styles.pmRoleGrid}><input value={role.role} onChange={(e) => updatePlanningRole(index, "role", e.target.value)} style={styles.projectInputCompact} aria-label="Role" /><input type="number" value={role.hourly_rate} onChange={(e) => updatePlanningRole(index, "hourly_rate", e.target.value)} style={styles.projectInputCompact} aria-label="Hourly rate" /><input type="number" value={role.count} onChange={(e) => updatePlanningRole(index, "count", e.target.value)} style={styles.projectInputCompact} aria-label="Count" /><input type="number" value={role.weekly_capacity_hours} onChange={(e) => updatePlanningRole(index, "weekly_capacity_hours", e.target.value)} style={styles.projectInputCompact} aria-label="Weekly capacity" /><button onClick={() => removePlanningRole(index)} style={styles.deleteButtonCompact}>Remove</button></div>)}</div>
                                 </div>
                                 <div style={styles.innerCard}>
@@ -10775,49 +10891,44 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid #CBD5E1",
     background: "linear-gradient(135deg, #F8FAFC 0%, #EEF2FF 100%)",
     borderRadius: "18px",
-    padding: "22px",
+    padding: "18px",
     display: "flex",
     justifyContent: "space-between",
     gap: "16px",
     alignItems: "flex-start",
   },
   pmHeroActions: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" },
-  pmSetupGrid: { display: "grid", gridTemplateColumns: "minmax(0, 0.95fr) minmax(0, 1.25fr)", gap: "18px" },
-  pmSetupCard: { border: "1px solid #E2E8F0", background: "#FFFFFF", borderRadius: "18px", padding: "20px" },
-  pmInputGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "14px", marginTop: "14px" },
-  pmToggleGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(220px, 1fr))", gap: "12px", marginTop: "14px", marginBottom: "16px" },
-  toggleRow: { display: "flex", alignItems: "flex-start", gap: "10px", border: "1px solid #E2E8F0", background: "#F8FAFC", borderRadius: "14px", padding: "12px", color: "#334155", fontSize: "13px", fontWeight: 800, lineHeight: 1.35, cursor: "pointer" },
-  pmKpiGrid: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "14px" },
-  pmKpiCard: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "18px", padding: "18px", minHeight: "116px" },
+  pmSetupGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "14px" },
+  pmSetupCard: { border: "1px solid #E2E8F0", background: "#FFFFFF", borderRadius: "16px", padding: "14px" },
+  pmInputGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px", marginTop: "10px" },
+  pmToggleGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", marginTop: "10px", marginBottom: "10px" },
+  pmKpiGrid: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "12px" },
+  pmKpiCard: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "18px", padding: "16px", minHeight: "112px" },
   pmKpiNumber: { color: "#2563EB", fontSize: "28px", lineHeight: 1.1, fontWeight: 950, margin: "8px 0 4px" },
-  pmPlanSummaryCard: { border: "1px solid #CBD5E1", background: "#F8FAFC", borderRadius: "18px", padding: "20px", display: "flex", justifyContent: "space-between", gap: "18px", alignItems: "flex-start" },
-  pmViewTabs: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "10px", padding: "10px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "18px", marginTop: "4px", marginBottom: "4px" },
-  pmViewTab: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "14px", padding: "13px 14px", color: "#334155", fontWeight: 900, cursor: "pointer" },
-  pmViewTabActive: { border: "1px solid #4F46E5", background: "linear-gradient(135deg, #2563EB, #7C3AED)", borderRadius: "14px", padding: "13px 14px", color: "#FFFFFF", fontWeight: 950, cursor: "pointer" },
+  pmPlanSummaryCard: { border: "1px solid #CBD5E1", background: "#F8FAFC", borderRadius: "18px", padding: "16px", display: "flex", justifyContent: "space-between", gap: "14px", alignItems: "flex-start" },
+  pmViewTabs: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "8px", padding: "8px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "16px" },
+  pmViewTab: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "12px", padding: "10px 12px", color: "#334155", fontWeight: 900, cursor: "pointer" },
+  pmViewTabActive: { border: "1px solid #4F46E5", background: "linear-gradient(135deg, #2563EB, #7C3AED)", borderRadius: "12px", padding: "10px 12px", color: "#FFFFFF", fontWeight: 950, cursor: "pointer" },
   pmRangeBar: { display: "flex", overflow: "hidden", borderRadius: "14px", border: "1px solid #CBD5E1", background: "#EFF6FF", minHeight: "84px" },
   pmRangeSegment: { padding: "14px", display: "flex", flexDirection: "column", justifyContent: "center", gap: "4px", borderRight: "1px solid #CBD5E1", color: "#1E293B", fontSize: "13px", fontWeight: 800 },
-  pmTimelineHeader: { display: "flex", justifyContent: "space-between", gap: "18px", alignItems: "center", padding: "4px 0" },
-  pmTimelineActions: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" },
-  pmGanttCard: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "18px", padding: "18px", overflowX: "auto" },
-  pmGanttHeaderRow: { display: "grid", gridTemplateColumns: "220px minmax(520px, 1fr) 82px", gap: "12px", alignItems: "center", minWidth: "860px" },
-  pmGanttScale: { display: "grid", color: "#64748B", fontSize: "11px", fontWeight: 800, marginBottom: "8px", textAlign: "center" },
-  pmGanttRow: { display: "grid", gridTemplateColumns: "220px minmax(520px, 1fr) 82px", gap: "12px", alignItems: "center", padding: "12px 0", borderTop: "1px solid #E2E8F0", minWidth: "860px" },
-  pmGanttLabel: { display: "flex", flexDirection: "column", gap: "5px", color: "#334155", fontSize: "12px" },
-  pmGanttTrack: { position: "relative", height: "38px", borderRadius: "999px", background: "#F1F5F9", border: "1px solid #E2E8F0", overflow: "hidden" },
+  pmTimelineHeader: { display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center" },
+  pmGanttCard: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "18px", padding: "14px", overflowX: "auto" },
+  pmGanttScale: { display: "grid", gridTemplateColumns: "repeat(18, minmax(44px, 1fr))", color: "#64748B", fontSize: "11px", fontWeight: 800, marginLeft: "220px", marginBottom: "8px" },
+  pmGanttRow: { display: "grid", gridTemplateColumns: "200px minmax(420px, 1fr) 72px", gap: "10px", alignItems: "center", padding: "10px 0", borderTop: "1px solid #E2E8F0" },
+  pmGanttLabel: { display: "flex", flexDirection: "column", gap: "4px", color: "#334155", fontSize: "12px" },
+  pmGanttTrack: { position: "relative", height: "34px", borderRadius: "999px", background: "#F1F5F9", border: "1px solid #E2E8F0", overflow: "hidden" },
   pmGanttBar: { position: "absolute", top: "4px", bottom: "4px", borderRadius: "999px", background: "linear-gradient(135deg, #2563EB, #7C3AED)", color: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" },
-  pmGanttControls: { display: "flex", gap: "8px", justifyContent: "flex-end" },
-  tinyControlButton: { width: "32px", height: "32px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#1D4ED8", fontWeight: 950, cursor: "pointer" },
-  pmSprintGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "16px" },
-  pmSprintCard: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "16px", padding: "18px" },
-  pmCostChart: { display: "flex", flexDirection: "column", gap: "14px" },
-  pmCostRow: { display: "grid", gridTemplateColumns: "200px minmax(260px, 1fr) 150px", gap: "14px", alignItems: "center" },
+  pmGanttControls: { display: "flex", gap: "6px", justifyContent: "flex-end" },
+  tinyControlButton: { width: "30px", height: "30px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#FFFFFF", color: "#1D4ED8", fontWeight: 950, cursor: "pointer" },
+  pmSprintGrid: { display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "12px" },
+  pmSprintCard: { border: "1px solid #CBD5E1", background: "#FFFFFF", borderRadius: "16px", padding: "14px" },
+  pmCostChart: { display: "flex", flexDirection: "column", gap: "12px" },
+  pmCostRow: { display: "grid", gridTemplateColumns: "180px minmax(220px, 1fr) 140px", gap: "12px", alignItems: "center" },
   pmCostLabel: { color: "#334155", fontSize: "13px", fontWeight: 900 },
   pmCostTrack: { height: "18px", borderRadius: "999px", background: "#F1F5F9", border: "1px solid #E2E8F0", overflow: "hidden" },
   pmCostBar: { height: "100%", borderRadius: "999px", background: "linear-gradient(135deg, #2563EB, #7C3AED)" },
   pmRoleBar: { height: "100%", borderRadius: "999px", background: "linear-gradient(135deg, #0EA5E9, #2563EB)" },
   pmCostValue: { color: "#0F172A", fontSize: "13px", fontWeight: 900, textAlign: "right" },
-  pmRoleGrid: { display: "grid", gridTemplateColumns: "minmax(220px, 1.4fr) minmax(110px, 0.7fr) minmax(90px, 0.5fr) minmax(120px, 0.7fr) 96px", gap: "10px", alignItems: "center" },
-  pmRoleHeader: { display: "grid", gridTemplateColumns: "minmax(220px, 1.4fr) minmax(110px, 0.7fr) minmax(90px, 0.5fr) minmax(120px, 0.7fr) 96px", gap: "10px", color: "#64748B", fontSize: "11px", fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", marginTop: "12px", marginBottom: "8px" },
-  pmEmptyState: { border: "1px dashed #CBD5E1", background: "#F8FAFC", borderRadius: "18px", padding: "28px", textAlign: "center" },
+  pmEmptyState: { border: "1px dashed #CBD5E1", background: "#F8FAFC", borderRadius: "18px", padding: "24px", textAlign: "center" },
 
 };
