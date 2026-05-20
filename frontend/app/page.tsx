@@ -673,12 +673,37 @@ function buildReadinessGateMarkdown(data: DeliveryResult | null | undefined) {
   const gate = getBuildReadinessGate(data);
 
   if (!gate) {
-    return `## Build Readiness Gate\n\nNo build-readiness gate was returned by the backend.`;
+    return `## Build Readiness Gate
+
+No build-readiness gate was returned by the backend.`;
   }
 
-  return `## Build Readiness Gate\n\n**Verdict:** ${safeText(gate.verdict) || "Not provided"}\n\n**Safe to Generate Code:** ${safeText(gate.safe_to_generate_code) || "Not provided"}\n\n### Reason\n${safeText(gate.reason) || "Not provided"}\n\n### Must Resolve Before Build\n${safeList(gate.must_resolve_before_build)
+  const verdict = safeText(gate.verdict) || "Not provided";
+  const safeToGenerate = gate.safe_to_generate_code;
+  const canGenerateGuidance = safeToGenerate === false ? "Conditional / review required" : "Yes";
+  const deploymentReady = /ready/i.test(verdict) && !/assumption|conditional|not ready|needs/i.test(verdict) ? "Yes" : "No";
+
+  return `## Build Readiness Gate
+
+**Design Readiness:** ${verdict}
+
+**Safe to Generate Implementation Guidance:** ${canGenerateGuidance}
+
+**Safe to Deploy:** ${deploymentReady}
+
+### Readiness Interpretation
+- Design/build guidance can be generated when the ServiceNow pattern is clear.
+- Production build/deployment still requires confirmation of routing groups, approvers, licensing, and notification details.
+- Do not treat configuration assumptions as production sign-off.
+
+### Reason
+${safeText(gate.reason) || "Not provided"}
+
+### Must Resolve Before Production Build / Deployment
+${safeList(gate.must_resolve_before_build)
     .map((item) => `- ${safeText(item)}`)
-    .join("\n") || "- Not provided"}`;
+    .join("
+") || "- Not provided"}`;
 }
 
 function sensitiveDataControlsMarkdown(data: DeliveryResult | null | undefined) {
@@ -786,22 +811,39 @@ function getDecisionTasks(
 function buildConsolidatedDecisionsMarkdown(
   review: AgentReview | null | undefined,
 ) {
-  const decisions = getConsolidatedDecisions(review);
+  const tasks = getDecisionTasks(review);
 
-  if (!decisions.length) {
-    return `## Business Decisions Needed\n\nNo consolidated business decisions were returned by the review board.`;
+  if (!tasks.length) {
+    return `## Business Decisions Needed
+
+No consolidated business decisions were returned by the review board.`;
   }
 
-  return `## Business Decisions Needed\n\n${decisions
-    .map((decision, index) => {
+  return `## Business Decisions Needed
+
+${tasks
+    .map((task, index) => {
+      const decision = task.decision;
       const reviewers = safeList(decision.impacted_reviewers)
         .map((item) => safeText(item))
         .filter(Boolean)
         .join(", ");
 
-      return `### ${index + 1}. ${safeText(decision.decision_area) || "Business Decision"}\n\n**Question:** ${safeText(decision.question) || "Not provided"}\n\n**Why it matters:** ${safeText(decision.why_it_matters) || "Not provided"}\n\n**Impacted reviewers:** ${reviewers || "Not provided"}\n\n**Default if unanswered:** ${safeText(decision.recommended_default_if_unanswered) || "Treat as unresolved."}\n\n**Blocks build readiness:** ${safeText(decision.blocks_build_readiness) || "Not provided"}`;
+      return `### ${index + 1}. ${task.area || "Business Decision"}
+
+**Question:** ${task.question || safeText(decision.question) || "Not provided"}
+
+**Why it matters:** ${safeText(decision.why_it_matters) || "Not provided"}
+
+**Impacted reviewers:** ${reviewers || "Not provided"}
+
+**Default if unanswered:** ${safeText(decision.recommended_default_if_unanswered) || "Treat as unresolved."}
+
+**Blocks build readiness:** ${safeText(decision.blocks_build_readiness) || "Not provided"}`;
     })
-    .join("\n\n")}`;
+    .join("
+
+")}`;
 }
 
 
@@ -966,7 +1008,7 @@ function getPackageComplexityProfile(data: DeliveryResult | null | undefined) {
     return { complexity: hasCustomApp ? "Medium" : "High", likelyWeeks: hasCustomApp ? 8 : 12, likelyHours: hasCustomApp ? 420 : 700 };
   }
 
-  if (isCatalog && storyCount <= 8 && objectCount <= 12 && flowCount <= 2) {
+  if (isCatalog && !hasCustomApp && !hasIntegration && !hasSensitive && storyCount <= 14 && objectCount <= 18 && flowCount <= 4) {
     return { complexity: "Low", likelyWeeks: 5, likelyHours: 120 };
   }
 
@@ -1163,114 +1205,10 @@ function getGenerationStages(mode: "quick" | "full" | null, elapsedSeconds: numb
 }
 
 function getGenerationHint(mode: "quick" | "full" | null, elapsedSeconds: number) {
-  if (elapsedSeconds > 420) return "Still running. If this exceeds 7 minutes, open Diagnostics and backend logs.";
-  if (elapsedSeconds > 240) return "The pod is still working. Larger files and full packages can take several minutes.";
-  if (elapsedSeconds > 120) return "Still generating. The pod is combining multiple specialist outputs into one package.";
-  if (mode === "quick") return "Quick package creates a concise solution, core stories, and readiness snapshot.";
-  return "Full package runs the Delivery Lead, Architect, Story, Developer, QA, Review, and Quality agents.";
-}
-
-function getGenerationPodTitle(mode: "quick" | "full" | null) {
-  return mode === "quick"
-    ? "AI Delivery Pod is building your quick package..."
-    : "AI Delivery Pod is building your full delivery package...";
-}
-
-function getGenerationPodSubtitle(mode: "quick" | "full" | null) {
-  return mode === "quick"
-    ? "A smaller pod run is preparing a concise ServiceNow delivery package."
-    : "Multiple ServiceNow specialists are working in sequence to produce a delivery-ready package.";
-}
-
-function getGenerationEstimate(mode: "quick" | "full" | null) {
-  return mode === "quick" ? "Usually 30–90 sec" : "Usually 3–6 min";
-}
-
-function getGenerationActiveStage(mode: "quick" | "full" | null, elapsedSeconds: number) {
-  const stages = getGenerationStages(mode, elapsedSeconds);
-  return stages.find((stage) => stage.state === "active") || stages[stages.length - 1];
-}
-
-function getGenerationAgentCards(mode: "quick" | "full" | null, elapsedSeconds: number) {
-  const fullCards = [
-    {
-      title: "Delivery Lead",
-      detail: "Clarifying scope, MVP boundary, assumptions, and business decisions.",
-      start: 0,
-      end: 55,
-    },
-    {
-      title: "Architect",
-      detail: "Checking OOB vs custom fit, platform objects, licensing, and upgrade impact.",
-      start: 35,
-      end: 110,
-    },
-    {
-      title: "Story Builder",
-      detail: "Grouping work by epics and mapping acceptance criteria to implementation.",
-      start: 80,
-      end: 170,
-    },
-    {
-      title: "Developer",
-      detail: "Mapping stories to ServiceNow tables, flows, notifications, ACLs, and build notes.",
-      start: 130,
-      end: 230,
-    },
-    {
-      title: "QA",
-      detail: "Creating SIT, UAT, edge cases, and regression coverage.",
-      start: 190,
-      end: 290,
-    },
-    {
-      title: "Review Board",
-      detail: "Finding gaps, deduping decisions, and scoring readiness.",
-      start: 250,
-      end: 360,
-    },
-  ];
-
-  const quickCards = [
-    {
-      title: "Intake Reader",
-      detail: "Reading the requirement and extracting the core ServiceNow ask.",
-      start: 0,
-      end: 15,
-    },
-    {
-      title: "Architect",
-      detail: "Producing a quick OOB/custom recommendation and design shape.",
-      start: 10,
-      end: 35,
-    },
-    {
-      title: "Story Builder",
-      detail: "Creating a compact set of core stories and acceptance criteria.",
-      start: 25,
-      end: 55,
-    },
-    {
-      title: "Readiness Check",
-      detail: "Checking assumptions, blockers, and next best actions.",
-      start: 45,
-      end: 90,
-    },
-  ];
-
-  const cards = mode === "quick" ? quickCards : fullCards;
-
-  return cards.map((card) => ({
-    ...card,
-    active: elapsedSeconds >= card.start && elapsedSeconds < card.end,
-    done: elapsedSeconds >= card.end,
-  }));
-}
-
-function getGenerationOutputs(mode: "quick" | "full" | null) {
-  return mode === "quick"
-    ? ["Scope snapshot", "OOB/custom recommendation", "Core stories", "Readiness check"]
-    : ["Delivery review", "OOB/custom decision", "Epic stories", "Technical map", "QA/UAT", "Review board", "Quality score"];
+  if (elapsedSeconds > 420) return "Still running. If this exceeds 7 minutes, open diagnostics and backend logs.";
+  if (elapsedSeconds > 180) return "Still working. Full packages can take several minutes depending on document size and agent count.";
+  if (mode === "quick") return "Quick package is creating a concise solution and readiness view.";
+  return "Full package is coordinating Delivery Lead, Architect, Story, Developer, QA, Review, and Quality agents.";
 }
 
 
@@ -3103,12 +3041,12 @@ Answer: ${answer.trim()}`;
               900,
             ),
             setTimeout(
-              () => setLoadingStage("Story Builder is creating core stories..."),
+              () => setLoadingStage("BSA is creating core stories..."),
               2400,
             ),
             setTimeout(
               () =>
-                setLoadingStage("AI Delivery Pod is assembling quick package..."),
+                setLoadingStage("Delivery Lead is assembling quick package..."),
               4200,
             ),
           ]
@@ -3120,7 +3058,7 @@ Answer: ${answer.trim()}`;
             setTimeout(
               () =>
                 setLoadingStage(
-                  "Story Builder is grouping stories by epic...",
+                  "BSA is writing stories and acceptance criteria...",
                 ),
               2600,
             ),
@@ -3138,7 +3076,7 @@ Answer: ${answer.trim()}`;
             ),
             setTimeout(
               () =>
-                setLoadingStage("AI Delivery Pod is assembling final package..."),
+                setLoadingStage("Delivery Lead is assembling final package..."),
               10400,
             ),
           ];
@@ -4657,10 +4595,15 @@ ${uat.expected_result}
     const buildReadinessGate = getBuildReadinessGate(result);
     children.push(docHeading("Build Readiness Gate"));
     if (buildReadinessGate) {
-      children.push(docParagraph(`Verdict: ${safeText(buildReadinessGate.verdict) || "Not provided"}`));
-      children.push(docParagraph(`Safe to Generate Code: ${safeText(buildReadinessGate.safe_to_generate_code) || "Not provided"}`));
+      const readinessVerdict = safeText(buildReadinessGate.verdict) || "Not provided";
+      const guidanceReadiness = buildReadinessGate.safe_to_generate_code === false ? "Conditional / review required" : "Yes";
+      const deployReadiness = /ready/i.test(readinessVerdict) && !/assumption|conditional|not ready|needs/i.test(readinessVerdict) ? "Yes" : "No";
+      children.push(docParagraph(`Design Readiness: ${readinessVerdict}`));
+      children.push(docParagraph(`Safe to Generate Implementation Guidance: ${guidanceReadiness}`));
+      children.push(docParagraph(`Safe to Deploy: ${deployReadiness}`));
+      children.push(docParagraph("Interpretation: Design/build guidance may be generated when the ServiceNow pattern is clear, but production build/deployment still requires confirmed routing groups, approvers, licensing, and notification details."));
       children.push(docParagraph(`Reason: ${safeText(buildReadinessGate.reason) || "Not provided"}`));
-      children.push(docHeading("Must Resolve Before Build", HeadingLevel.HEADING_2));
+      children.push(docHeading("Must Resolve Before Production Build / Deployment", HeadingLevel.HEADING_2));
       safeList(buildReadinessGate.must_resolve_before_build).forEach((item) =>
         children.push(docBullet(safeText(item))),
       );
@@ -4805,6 +4748,19 @@ ${uat.expected_result}
       });
     } else {
       children.push(docParagraph("No stories were generated."));
+    }
+
+    const technicalBuildTasksForExport = safeList((result as any).technical_build_tasks);
+    if (technicalBuildTasksForExport.length) {
+      children.push(docHeading("Readiness / Technical Build Tasks"));
+      technicalBuildTasksForExport.forEach((task: any, index: number) => {
+        children.push(docHeading(`Task ${index + 1}: ${safeText(task.title || task.task || task.name) || "Build Task"}`, HeadingLevel.HEADING_2));
+        children.push(docParagraph(`Type: ${safeText(task.task_type || task.type) || "Readiness / Build"}`));
+        children.push(docParagraph(`Epic: ${safeText(task.epic) || "Not provided"}`));
+        children.push(docParagraph(`Build Sequence: ${safeText(task.build_sequence) || "Not provided"}`));
+        children.push(docParagraph(`Owner: ${safeText(task.owner_role || task.owner) || "Not provided"}`));
+        children.push(docParagraph(`Details: ${safeText(task.description || task.notes) || "Not provided"}`));
+      });
     }
 
     children.push(docHeading("Technical Notes"));
@@ -5744,91 +5700,33 @@ ${uat.expected_result}
 
             {loading && activeGenerationMode ? (
               <section style={styles.generationConsole}>
-                <div style={styles.generationHero}>
+                <div style={styles.rowBetween}>
                   <div>
-                    <p style={styles.label}>
-                      {activeGenerationMode === "quick"
-                        ? "Quick Package Run"
-                        : "Full Package Run"}
-                    </p>
-                    <h3 style={styles.generationTitle}>
-                      {getGenerationPodTitle(activeGenerationMode)}
-                    </h3>
-                    <p style={styles.bodyText}>
-                      {getGenerationPodSubtitle(activeGenerationMode)}
-                    </p>
+                    <p style={styles.label}>{activeGenerationMode === "quick" ? "Quick package generation" : "Full package generation"}</p>
+                    <h3 style={styles.itemTitle}>{loadingStage || "Generating delivery package..."}</h3>
+                    <p style={styles.bodyText}>{getGenerationHint(activeGenerationMode, elapsedGenerationSeconds)}</p>
                   </div>
-                  <div style={styles.generationMetaGrid}>
-                    <div style={styles.generationTimer}>
-                      <span>Elapsed</span>
-                      <strong>{formatElapsed(elapsedGenerationSeconds)}</strong>
-                    </div>
-                    <div style={styles.generationTimer}>
-                      <span>Estimate</span>
-                      <strong>{getGenerationEstimate(activeGenerationMode)}</strong>
-                    </div>
+                  <div style={styles.generationTimer}>
+                    <span>Elapsed</span>
+                    <strong>{formatElapsed(elapsedGenerationSeconds)}</strong>
                   </div>
                 </div>
-
-                <div style={styles.generationCurrentWork}>
-                  <div style={styles.generationPulse} />
-                  <div>
-                    <p style={styles.label}>Current pod activity</p>
-                    <strong>
-                      {getGenerationActiveStage(activeGenerationMode, elapsedGenerationSeconds)?.label ||
-                        loadingStage ||
-                        "Generating package"}
-                    </strong>
-                    <p style={styles.muted}>
-                      {getGenerationHint(activeGenerationMode, elapsedGenerationSeconds)}
-                    </p>
-                  </div>
-                </div>
-
                 <div style={styles.generationStageGrid}>
                   {getGenerationStages(activeGenerationMode, elapsedGenerationSeconds).map((stage) => (
-                    <div
-                      key={stage.label}
-                      style={
-                        stage.state === "done"
-                          ? styles.generationStageDone
-                          : stage.state === "active"
-                            ? styles.generationStageActive
-                            : styles.generationStagePending
-                      }
-                    >
+                    <div key={stage.label} style={stage.state === "done" ? styles.generationStageDone : stage.state === "active" ? styles.generationStageActive : styles.generationStagePending}>
                       <span>{stage.state === "done" ? "✓" : stage.state === "active" ? "→" : "○"}</span>
                       <p>{stage.label}</p>
                     </div>
                   ))}
                 </div>
-
-                <div style={styles.generationAgentGrid}>
-                  {getGenerationAgentCards(activeGenerationMode, elapsedGenerationSeconds).map((card) => (
-                    <div
-                      key={card.title}
-                      style={
-                        card.active
-                          ? styles.generationAgentCardActive
-                          : card.done
-                            ? styles.generationAgentCardDone
-                            : styles.generationAgentCard
-                      }
-                    >
-                      <div style={styles.rowBetween}>
-                        <strong>{card.title}</strong>
-                        <span>{card.done ? "Done" : card.active ? "Working" : "Queued"}</span>
-                      </div>
-                      <p>{card.detail}</p>
-                    </div>
-                  ))}
-                </div>
-
                 <div style={styles.generationChecklist}>
                   <span>This run will produce:</span>
-                  {getGenerationOutputs(activeGenerationMode).map((item) => (
-                    <strong key={item}>{item}</strong>
-                  ))}
+                  <strong>Delivery review</strong>
+                  <strong>OOB/custom decision</strong>
+                  <strong>Epic stories</strong>
+                  <strong>Technical map</strong>
+                  <strong>QA/UAT</strong>
+                  <strong>Review board</strong>
                 </div>
               </section>
             ) : loadingStage ? (
@@ -10010,56 +9908,19 @@ const styles: Record<string, React.CSSProperties> = {
 
   generationConsole: {
     marginBottom: "20px",
-    padding: "22px",
-    borderRadius: "24px",
-    background: "linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 52%, #F5F3FF 100%)",
-    border: "1px solid #C7D2FE",
-    boxShadow: "0 22px 70px rgba(79, 70, 229, 0.14)",
-  },
-  generationHero: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: "18px",
-    flexWrap: "wrap" as const,
-  },
-  generationTitle: {
-    margin: "4px 0 8px",
-    fontSize: "22px",
-    lineHeight: 1.2,
-    fontWeight: 900,
-    color: "#0F172A",
-  },
-  generationMetaGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(116px, 1fr))",
-    gap: "10px",
+    padding: "20px",
+    borderRadius: "22px",
+    background: "linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 100%)",
+    border: "1px solid #BFDBFE",
+    boxShadow: "0 18px 50px rgba(37, 99, 235, 0.12)",
   },
   generationTimer: {
     minWidth: "116px",
     padding: "12px 14px",
     borderRadius: "16px",
-    background: "rgba(255,255,255,0.9)",
+    background: "rgba(255,255,255,0.86)",
     border: "1px solid #DBEAFE",
     textAlign: "center" as const,
-  },
-  generationCurrentWork: {
-    display: "flex",
-    alignItems: "center",
-    gap: "14px",
-    marginTop: "18px",
-    padding: "14px 16px",
-    borderRadius: "18px",
-    background: "rgba(255,255,255,0.78)",
-    border: "1px solid #E0E7FF",
-  },
-  generationPulse: {
-    width: "14px",
-    height: "14px",
-    borderRadius: "999px",
-    background: "#4F46E5",
-    boxShadow: "0 0 0 8px rgba(79, 70, 229, 0.12)",
-    flex: "0 0 auto",
   },
   generationStageGrid: {
     display: "grid",
@@ -10090,7 +9951,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#1D4ED8",
     fontSize: "13px",
     fontWeight: 900,
-    boxShadow: "0 12px 30px rgba(37, 99, 235, 0.16)",
   },
   generationStagePending: {
     display: "flex",
@@ -10104,45 +9964,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "13px",
     fontWeight: 800,
   },
-  generationAgentGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-    gap: "12px",
-    marginTop: "16px",
-  },
-  generationAgentCard: {
-    padding: "14px",
-    borderRadius: "18px",
-    background: "rgba(255,255,255,0.66)",
-    border: "1px solid #E2E8F0",
-    color: "#475569",
-    fontSize: "13px",
-    lineHeight: 1.55,
-  },
-  generationAgentCardActive: {
-    padding: "14px",
-    borderRadius: "18px",
-    background: "#EEF2FF",
-    border: "1px solid #818CF8",
-    color: "#312E81",
-    fontSize: "13px",
-    lineHeight: 1.55,
-    boxShadow: "0 14px 36px rgba(79, 70, 229, 0.16)",
-  },
-  generationAgentCardDone: {
-    padding: "14px",
-    borderRadius: "18px",
-    background: "#F0FDF4",
-    border: "1px solid #BBF7D0",
-    color: "#166534",
-    fontSize: "13px",
-    lineHeight: 1.55,
-  },
   generationChecklist: {
     display: "flex",
     flexWrap: "wrap" as const,
     gap: "8px",
-    marginTop: "16px",
+    marginTop: "14px",
     color: "#475569",
     fontSize: "13px",
   },

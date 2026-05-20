@@ -6,12 +6,16 @@ from agents._common import _chat_json, _safe_dict
 
 
 FALLBACK_AGENT_REVIEW_PROMPT = """
-You are an internal review board for a ServiceNow delivery package.
-Review as Architect, Developer, QA, and Delivery Lead.
-Identify contradictions, gaps, and priority fixes.
-Deduplicate overlapping business questions into consolidated_decisions_needed.
+You are an internal senior ServiceNow implementation review board.
+Review as Architect, Developer, QA, Product Owner, Business Systems Analyst, Project Manager, and Delivery Lead.
 Return only valid JSON.
 """
+
+DECISION_VERBS = (
+    "confirm", "define", "finalize", "clarify", "decide", "validate", "identify",
+    "provide", "establish", "determine", "obtain", "document", "specify", "select",
+    "approve", "choose"
+)
 
 
 def _empty_feedback() -> Dict[str, Any]:
@@ -42,111 +46,121 @@ def _fallback_agent_review() -> Dict[str, Any]:
     }
 
 
-def _ensure_list(value: Any) -> List[Any]:
-    return value if isinstance(value, list) else []
+def _safe_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
 
 
-def _normalize_feedback(value: Any) -> Dict[str, Any]:
-    if not isinstance(value, dict):
-        return _empty_feedback()
-
-    return {
-        "what_looks_good": _ensure_list(value.get("what_looks_good")),
-        "concerns": _ensure_list(value.get("concerns")),
-        "recommended_improvements": _ensure_list(value.get("recommended_improvements")),
-        "questions_for_business": _ensure_list(value.get("questions_for_business")),
-    }
+def _safe_list(value: Any) -> List[Any]:
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    return [value]
 
 
-def _normalize_decision(value: Any) -> Dict[str, Any]:
-    if not isinstance(value, dict):
-        return {}
-
-    return {
-        "decision_area": value.get("decision_area") or value.get("area") or "General",
-        "question": value.get("question") or "",
-        "why_it_matters": value.get("why_it_matters") or value.get("reason") or "",
-        "impacted_reviewers": _ensure_list(value.get("impacted_reviewers")),
-        "recommended_default_if_unanswered": value.get("recommended_default_if_unanswered") or "Treat as unresolved and do not mark production build-ready.",
-        "blocks_build_readiness": bool(value.get("blocks_build_readiness", False)),
-    }
+def _make_question(text: str) -> str:
+    text = re.sub(r"^[,;:\-\s]+", "", text or "").strip()
+    text = re.sub(r"[.;?\s]+$", "", text).strip()
+    if not text:
+        return ""
+    return text[:1].upper() + text[1:] + "?"
 
 
-def _decision_area_for_question(question: str) -> str:
+def _decision_area_for_question(question: str, fallback: str) -> str:
     q = question.lower()
-    if any(term in q for term in ["license", "licensing", "grc", "irm", "module", "platform", "catalog", "flow designer", "custom"]):
-        return "Platform / Licensing"
-    if any(term in q for term in ["approver", "approval", "group", "membership", "escalation", "routing", "owner"]):
-        return "Approval Routing"
-    if any(term in q for term in ["attachment", "retention", "encryption", "masking", "sensitive", "legal hold", "data", "privacy"]):
-        return "Security / Attachments"
-    if any(term in q for term in ["notification", "template", "email", "channel"]):
-        return "Notifications"
-    if any(term in q for term in ["extension", "renewal", "expire", "expiration"]):
-        return "Lifecycle / Extension"
-    if any(term in q for term in ["report", "dashboard", "metric", "analytics"]):
-        return "Reporting"
-    return "Business Decision"
+    if "license" in q or "module" in q or "plugin" in q:
+        return "Platform Licensing"
+    if "manager" in q:
+        return "Manager Approval Routing"
+    if "application owner" in q or "app owner" in q or "salesforce owner" in q:
+        return "Application Owner Approval Routing"
+    if "support group" in q or "assignment group" in q or "fulfillment" in q:
+        return "Fulfillment Assignment Group"
+    if "notification" in q or "template" in q or "channel" in q or "email" in q:
+        return "Notification Content and Channels"
+    if "fallback" in q or "error" in q or "misconfigured" in q or "missing" in q:
+        return "Routing Fallback and Error Handling"
+    if "attachment" in q or "document" in q or "storage" in q:
+        return "Attachment and Storage Scope"
+    if "audit" in q or "retention" in q or "compliance" in q:
+        return "Audit Retention and Compliance"
+    if "report" in q or "dashboard" in q:
+        return "Reporting Scope"
+    return fallback or "Business Decision"
 
 
-def _fingerprint_question(question: str) -> str:
-    text = re.sub(r"[^a-z0-9 ]", " ", question.lower())
-    stop = {"what", "who", "when", "where", "why", "how", "are", "is", "the", "a", "an", "and", "or", "for", "to", "of", "in", "on", "be", "should", "can", "please", "confirm", "provide", "exact", "specific"}
-    tokens = [token for token in text.split() if token and token not in stop]
-    # Keep the most important repeated concepts while removing purely stylistic wording.
-    return " ".join(sorted(set(tokens))[:12])
+def _split_bundled_decision(decision: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw_question = _safe_text(decision.get("question"))
+    if not raw_question:
+        return [decision]
+
+    question = re.sub(r"^can\s+(the\s+)?business\s+(please\s+)?", "", raw_question, flags=re.I).strip()
+    question = re.sub(r"^please\s+", "", question, flags=re.I).strip()
+    # Split only where a new decision verb starts. This catches "confirm X, define Y, finalize Z".
+    verb_pattern = "|".join(DECISION_VERBS)
+    normalized = re.sub(rf"\s+and\s+(?=({verb_pattern})\b)", ", ", question, flags=re.I)
+    normalized = re.sub(rf";\s+(?=({verb_pattern})\b)", ", ", normalized, flags=re.I)
+    parts = re.split(rf",\s+(?=({verb_pattern})\b)", normalized, flags=re.I)
+
+    # re.split with a capturing group returns verbs as separate elements. Reassemble verb + phrase.
+    rebuilt: List[str] = []
+    i = 0
+    while i < len(parts):
+        part = parts[i]
+        if part and part.lower() in DECISION_VERBS and i + 1 < len(parts):
+            rebuilt.append(f"{part} {parts[i + 1]}")
+            i += 2
+        else:
+            if part and part.lower() not in DECISION_VERBS:
+                rebuilt.append(part)
+            i += 1
+
+    cleaned = [_make_question(item) for item in rebuilt if _make_question(item)]
+    if len(cleaned) <= 1:
+        return [decision]
+
+    split: List[Dict[str, Any]] = []
+    for item in cleaned:
+        split.append({
+            **decision,
+            "decision_area": _decision_area_for_question(item, _safe_text(decision.get("decision_area"))),
+            "question": item,
+        })
+    return split
 
 
-def _dedupe_decisions(output: Dict[str, Any]) -> List[Dict[str, Any]]:
-    explicit = [
-        _normalize_decision(item)
-        for item in _ensure_list(output.get("consolidated_decisions_needed"))
-    ]
-    explicit = [item for item in explicit if item.get("question")]
-
-    if explicit:
-        seen = set()
-        result = []
-        for item in explicit:
-            key = _fingerprint_question(str(item.get("question", "")))
-            if key in seen:
+def _normalize_decisions(value: Any) -> List[Dict[str, Any]]:
+    decisions: List[Dict[str, Any]] = []
+    for item in _safe_list(value):
+        if not isinstance(item, dict):
+            continue
+        for split_item in _split_bundled_decision(item):
+            question = _safe_text(split_item.get("question"))
+            if not question:
                 continue
-            seen.add(key)
-            result.append(item)
-        return result[:10]
+            decisions.append({
+                "decision_area": _safe_text(split_item.get("decision_area")) or _decision_area_for_question(question, "Business Decision"),
+                "question": question,
+                "why_it_matters": _safe_text(split_item.get("why_it_matters")) or "This decision affects build readiness, testing, or deployment confidence.",
+                "impacted_reviewers": _safe_list(split_item.get("impacted_reviewers")) or ["Architect", "Developer", "QA", "Delivery Lead"],
+                "recommended_default_if_unanswered": _safe_text(split_item.get("recommended_default_if_unanswered")) or "Use documented MVP assumption and flag for confirmation.",
+                "blocks_build_readiness": bool(split_item.get("blocks_build_readiness")) if split_item.get("blocks_build_readiness") is not None else False,
+            })
 
-    reviewer_map = {
-        "Architect": output.get("architect_review"),
-        "Developer": output.get("developer_review"),
-        "QA": output.get("qa_review"),
-        "Delivery Lead": output.get("delivery_lead_review"),
-    }
-
-    grouped: Dict[str, Dict[str, Any]] = {}
-    for reviewer, feedback in reviewer_map.items():
-        normalized = _normalize_feedback(feedback)
-        for question in normalized.get("questions_for_business", []):
-            question_text = str(question).strip()
-            if not question_text:
-                continue
-            key = _fingerprint_question(question_text)
-            if not key:
-                key = question_text.lower()
-
-            if key not in grouped:
-                grouped[key] = {
-                    "decision_area": _decision_area_for_question(question_text),
-                    "question": question_text,
-                    "why_it_matters": "This decision affects architecture, delivery readiness, implementation, or test coverage.",
-                    "impacted_reviewers": [reviewer],
-                    "recommended_default_if_unanswered": "Treat as unresolved and keep build readiness at Needs Discovery or Ready with Assumptions.",
-                    "blocks_build_readiness": True,
-                }
-            else:
-                if reviewer not in grouped[key]["impacted_reviewers"]:
-                    grouped[key]["impacted_reviewers"].append(reviewer)
-
-    return list(grouped.values())[:10]
+    # De-duplicate by normalized question.
+    seen = set()
+    unique: List[Dict[str, Any]] = []
+    for decision in decisions:
+        key = re.sub(r"\W+", " ", decision["question"].lower()).strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(decision)
+    return unique[:12]
 
 
 def generate_agent_review(requirement: str, current_package: dict) -> Dict[str, Any]:
@@ -186,12 +200,12 @@ Return JSON exactly in this structure:
   }},
   "consolidated_decisions_needed": [
     {{
-      "decision_area": "Platform / Licensing / Approval Routing / Security / Attachments / Notifications / Lifecycle / Extension / Reporting",
-      "question": "Single deduplicated business decision question.",
-      "why_it_matters": "Why this decision matters.",
+      "decision_area": "Atomic decision area",
+      "question": "One business-answerable question only.",
+      "why_it_matters": "Why this matters.",
       "impacted_reviewers": ["Architect", "Developer", "QA", "Delivery Lead"],
-      "recommended_default_if_unanswered": "What the package should assume if the business does not answer.",
-      "blocks_build_readiness": true
+      "recommended_default_if_unanswered": "MVP default assumption.",
+      "blocks_build_readiness": false
     }}
   ],
   "priority_fixes": [
@@ -201,7 +215,7 @@ Return JSON exactly in this structure:
       "reason": "Reason"
     }}
   ],
-  "final_verdict": "Ready / Conditionally Ready / Needs Work / Not Ready"
+  "final_verdict": "Ready / Needs Work / Not Ready"
 }}
 """
 
@@ -216,14 +230,13 @@ Return JSON exactly in this structure:
     output = _safe_dict(output)
     fallback = _fallback_agent_review()
 
-    normalized = {
+    return {
         "overall_review_summary": output.get("overall_review_summary") or fallback["overall_review_summary"],
-        "architect_review": _normalize_feedback(output.get("architect_review")),
-        "developer_review": _normalize_feedback(output.get("developer_review")),
-        "qa_review": _normalize_feedback(output.get("qa_review")),
-        "delivery_lead_review": _normalize_feedback(output.get("delivery_lead_review")),
-        "priority_fixes": _ensure_list(output.get("priority_fixes")) or fallback["priority_fixes"],
+        "architect_review": output.get("architect_review") if isinstance(output.get("architect_review"), dict) else _empty_feedback(),
+        "developer_review": output.get("developer_review") if isinstance(output.get("developer_review"), dict) else _empty_feedback(),
+        "qa_review": output.get("qa_review") if isinstance(output.get("qa_review"), dict) else _empty_feedback(),
+        "delivery_lead_review": output.get("delivery_lead_review") if isinstance(output.get("delivery_lead_review"), dict) else _empty_feedback(),
+        "consolidated_decisions_needed": _normalize_decisions(output.get("consolidated_decisions_needed")),
+        "priority_fixes": output.get("priority_fixes") if isinstance(output.get("priority_fixes"), list) else fallback["priority_fixes"],
         "final_verdict": output.get("final_verdict") or fallback["final_verdict"],
     }
-    normalized["consolidated_decisions_needed"] = _dedupe_decisions({**output, **normalized})
-    return normalized

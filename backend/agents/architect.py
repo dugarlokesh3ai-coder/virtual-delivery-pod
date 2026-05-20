@@ -216,6 +216,27 @@ def _normalize_platform_notes(notes: List[Any]) -> List[str]:
     return normalized
 
 
+
+def _normalize_build_readiness_gate(gate: Dict[str, Any], app_type: str, design: str) -> Dict[str, Any]:
+    gate = dict(gate or {})
+    verdict = _non_empty_text(gate.get("verdict")) or "Needs Discovery"
+    combined = f"{app_type} {design}".lower()
+    is_clear_oob_pattern = any(token in combined for token in ["service catalog", "flow designer", "request management", "oob", "out-of-box"])
+    is_blocked = any(token in verdict.lower() for token in ["not ready", "needs discovery", "blocked"])
+
+    # For clear OOB/configuration patterns, assumptions should block production deployment,
+    # not implementation guidance. Avoid confusing Ready with Assumptions + safe=false.
+    if verdict.lower() == "ready with assumptions" and is_clear_oob_pattern and not is_blocked:
+        gate["safe_to_generate_code"] = True
+        reason = _non_empty_text(gate.get("reason"))
+        if reason and "production" not in reason.lower():
+            gate["reason"] = reason + " Implementation guidance may be generated, but production build/deployment requires confirming open assumptions."
+    elif is_blocked:
+        gate["safe_to_generate_code"] = False
+
+    gate["verdict"] = verdict
+    return gate
+
 def generate_architecture(requirement: str) -> Dict[str, Any]:
     # IMPORTANT: do not use an f-string for the schema block. The JSON braces in
     # the schema cause runtime formatting errors in f-strings and make the
@@ -251,16 +272,18 @@ def generate_architecture(requirement: str) -> Dict[str, Any]:
         or fallback["platform_object_accuracy_notes"]
     )
 
+    recommended_app_type = output.get("recommended_app_type") or fallback["recommended_app_type"]
+    raw_gate = _ensure_dict(output.get("build_readiness_gate"), fallback["build_readiness_gate"])
+    normalized_gate = _normalize_build_readiness_gate(raw_gate, recommended_app_type, solution_design)
+
     return {
         "requirement_summary": output.get("requirement_summary") or fallback["requirement_summary"],
         "solution_design": solution_design,
-        "recommended_app_type": output.get("recommended_app_type") or fallback["recommended_app_type"],
+        "recommended_app_type": recommended_app_type,
         "platform_fit_decision": _ensure_dict(
             output.get("platform_fit_decision"), fallback["platform_fit_decision"]
         ),
-        "build_readiness_gate": _ensure_dict(
-            output.get("build_readiness_gate"), fallback["build_readiness_gate"]
-        ),
+        "build_readiness_gate": normalized_gate,
         "sensitive_data_controls": _ensure_dict(
             output.get("sensitive_data_controls"), fallback["sensitive_data_controls"]
         ),

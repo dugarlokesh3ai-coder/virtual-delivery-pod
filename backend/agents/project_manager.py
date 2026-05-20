@@ -138,9 +138,11 @@ def _package_profile(current_package: Dict[str, Any]) -> Dict[str, Any]:
     is_catalog = bool(re.search(r"catalog|service catalog|sc_cat_item|request item", app_type + " " + design_text))
     has_integration = bool(re.search(r"integration|api|external|automatic provisioning", design_text))
 
-    if is_catalog and not has_custom_app and not has_integration and stories <= 8 and tech_objects <= 14 and flows <= 3:
+    # Simple catalog items often have many notification/QA stories, but remain low complexity
+    # when they use OOB Service Catalog + Flow Designer and no integrations/custom app.
+    if is_catalog and not has_custom_app and not has_integration and stories <= 14 and tech_objects <= 18 and flows <= 4:
         return {"complexity": "Low", "likely_weeks": 5.0, "likely_hours": 120}
-    if has_custom_app or stories >= 10 or tech_objects >= 16:
+    if has_custom_app or stories >= 14 or tech_objects >= 20:
         return {"complexity": "Medium", "likely_weeks": 8.0, "likely_hours": 360}
     return {"complexity": "Medium", "likely_weeks": 7.0, "likely_hours": 240}
 
@@ -259,7 +261,8 @@ def _normalize_plan(plan: Dict[str, Any], planning_inputs: Dict[str, Any], curre
     phases = _safe_list(plan.get("phase_plan"))
     stated_weeks = _num((plan.get("project_plan_summary") or {}).get("estimated_duration_weeks"), 0)
     phase_duration_sum = sum(_num(phase.get("duration_weeks"), 0) for phase in phases)
-    incomplete_phase_plan = len(phases) < 3 or (stated_weeks > 0 and phase_duration_sum < stated_weeks * 0.55)
+    unrealistic_simple_catalog_plan = profile_for_cap["complexity"] == "Low" and (stated_weeks > 8 or phase_duration_sum > 8)
+    incomplete_phase_plan = len(phases) < 3 or (stated_weeks > 0 and phase_duration_sum < stated_weeks * 0.55) or unrealistic_simple_catalog_plan
 
     if incomplete_phase_plan:
         profile = _package_profile(current_package)
@@ -272,7 +275,8 @@ def _normalize_plan(plan: Dict[str, Any], planning_inputs: Dict[str, Any], curre
             total["high_hours"] = round(likely * 1.2)
         phases = _fallback_phases(current_package, planning_inputs, likely)
         plan["phase_plan"] = phases
-        plan["diagnostics"] = _safe_list(plan.get("diagnostics")) + ["PM plan was normalized because the model returned an incomplete or inconsistent phase plan."]
+        reason = "PM plan was normalized because the model returned an incomplete, inconsistent, or unrealistic phase plan for the detected complexity."
+        plan["diagnostics"] = _safe_list(plan.get("diagnostics")) + [reason]
 
     # Recalculate totals from normalized phases so cost and first-year total are consistent.
     likely = sum(sum(_num(hours, 0) for hours in (phase.get("loe_hours_by_role") or {}).values()) for phase in phases) or likely

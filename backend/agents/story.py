@@ -117,6 +117,41 @@ def _normalize_story(story: Dict[str, Any], epic: str, index: int) -> Dict[str, 
     }
 
 
+
+def _is_readiness_task(story: Dict[str, Any]) -> bool:
+    text = " ".join([
+        _safe_text(story.get("title")),
+        _safe_text(story.get("story")),
+        _safe_text(story.get("notes")),
+        _safe_text(story.get("implementation_type")),
+    ]).lower()
+    readiness_tokens = [
+        "confirm licensing", "validate licensing", "license availability", "module availability",
+        "define support group", "confirm support group", "define approver", "confirm approver",
+        "clarify notification", "finalize notification", "approve notification template",
+        "confirm audit", "clarify audit", "confirm retention", "clarify retention",
+        "fallback process", "error handling", "routing fallback"
+    ]
+    persona = _safe_text(story.get("persona")).lower()
+    return any(token in text for token in readiness_tokens) or (persona in {"admin", "product owner"} and "confirm" in text and "so that" in text)
+
+
+def _story_to_readiness_task(story: Dict[str, Any], epic: str, index: int) -> Dict[str, Any]:
+    normalized = _normalize_story(story, epic, index)
+    return {
+        "task_id": normalized["story_id"].replace("ARCH", "READY").replace("ADMIN", "READY"),
+        "title": normalized["title"],
+        "task_type": "Readiness Task",
+        "epic": epic,
+        "owner_role": normalized.get("persona") or "Delivery Team",
+        "description": normalized.get("story") or normalized["title"],
+        "acceptance_criteria": normalized.get("acceptance_criteria", []),
+        "related_service_now_objects": normalized.get("related_service_now_objects", []),
+        "build_sequence": normalized.get("build_sequence") or "Sprint 0",
+        "blocks_build_readiness": normalized.get("priority") == "Must Have",
+        "notes": normalized.get("notes", ""),
+    }
+
 def _normalize_output(output: Dict[str, Any]) -> Dict[str, Any]:
     fallback = _fallback_stories()
     output = _safe_dict(output)
@@ -124,6 +159,7 @@ def _normalize_output(output: Dict[str, Any]) -> Dict[str, Any]:
     raw_groups = _safe_list(output.get("story_groups"))
     normalized_groups: List[Dict[str, Any]] = []
     flat_stories: List[Dict[str, Any]] = []
+    readiness_tasks: List[Dict[str, Any]] = []
 
     if raw_groups:
         for group in raw_groups:
@@ -133,6 +169,9 @@ def _normalize_output(output: Dict[str, Any]) -> Dict[str, Any]:
             stories = []
             for index, story in enumerate(_safe_list(group.get("stories"))):
                 if not isinstance(story, dict):
+                    continue
+                if _is_readiness_task(story):
+                    readiness_tasks.append(_story_to_readiness_task(story, epic, len(readiness_tasks)))
                     continue
                 normalized = _normalize_story(story, epic, index)
                 stories.append(normalized)
@@ -152,6 +191,9 @@ def _normalize_output(output: Dict[str, Any]) -> Dict[str, Any]:
             if not isinstance(story, dict):
                 continue
             epic = _safe_text(story.get("epic")) or _infer_epic(story)
+            if _is_readiness_task(story):
+                readiness_tasks.append(_story_to_readiness_task(story, epic, len(readiness_tasks)))
+                continue
             normalized = _normalize_story(story, epic, len(grouped.get(epic, [])))
             grouped.setdefault(epic, []).append(normalized)
             flat_stories.append(normalized)
@@ -169,7 +211,7 @@ def _normalize_output(output: Dict[str, Any]) -> Dict[str, Any]:
         "epic": output.get("epic") or fallback["epic"],
         "story_groups": normalized_groups,
         "stories": flat_stories,
-        "technical_build_tasks": output.get("technical_build_tasks") if isinstance(output.get("technical_build_tasks"), list) else [],
+        "technical_build_tasks": readiness_tasks + (output.get("technical_build_tasks") if isinstance(output.get("technical_build_tasks"), list) else []),
         "assumptions": output.get("assumptions") if isinstance(output.get("assumptions"), list) else fallback["assumptions"],
         "dependencies": output.get("dependencies") if isinstance(output.get("dependencies"), list) else fallback["dependencies"],
     }

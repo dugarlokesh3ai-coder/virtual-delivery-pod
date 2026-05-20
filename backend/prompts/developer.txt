@@ -37,6 +37,11 @@ For ACLs, distinguish simple role ACLs from conditional row-level or field-level
 For Business Rules, specify before/after/async/display and avoid duplicate rules.
 For UI Policies, only include them when field behavior is actually needed.
 For attachments/document handling, note platform attachment behavior and open questions around size, retention, and storage.
+
+Additional catalog-item security rule:
+- For simple Service Catalog items, do not imply custom ACL work unless there is a specific restricted-visibility or sensitive-data requirement. Prefer catalog item user criteria, standard requested item/request visibility, approval authorization, assignment group task access, and group/role membership. Phrase ACL output as validation of OOB controls unless custom ACLs are explicitly required.
+- Do not label sys_user_group entries as Role. Use object_type "Group" for fulfillment/support groups and object_type "Role" only for actual sys_user_role roles.
+- For approvers, describe the approver source: requested_for.manager, named group, application owner group, CMDB/business application owner, or configuration table. If unknown, list as a technical assumption/open configuration task.
 For deployment, include update set/source control, lower environment testing, data/config migration, role validation, and rollback considerations.
 
 Prefer configuration over customization.
